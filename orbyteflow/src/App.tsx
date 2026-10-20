@@ -1,4 +1,4 @@
-// src/App.tsx
+// orbyteflow/src/App.tsx
 import { useState } from 'react';
 import type { ActiveTab, AuditLog, InvoiceItem, NewProductForm, Product, QCAlert, UserRole } from './types/orbyte';
 import { INITIAL_AUDIT_LOGS, INITIAL_INVOICES, INITIAL_PRODUCTS, INITIAL_QC_ALERTS } from './data/mockData';
@@ -11,8 +11,10 @@ import { AddProductModal } from './modules/module1-restock/AddProductModal';
 import { QualityControlModule } from './modules/module4-quality/QualityControlModule';
 import { InvoiceModule } from './modules/module5-invoice/InvoiceModule';
 import { SalesAndOrderPlaceholder } from './modules/jayden-modules/SalesAndOrderPlaceholder';
+import { SplashScreen } from './components/SplashScreen';
 
 export default function App() {
+  const [splashDone, setSplashDone] = useState<boolean>(false);
   const [role, setRole] = useState<UserRole>('SME_OWNER');
   const [activeTab, setActiveTab] = useState<ActiveTab>('mod1');
   const [industryFilter, setIndustryFilter] = useState<string>('ALL');
@@ -136,62 +138,71 @@ export default function App() {
   });
 
   return (
-      <div className="min-h-screen bg-[#F5F7FA] flex font-sans text-slate-800">
-        <Sidebar
-            activeTab={activeTab}
-            setActiveTab={setActiveTab}
-            industryFilter={industryFilter}
-            setIndustryFilter={setIndustryFilter}
-            searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
-            pendingRestockCount={products.filter((p) => p.restockStatus === 'TRIGGERED_PENDING_APPROVAL').length}
-            pendingQcCount={qcAlerts.filter((q) => q.status === 'PENDING_APPROVAL').length}
-            pendingInvoiceCount={invoices.filter((i) => i.status === 'NEEDS_REVIEW').length}
-            totalProductCount={products.length}
-        />
-
-        <main className="flex-1 flex flex-col overflow-y-auto">
-          <HeaderBar activeTab={activeTab} role={role} setRole={setRole} />
-
-          <div className="p-8 space-y-6">
-            <KpiCards
-                totalSkus={products.length}
-                pendingRestocks={products.filter((p) => p.restockStatus === 'TRIGGERED_PENDING_APPROVAL').length}
-                pendingQcBatches={qcAlerts.filter((q) => q.status === 'PENDING_APPROVAL').length}
-                totalInvoices={invoices.length}
+      <>
+        {!splashDone && (
+            <SplashScreen
+                onComplete={() => setSplashDone(true)}
+                showDebugControls={false} // Set to true to scrub through Figma keyframes!
             />
+        )}
 
-            {activeTab === 'mod1' && (
-                <RestockModule
-                    products={filteredProducts}
-                    onApproveRestock={handleApproveRestock}
-                    onOpenAddModal={() => setShowAddModal(true)}
-                />
-            )}
+        <div className="min-h-screen bg-[#F5F7FA] flex font-sans text-slate-800">
+          <Sidebar
+              activeTab={activeTab}
+              setActiveTab={setActiveTab}
+              industryFilter={industryFilter}
+              setIndustryFilter={setIndustryFilter}
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              pendingRestockCount={products.filter((p) => p.restockStatus === 'TRIGGERED_PENDING_APPROVAL').length}
+              pendingQcCount={qcAlerts.filter((q) => q.status === 'PENDING_APPROVAL').length}
+              pendingInvoiceCount={invoices.filter((i) => i.status === 'NEEDS_REVIEW').length}
+              totalProductCount={products.length}
+          />
 
-            {activeTab === 'mod4' && (
-                <QualityControlModule qcAlerts={qcAlerts} onApproveQC={handleApproveQC} />
-            )}
+          <main className="flex-1 flex flex-col overflow-y-auto">
+            <HeaderBar activeTab={activeTab} role={role} setRole={setRole} />
 
-            {activeTab === 'mod5' && (
-                <InvoiceModule
-                    invoices={invoices}
-                    onVerifyInvoice={handleVerifyInvoice}
-                    onSimulateUploadInvoice={handleSimulateNewInvoice}
-                />
-            )}
+            <div className="p-8 space-y-6">
+              <KpiCards
+                  totalSkus={products.length}
+                  pendingRestocks={products.filter((p) => p.restockStatus === 'TRIGGERED_PENDING_APPROVAL').length}
+                  pendingQcBatches={qcAlerts.filter((q) => q.status === 'PENDING_APPROVAL').length}
+                  totalInvoices={invoices.length}
+              />
 
-            {activeTab === 'mod2_3' && <SalesAndOrderPlaceholder />}
+              {activeTab === 'mod1' && (
+                  <RestockModule
+                      products={filteredProducts}
+                      onApproveRestock={handleApproveRestock}
+                      onOpenAddModal={() => setShowAddModal(true)}
+                  />
+              )}
 
-            <AuditLogPanel logs={auditLogs} role={role} />
-          </div>
-        </main>
+              {activeTab === 'mod4' && (
+                  <QualityControlModule qcAlerts={qcAlerts} onApproveQC={handleApproveQC} />
+              )}
 
-        <AddProductModal
-            isOpen={showAddModal}
-            onClose={() => setShowAddModal(false)}
-            onSaveProduct={handleSaveProduct}
-        />
-      </div>
+              {activeTab === 'mod5' && (
+                  <InvoiceModule
+                      invoices={invoices}
+                      onVerifyInvoice={handleVerifyInvoice}
+                      onSimulateUploadInvoice={handleSimulateNewInvoice}
+                  />
+              )}
+
+              {activeTab === 'mod2_3' && <SalesAndOrderPlaceholder />}
+
+              <AuditLogPanel logs={auditLogs} role={role} />
+            </div>
+          </main>
+
+          <AddProductModal
+              isOpen={showAddModal}
+              onClose={() => setShowAddModal(false)}
+              onSaveProduct={handleSaveProduct}
+          />
+        </div>
+      </>
   );
 }
