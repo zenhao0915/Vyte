@@ -13,7 +13,7 @@ export const AuditLogPanel: React.FC<AuditLogPanelProps> = ({ logs, role }) => {
         <div className="bg-slate-900 text-slate-100 p-5 rounded-xl shadow-sm">
             <div className="flex items-center justify-between mb-3">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-2">
-                    <Clock className="w-4 h-4" /> Orbyte Immutable Activity & Audit Log (Visible Outcome)
+                    <Clock className="w-4 h-4" /> Vyte Immutable Activity &amp; Audit Log
                 </h4>
                 <span className="text-xs text-slate-400">Active Session Role: {role}</span>
             </div>

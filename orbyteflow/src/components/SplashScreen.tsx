@@ -1,32 +1,38 @@
-// orbyteflow/src/components/SplashScreen.tsx
+// src/components/SplashScreen.tsx
 import React, { useEffect, useState, useRef } from 'react';
 import startAnimData from './start_anim.json';
 
 export interface SplashScreenProps {
-    /** Callback fired when the splash animation finishes and exits */
     onComplete?: () => void;
-    /** Optional override for the JSON animation config */
     animationData?: typeof startAnimData;
-    /** Show interactive timeline scrubber at the bottom for debugging */
-    showDebugControls?: boolean;
-    /** Automatically fade out when complete (default: true) */
     autoDismiss?: boolean;
 }
 
-interface InventoryBlock {
+function springPhysics(t: number, damping = 5.5, frequency = 11.5): number {
+    if (t <= 0) return 0;
+    if (t >= 1) return 1;
+    const decay = Math.exp(-damping * t);
+    return 1 - decay * (Math.cos(frequency * t) + (damping / frequency) * Math.sin(frequency * t));
+}
+
+function progressBetween(elapsed: number, startMs: number, durationMs: number): number {
+    return Math.min(1, Math.max(0, (elapsed - startMs) / durationMs));
+}
+
+interface MiniParcel {
     id: string;
     shelf: number;
     x: number;
     y: number;
     w: number;
     h: number;
-    color: string;
+    tone: 'kraft' | 'dark' | 'green';
+    delayMs: number;
 }
 
 export const SplashScreen: React.FC<SplashScreenProps> = ({
                                                               onComplete,
                                                               animationData = startAnimData,
-                                                              showDebugControls = false,
                                                               autoDismiss = true,
                                                           }) => {
     const [elapsedMs, setElapsedMs] = useState<number>(0);
@@ -35,62 +41,34 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
     const rafRef = useRef<number | null>(null);
     const lastTimeRef = useRef<number | null>(null);
 
-    const totalDuration = 2400;
+    const totalDuration = 3400;
     const { colors } = animationData.designTokens;
     const { glyphs, subtitle } = animationData.logoGeometry;
 
-    // Solid Drop Box Palette
-    const boxColors = {
-        exteriorDark: '#B87B42',
-        exteriorLight: '#D49658',
-        sealTape: colors.vyteGreen,
-        labelPlate: '#FFFFFF',
-        statusDot: colors.vyteGreen,
-    };
+    const tMorph = springPhysics(progressBetween(elapsedMs, 500, 600), 6.2, 10.5);
+    const tPackCompress = springPhysics(progressBetween(elapsedMs, 1350, 500), 5.8, 11.0);
+    const tCartonRise = springPhysics(progressBetween(elapsedMs, 1400, 540), 5.2, 12.0);
+    const tFlapsClose = springPhysics(progressBetween(elapsedMs, 1650, 400), 5.0, 13.0);
+    const tTapeSeal = springPhysics(progressBetween(elapsedMs, 1850, 300), 6.5, 11.0);
 
-    // --- Key Choreography Milestones (ms) ---
-    const T_MORPH_START = 450;
-    const T_DROP_START = 850;
-    const T_CONTACT = 1150;      // Moment of impact: Box appears & springs!
-    const T_TAPE = 1380;
-    const T_SHIP_START = 1500;
-    const T_LOGO_START = 1680;   // Logo starts sweeping from LEFT
+    const shipRaw = progressBetween(elapsedMs, 2100, 520);
+    const shipAnticipation = shipRaw > 0 && shipRaw < 0.22 ? -Math.sin((shipRaw / 0.22) * Math.PI) * 28 : 0;
+    const shipLaunch = shipRaw >= 0.18 ? Math.pow((shipRaw - 0.18) / 0.82, 2.3) * 1180 : 0;
+    const shipTranslateX = shipAnticipation + shipLaunch;
+    const shipScaleX = shipRaw > 0.2 ? 1 + Math.min(0.18, (shipRaw - 0.2) * 0.35) : 1 - Math.max(0, shipRaw * 0.25);
+    const shipScaleY = shipRaw > 0.2 ? 1 - Math.min(0.12, (shipRaw - 0.2) * 0.22) : 1 + Math.max(0, shipRaw * 0.2);
 
-    // 1. Database -> Drawer Morph Progress (0 -> 1)
-    const morphProgress = Math.min(1, Math.max(0, (elapsedMs - T_MORPH_START) / 380));
-
-    // 2. Drawer Gravity Drop Progress (0 -> 1)
-    const dropLinear = Math.min(1, Math.max(0, (elapsedMs - T_DROP_START) / (T_CONTACT - T_DROP_START)));
-    // Gravitational acceleration curve
-    const drawerFallY = Math.pow(dropLinear, 2) * 148;
-
-    // 3. Impact & Spring Physics (Active from T_CONTACT onwards)
-    const isContacted = elapsedMs >= T_CONTACT;
-    const springProgress = Math.min(1, Math.max(0, (elapsedMs - T_CONTACT) / 340));
-
-    // Damped harmonic oscillator math for realistic squash-and-rebound:
-    const springDecay = Math.exp(-6 * springProgress);
-    const springOsc = Math.sin(3.5 * Math.PI * springProgress);
-    const boxSpringY = isContacted ? 16 * springDecay * springOsc : 0;
-    const boxScaleY = isContacted ? 1 - 0.16 * springDecay * springOsc : 1;
-    const boxScaleX = isContacted ? 1 + 0.09 * springDecay * springOsc : 1;
-
-    // 4. Sealing Tape Pop
-    const tapeProgress = Math.min(1, Math.max(0, (elapsedMs - T_TAPE) / 100));
-
-    // 5. Box Rocket Launch to the RIGHT
-    const shipProgress = Math.min(1, Math.max(0, (elapsedMs - T_SHIP_START) / 340));
-    const boxShipX = Math.pow(shipProgress, 2.6) * 1150;
-
-    // 6. Smooth Logo Glide from the LEFT (Critically Damped Harmonic Arrival)
-    const logoProgress = Math.min(1, Math.max(0, (elapsedMs - T_LOGO_START) / 680));
-    // Analytical spring formula starting with velocity 0 and settling with a subtle 4% organic cushion
-    const logoSpringFactor =
-        logoProgress > 0
-            ? 1 - Math.exp(-5.2 * logoProgress) * (Math.cos(5.4 * logoProgress) + 0.9 * Math.sin(5.4 * logoProgress))
-            : 0;
-    const logoArrivalX = -640 * (1 - logoSpringFactor);
-    const logoOpacity = Math.min(1, logoProgress * 3.5);
+    const miniParcels: MiniParcel[] = [
+        { id: 'p0', shelf: 0, x: 314, y: 120, w: 50, h: 32, tone: 'kraft', delayMs: 650 },
+        { id: 'p1', shelf: 0, x: 372, y: 116, w: 56, h: 36, tone: 'green', delayMs: 710 },
+        { id: 'p2', shelf: 0, x: 436, y: 122, w: 48, h: 30, tone: 'dark', delayMs: 770 },
+        { id: 'p3', shelf: 1, x: 316, y: 192, w: 58, h: 34, tone: 'dark', delayMs: 730 },
+        { id: 'p4', shelf: 1, x: 382, y: 190, w: 48, h: 36, tone: 'kraft', delayMs: 790 },
+        { id: 'p5', shelf: 1, x: 438, y: 194, w: 46, h: 32, tone: 'green', delayMs: 850 },
+        { id: 'p6', shelf: 2, x: 314, y: 264, w: 52, h: 34, tone: 'green', delayMs: 810 },
+        { id: 'p7', shelf: 2, x: 374, y: 262, w: 60, h: 36, tone: 'kraft', delayMs: 870 },
+        { id: 'p8', shelf: 2, x: 442, y: 266, w: 44, h: 32, tone: 'dark', delayMs: 930 },
+    ];
 
     useEffect(() => {
         if (!isPlaying) {
@@ -99,19 +77,17 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
         }
 
         const tick = (timestamp: number) => {
-            if (lastTimeRef.current === null) {
-                lastTimeRef.current = timestamp;
-            }
-            const delta = timestamp - lastTimeRef.current;
+            if (lastTimeRef.current === null) lastTimeRef.current = timestamp;
+            const delta = Math.min(32, timestamp - lastTimeRef.current);
             lastTimeRef.current = timestamp;
 
             setElapsedMs((prev) => {
                 const next = prev + delta;
                 if (next >= totalDuration) {
                     setIsPlaying(false);
-                    if (autoDismiss && !showDebugControls) {
-                        setTimeout(() => setIsExiting(true), 250);
-                        setTimeout(() => onComplete?.(), 700);
+                    if (autoDismiss) {
+                        setTimeout(() => setIsExiting(true), 150);
+                        setTimeout(() => onComplete?.(), 580);
                     }
                     return totalDuration;
                 }
@@ -125,24 +101,24 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
         return () => {
             if (rafRef.current) cancelAnimationFrame(rafRef.current);
         };
-    }, [isPlaying, totalDuration, autoDismiss, showDebugControls, onComplete]);
+    }, [isPlaying, totalDuration, autoDismiss, onComplete]);
 
-    const handleReplay = () => {
-        setIsExiting(false);
-        setElapsedMs(0);
-        lastTimeRef.current = null;
-        setIsPlaying(true);
+    const getGlyphSpring = (delayOffsetMs: number) => {
+        const raw = progressBetween(elapsedMs, 2240 + delayOffsetMs, 760);
+        const s = springPhysics(raw, 5.2, 11.5);
+        return {
+            translateX: -420 * (1 - s),
+            translateY: 24 * (1 - s),
+            scale: 0.82 + 0.18 * s,
+            opacity: Math.min(1, raw * 3.8),
+        };
     };
 
-    // Fixed, non-shaking inventory SKU blocks
-    const inventoryBlocks: InventoryBlock[] = [
-        { id: 'b0', shelf: 0, x: 318, y: 132, w: 46, h: 22, color: colors.vyteGreen },
-        { id: 'b1', shelf: 0, x: 372, y: 132, w: 48, h: 22, color: colors.inkBlack },
-        { id: 'b2', shelf: 0, x: 428, y: 132, w: 54, h: 22, color: colors.vyteGreen },
-        { id: 'b3', shelf: 1, x: 318, y: 196, w: 56, h: 22, color: colors.inkBlack },
-        { id: 'b4', shelf: 1, x: 382, y: 196, w: 44, h: 22, color: colors.vyteGreen },
-        { id: 'b5', shelf: 1, x: 434, y: 196, w: 48, h: 22, color: colors.inkBlack },
-    ];
+    const vSpring = getGlyphSpring(0);
+    const ySpring = getGlyphSpring(70);
+    const tSpring = getGlyphSpring(140);
+    const eSpring = getGlyphSpring(210);
+    const subSpring = getGlyphSpring(310);
 
     return (
         <div
@@ -157,191 +133,258 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
                 backgroundColor: colors.surfaceOffWhite,
                 opacity: isExiting ? 0 : 1,
                 pointerEvents: isExiting ? 'none' : 'auto',
-                transition: 'opacity 450ms cubic-bezier(0.4, 0, 0.2, 1)',
-                fontFamily:
-                    '"Plus Jakarta Sans", "Inter", -apple-system, BlinkMacSystemFont, sans-serif',
+                transition: 'opacity 420ms cubic-bezier(0.22, 1, 0.36, 1)',
+                fontFamily: '"Plus Jakarta Sans", "Inter", system-ui, sans-serif',
                 userSelect: 'none',
                 overflow: 'hidden',
             }}
         >
-            {/* Background Ambient Glow */}
+            {/* Ambient Radial Glow */}
             <div
                 style={{
                     position: 'absolute',
-                    width: '560px',
-                    height: '560px',
+                    width: '640px',
+                    height: '640px',
                     borderRadius: '50%',
                     background: `radial-gradient(circle, ${colors.vyteGreenGlow} 0%, rgba(246,247,244,0) 70%)`,
-                    transform: `scale(${isContacted ? 1.25 : 0.85})`,
-                    opacity: elapsedMs >= T_LOGO_START ? 0.95 : 0.4,
-                    transition: 'transform 500ms ease, opacity 500ms ease',
+                    transform: `scale(${0.85 + 0.35 * tCartonRise})`,
+                    opacity: elapsedMs > 2200 ? 0.95 : 0.55,
+                    transition: 'opacity 400ms ease',
                     pointerEvents: 'none',
                 }}
             />
 
-            {/* Main SVG Vector Canvas */}
             <svg
                 viewBox={animationData.logoGeometry.viewBox}
                 style={{
-                    width: 'min(90vw, 760px)',
+                    width: 'min(92vw, 780px)',
                     height: 'auto',
                     overflow: 'visible',
                 }}
             >
                 <defs>
-                    <filter id="soft-depth-shadow" x="-20%" y="-20%" width="140%" height="140%">
-                        <feDropShadow dx="0" dy="12" stdDeviation="15" floodColor="#0B0C0E" floodOpacity="0.08" />
+                    <filter id="vyte-elevated-shadow" x="-25%" y="-25%" width="150%" height="150%">
+                        <feDropShadow dx="0" dy="16" stdDeviation="16" floodColor="#0B0C0E" floodOpacity="0.11" />
                     </filter>
+                    <linearGradient id="kraft-box-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor="#DFA366" />
+                        <stop offset="100%" stopColor="#C48345" />
+                    </linearGradient>
+                    <linearGradient id="kraft-flap-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" stopColor="#ECCFA9" />
+                        <stop offset="100%" stopColor="#D49658" />
+                    </linearGradient>
                 </defs>
 
-                {/* ============================================================
-            GROUP 1: DRAWER & DROP BOX (Ships away to the RIGHT)
-           ============================================================ */}
-                {elapsedMs < T_LOGO_START + 250 && (
+                {/* ACT 1 - 3: DATABASE -> LOGISTICS DRAWER -> BOXED UP & SHIPPED */}
+                {shipRaw < 0.98 && (
                     <g
                         style={{
-                            transform: `translate(${boxShipX}px, 0px)`,
-                            opacity: shipProgress > 0.85 ? 1 - (shipProgress - 0.85) * 6.6 : 1,
+                            transformOrigin: '400px 235px',
+                            transform: `translate(${shipTranslateX}px, 0px) scale(${shipScaleX}, ${shipScaleY})`,
+                            opacity: shipRaw > 0.82 ? Math.max(0, 1 - (shipRaw - 0.82) * 5.5) : 1,
                         }}
                     >
-                        {/* DRAWER UNIT */}
+                        {/* 1. DATABASE / LOGISTICS DRAWER UNIT */}
                         <g
-                            filter="url(#soft-depth-shadow)"
+                            filter="url(#vyte-elevated-shadow)"
                             style={{
-                                transformOrigin: '400px 180px',
-                                transform: `translate(0px, ${drawerFallY + boxSpringY}px) scaleY(${boxScaleY}) scaleX(${boxScaleX})`,
+                                transformOrigin: '400px 250px',
+                                transform: `translateY(${tPackCompress * 34}px) scale(${1 - tPackCompress * 0.22})`,
+                                opacity: 1 - Math.max(0, (tFlapsClose - 0.45) * 1.9),
                             }}
                         >
-                            {/* Outer Cabinet Frame */}
-                            <g style={{ opacity: morphProgress }}>
-                                <rect x={286} y={108} width={228} height={158} rx={22} fill={colors.inkBlack} />
-                                <rect x={294} y={116} width={212} height={142} rx={16} fill="#FFFFFF" />
+                            <g
+                                style={{
+                                    transformOrigin: '400px 215px',
+                                    transform: `scale(${0.84 + 0.16 * tMorph})`,
+                                    opacity: Math.min(1, tMorph * 1.4),
+                                }}
+                            >
+                                <rect x={274} y={84} width={252} height={260} rx={24} fill={colors.inkBlack} />
+                                <rect x={284} y={94} width={232} height={240} rx={18} fill="#F8FAF7" />
+                                <rect x={294} y={104} width={6} height={220} rx={3} fill="#E2E5DF" />
+                                <rect x={500} y={104} width={6} height={220} rx={3} fill="#E2E5DF" />
                             </g>
 
-                            {/* 2 Database / Drawer Shelves */}
-                            {[0, 1].map((idx) => {
-                                const tierY = 126 + idx * 64;
-                                const dbEnterProgress = Math.min(1, Math.max(0, (elapsedMs - idx * 80) / 280));
+                            {[0, 1, 2].map((tierIdx) => {
+                                const tierY = 104 + tierIdx * 72;
+                                const dbEnter = springPhysics(progressBetween(elapsedMs, tierIdx * 90, 500), 4.8, 12.0);
+                                const dbScale = 0.7 + 0.3 * dbEnter;
+                                const dbTranslateY = (1 - dbEnter) * -45;
 
                                 return (
                                     <g
-                                        key={`tier-${idx}`}
+                                        key={`db-tier-${tierIdx}`}
                                         style={{
-                                            transform: `translateY(${(1 - dbEnterProgress) * -22}px)`,
-                                            opacity: dbEnterProgress,
+                                            transformOrigin: `400px ${tierY + 28}px`,
+                                            transform: `translateY(${dbTranslateY}px) scale(${dbScale})`,
+                                            opacity: Math.min(1, dbEnter * 2.5),
                                         }}
                                     >
-                                        {/* Shelf tray base */}
                                         <rect
-                                            x={304}
+                                            x={300 - (1 - tMorph) * 10}
                                             y={tierY}
-                                            width={192}
-                                            height={48}
-                                            rx={morphProgress > 0.5 ? 10 : 24}
-                                            fill={morphProgress > 0.5 ? colors.drawerTrack : colors.inkBlack}
+                                            width={200 + (1 - tMorph) * 20}
+                                            height={56}
+                                            rx={tMorph > 0.5 ? 12 : 26}
+                                            fill={tMorph > 0.5 ? '#E7ECE4' : colors.inkBlack}
                                         />
 
-                                        {/* Top elliptical platter (fades out as drawer appears) */}
                                         <ellipse
                                             cx={400}
-                                            cy={tierY + 12}
-                                            rx={80}
-                                            ry={10}
-                                            fill="#1E222A"
-                                            style={{ opacity: 1 - morphProgress }}
+                                            cy={tierY + 13}
+                                            rx={106}
+                                            ry={12}
+                                            fill="#1F242D"
+                                            style={{ opacity: Math.max(0, 1 - tMorph * 1.35) }}
                                         />
 
-                                        {/* Clean, Non-Shaking Inventory SKU Blocks */}
-                                        {inventoryBlocks
-                                            .filter((b) => b.shelf === idx)
-                                            .map((blk) => (
-                                                <rect
-                                                    key={blk.id}
-                                                    x={blk.x}
-                                                    y={blk.y}
-                                                    width={blk.w}
-                                                    height={blk.h}
-                                                    rx={5}
-                                                    fill={blk.color}
-                                                    style={{ opacity: morphProgress }}
-                                                />
-                                            ))}
+                                        <g style={{ opacity: Math.max(0, 1 - tMorph * 1.5) }}>
+                                            <circle cx={324} cy={tierY + 34} r={6} fill={colors.vyteGreen} />
+                                            <rect x={340} y={tierY + 31} width={75} height={6} rx={3} fill="#2E3540" />
+                                            <rect x={425} y={tierY + 31} width={42} height={6} rx={3} fill={colors.vyteGreen} opacity={0.65} />
+                                        </g>
 
-                                        {/* Front tray cover */}
-                                        <rect
-                                            x={304}
-                                            y={tierY + 30}
-                                            width={192}
-                                            height={18}
-                                            rx={7}
-                                            fill="#CCD1C6"
-                                            style={{ opacity: morphProgress }}
-                                        />
+                                        {miniParcels
+                                            .filter((p) => p.shelf === tierIdx)
+                                            .map((parcel) => {
+                                                const pRaw = progressBetween(elapsedMs, parcel.delayMs, 450);
+                                                const pSpring = springPhysics(pRaw, 4.4, 13.5);
+                                                const fillMap = {
+                                                    kraft: '#D49658',
+                                                    dark: colors.inkBlack,
+                                                    green: colors.vyteGreen,
+                                                };
+                                                return (
+                                                    <g
+                                                        key={parcel.id}
+                                                        style={{
+                                                            transformOrigin: `${parcel.x + parcel.w / 2}px ${parcel.y + parcel.h}px`,
+                                                            transform: `translateY(${(1 - pSpring) * -26}px) scale(${0.3 + 0.7 * pSpring})`,
+                                                            opacity: Math.min(1, pRaw * 4),
+                                                        }}
+                                                    >
+                                                        <rect
+                                                            x={parcel.x}
+                                                            y={parcel.y}
+                                                            width={parcel.w}
+                                                            height={parcel.h}
+                                                            rx={6}
+                                                            fill={fillMap[parcel.tone]}
+                                                        />
+                                                        <rect
+                                                            x={parcel.x + parcel.w / 2 - 4}
+                                                            y={parcel.y}
+                                                            width={8}
+                                                            height={parcel.h * 0.45}
+                                                            rx={1.5}
+                                                            fill={parcel.tone === 'green' ? '#FFFFFF' : colors.vyteGreen}
+                                                            opacity={0.9}
+                                                        />
+                                                        <rect
+                                                            x={parcel.x + 6}
+                                                            y={parcel.y + parcel.h - 11}
+                                                            width={16}
+                                                            height={6}
+                                                            rx={1.5}
+                                                            fill="#FFFFFF"
+                                                            opacity={0.85}
+                                                        />
+                                                    </g>
+                                                );
+                                            })}
 
-                                        {/* Pill indicator / Drawer handle */}
-                                        <rect
-                                            x={morphProgress > 0.5 ? 382 : 332}
-                                            y={morphProgress > 0.5 ? tierY + 36 : tierY + 22}
-                                            width={morphProgress > 0.5 ? 36 : 14}
-                                            height={morphProgress > 0.5 ? 6 : 14}
-                                            rx={morphProgress > 0.5 ? 3 : 7}
-                                            fill={idx === 1 || morphProgress < 0.5 ? colors.vyteGreen : colors.inkBlack}
-                                        />
+                                        <g style={{ opacity: Math.min(1, tMorph * 1.5) }}>
+                                            <rect x={300} y={tierY + 38} width={200} height={20} rx={8} fill="#CFD6C9" />
+                                            <rect
+                                                x={380}
+                                                y={tierY + 45}
+                                                width={40}
+                                                height={6}
+                                                rx={3}
+                                                fill={tierIdx === 1 ? colors.vyteGreen : colors.inkBlack}
+                                            />
+                                        </g>
                                     </g>
                                 );
                             })}
                         </g>
 
-                        {/* DROP BOX: COMPLETELY INVISIBLE UNTIL IMPACT AT T_CONTACT */}
-                        {isContacted && (
+                        {/* 2. MASTER CORRUGATED LOGISTICS CARTON */}
+                        {elapsedMs >= 1350 && (
                             <g
-                                filter="url(#soft-depth-shadow)"
+                                filter="url(#vyte-elevated-shadow)"
                                 style={{
-                                    transformOrigin: '400px 330px',
-                                    transform: `translateY(${boxSpringY}px) scaleY(${boxScaleY}) scaleX(${boxScaleX})`,
+                                    transformOrigin: '400px 270px',
+                                    transform: `translateY(${(1 - tCartonRise) * 140}px) scale(${0.86 + 0.14 * tCartonRise})`,
+                                    opacity: Math.min(1, progressBetween(elapsedMs, 1350, 200) * 2),
                                 }}
                             >
-                                {/* Solid Kraft Face */}
-                                <rect x={276} y={262} width={248} height={148} rx={18} fill={boxColors.exteriorLight} />
-
-                                {/* Right-Side Depth Shading */}
-                                <path
-                                    d="M 504 262 L 524 262 C 524 262 524 392 524 392 C 524 402 516 410 504 410 L 504 410 Z"
-                                    fill={boxColors.exteriorDark}
-                                />
-
-                                {/* Drop Slot Inset */}
-                                <rect x={298} y={276} width={204} height={10} rx={5} fill={boxColors.exteriorDark} />
-
-                                {/* Shipment Label */}
-                                <g transform="translate(304, 308)">
-                                    <rect x={0} y={0} width={76} height={50} rx={6} fill={boxColors.labelPlate} />
-                                    <rect x={8} y={10} width={22} height={8} rx={2} fill={boxColors.statusDot} />
-                                    <rect x={8} y={24} width={60} height={4} rx={2} fill="#A6ACB5" />
-                                    <rect x={8} y={34} width={40} height={4} rx={2} fill="#CCD1D9" />
+                                <g
+                                    style={{
+                                        transformOrigin: '400px 168px',
+                                        transform: `scaleY(${1 - tFlapsClose * 0.88})`,
+                                        opacity: 1 - tFlapsClose * 0.6,
+                                    }}
+                                >
+                                    <polygon points="264,168 310,124 398,124 398,168" fill="url(#kraft-flap-grad)" />
+                                    <polygon points="536,168 490,124 402,124 402,168" fill="url(#kraft-flap-grad)" />
                                 </g>
 
-                                {/* Green Sealing Tape */}
+                                <rect x={264} y={166} width={272} height={186} rx={20} fill="url(#kraft-box-grad)" />
+
+                                <path
+                                    d="M 512 166 L 536 166 L 536 332 C 536 343 527 352 516 352 L 512 352 Z"
+                                    fill="#A96B31"
+                                />
+
+                                <line
+                                    x1={276}
+                                    y1={174}
+                                    x2={524}
+                                    y2={174}
+                                    stroke="#9D622B"
+                                    strokeWidth={3}
+                                    strokeLinecap="round"
+                                    opacity={tFlapsClose}
+                                />
+
                                 <rect
-                                    x={386}
-                                    y={246}
-                                    width={28}
-                                    height={156}
-                                    rx={4}
-                                    fill={boxColors.sealTape}
+                                    x={384}
+                                    y={160}
+                                    width={32}
+                                    height={196}
+                                    rx={6}
+                                    fill={colors.vyteGreen}
                                     style={{
-                                        transformOrigin: '400px 246px',
-                                        transform: `scaleY(${tapeProgress})`,
-                                        opacity: tapeProgress > 0 ? 1 : 0,
+                                        transformOrigin: '400px 160px',
+                                        transform: `scaleY(${tTapeSeal})`,
+                                        opacity: tTapeSeal > 0.02 ? 1 : 0,
                                     }}
                                 />
 
-                                {/* Speed Lines during dispatch */}
-                                {shipProgress > 0 && (
-                                    <g style={{ opacity: Math.sin(shipProgress * Math.PI) }}>
-                                        <rect x={226} y={290} width={36} height={6} rx={3} fill={colors.vyteGreen} />
-                                        <rect x={196} y={325} width={66} height={6} rx={3} fill={colors.vyteGreen} />
-                                        <rect x={238} y={360} width={24} height={6} rx={3} fill={colors.vyteGreen} />
+                                <g
+                                    transform="translate(290, 250)"
+                                    style={{
+                                        transformOrigin: '44px 30px',
+                                        transform: `scale(${0.6 + 0.4 * tTapeSeal})`,
+                                        opacity: Math.min(1, tTapeSeal * 1.8),
+                                    }}
+                                >
+                                    <rect x={0} y={0} width={84} height={58} rx={8} fill="#FFFFFF" />
+                                    <circle cx={16} cy={16} r={5} fill={colors.vyteGreen} />
+                                    <rect x={26} y={12} width={44} height={8} rx={3} fill={colors.inkBlack} />
+                                    <rect x={11} y={28} width={62} height={5} rx={2.5} fill="#94A3B8" />
+                                    <rect x={11} y={38} width={46} height={5} rx={2.5} fill="#CBD5E1" />
+                                    <rect x={11} y={47} width={56} height={4} rx={2} fill={colors.vyteGreen} />
+                                </g>
+
+                                {shipRaw > 0.18 && (
+                                    <g style={{ opacity: Math.sin(((shipRaw - 0.18) / 0.82) * Math.PI) }}>
+                                        <rect x={175} y={195} width={68} height={7} rx={3.5} fill={colors.vyteGreen} />
+                                        <rect x={135} y={248} width={108} height={8} rx={4} fill={colors.inkBlack} />
+                                        <rect x={190} y={302} width={52} height={7} rx={3.5} fill={colors.vyteGreen} />
                                     </g>
                                 )}
                             </g>
@@ -349,52 +392,63 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
                     </g>
                 )}
 
-                {/* ============================================================
-            GROUP 2: VYTE LOGO ARRIVES FROM THE OPPOSITE SIDE (LEFT -> CENTER)
-           ============================================================ */}
-                {elapsedMs >= T_LOGO_START && (
-                    <g
-                        style={{
-                            transform: `translate(${logoArrivalX}px, 0px)`,
-                            opacity: logoOpacity,
-                            pointerEvents: 'none',
-                        }}
-                    >
-                        {/* V - Left Stem */}
-                        <path d={glyphs.V_leftLeg.d} fill={glyphs.V_leftLeg.fill} />
+                {/* ACT 4: VYTE LOGO STAGGERED SPRING REVEAL */}
+                {elapsedMs >= 2220 && (
+                    <g style={{ pointerEvents: 'none' }}>
+                        <g
+                            style={{
+                                transformOrigin: '245px 235px',
+                                transform: `translate(${vSpring.translateX}px, ${vSpring.translateY}px) scale(${vSpring.scale})`,
+                                opacity: vSpring.opacity,
+                            }}
+                        >
+                            <path d={glyphs.V_leftLeg.d} fill={glyphs.V_leftLeg.fill} />
+                            <path d={glyphs.V_rightGreenSlash.d} fill={glyphs.V_rightGreenSlash.fill} />
+                        </g>
 
-                        {/* V - Right Green Slash */}
-                        <path d={glyphs.V_rightGreenSlash.d} fill={glyphs.V_rightGreenSlash.fill} />
+                        <g
+                            style={{
+                                transformOrigin: '410px 295px',
+                                transform: `translate(${ySpring.translateX}px, ${ySpring.translateY}px) scale(${ySpring.scale})`,
+                                opacity: ySpring.opacity,
+                            }}
+                        >
+                            <path d={glyphs.y_leftFork.d} fill={glyphs.y_leftFork.fill} />
+                            <path d={glyphs.y_descender.d} fill={glyphs.y_descender.fill} />
+                            <circle
+                                cx={glyphs.y_topGreenDot.cx}
+                                cy={glyphs.y_topGreenDot.cy}
+                                r={glyphs.y_topGreenDot.r}
+                                fill={glyphs.y_topGreenDot.fill}
+                            />
+                            <circle
+                                cx={glyphs.y_bottomGreenDot.cx}
+                                cy={glyphs.y_bottomGreenDot.cy}
+                                r={glyphs.y_bottomGreenDot.r}
+                                fill={glyphs.y_bottomGreenDot.fill}
+                            />
+                        </g>
 
-                        {/* y - Left Fork */}
-                        <path d={glyphs.y_leftFork.d} fill={glyphs.y_leftFork.fill} />
+                        <g
+                            style={{
+                                transformOrigin: '560px 245px',
+                                transform: `translate(${tSpring.translateX}px, ${tSpring.translateY}px) scale(${tSpring.scale})`,
+                                opacity: tSpring.opacity,
+                            }}
+                        >
+                            <path d={glyphs.t_body.d} fill={glyphs.t_body.fill} />
+                        </g>
 
-                        {/* y - Right Descender Hook */}
-                        <path d={glyphs.y_descender.d} fill={glyphs.y_descender.fill} />
+                        <g
+                            style={{
+                                transformOrigin: '715px 270px',
+                                transform: `translate(${eSpring.translateX}px, ${eSpring.translateY}px) scale(${eSpring.scale})`,
+                                opacity: eSpring.opacity,
+                            }}
+                        >
+                            <path d={glyphs.e_body.d} fill={glyphs.e_body.fill} fillRule="evenodd" />
+                        </g>
 
-                        {/* y - Top Green Node */}
-                        <circle
-                            cx={glyphs.y_topGreenDot.cx}
-                            cy={glyphs.y_topGreenDot.cy}
-                            r={glyphs.y_topGreenDot.r}
-                            fill={glyphs.y_topGreenDot.fill}
-                        />
-
-                        {/* y - Bottom Green Node */}
-                        <circle
-                            cx={glyphs.y_bottomGreenDot.cx}
-                            cy={glyphs.y_bottomGreenDot.cy}
-                            r={glyphs.y_bottomGreenDot.r}
-                            fill={glyphs.y_bottomGreenDot.fill}
-                        />
-
-                        {/* t - Body */}
-                        <path d={glyphs.t_body.d} fill={glyphs.t_body.fill} />
-
-                        {/* e - Body */}
-                        <path d={glyphs.e_body.d} fill={glyphs.e_body.fill} fillRule="evenodd" />
-
-                        {/* Subtitle: INVENTORY MANAGEMENT */}
                         <text
                             x={subtitle.x}
                             y={subtitle.y}
@@ -404,6 +458,8 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
                                 fontSize: `${subtitle.fontSize}px`,
                                 fontWeight: subtitle.fontWeight,
                                 letterSpacing: subtitle.letterSpacing,
+                                opacity: subSpring.opacity,
+                                transform: `translateY(${(1 - subSpring.opacity) * 14}px)`,
                             }}
                         >
                             {subtitle.text}
@@ -411,87 +467,6 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
                     </g>
                 )}
             </svg>
-
-            {/* Optional Timeline Debug Scrubber Bar */}
-            {showDebugControls && (
-                <div
-                    style={{
-                        position: 'fixed',
-                        bottom: 28,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 14,
-                        padding: '10px 18px',
-                        borderRadius: 999,
-                        backgroundColor: '#FFFFFF',
-                        boxShadow: '0 10px 30px rgba(11, 12, 14, 0.12)',
-                        fontSize: 13,
-                        color: colors.inkBlack,
-                    }}
-                >
-                    <button
-                        onClick={() => setIsPlaying((p) => !p)}
-                        style={{
-                            border: 'none',
-                            background: colors.inkBlack,
-                            color: '#FFF',
-                            borderRadius: 999,
-                            padding: '6px 14px',
-                            cursor: 'pointer',
-                            fontWeight: 600,
-                        }}
-                    >
-                        {isPlaying ? 'Pause' : 'Play'}
-                    </button>
-
-                    <button
-                        onClick={handleReplay}
-                        style={{
-                            border: 'none',
-                            background: colors.drawerTrack,
-                            color: colors.inkBlack,
-                            borderRadius: 999,
-                            padding: '6px 12px',
-                            cursor: 'pointer',
-                            fontWeight: 600,
-                        }}
-                    >
-                        Replay
-                    </button>
-
-                    <input
-                        type="range"
-                        min={0}
-                        max={totalDuration}
-                        value={elapsedMs}
-                        onChange={(e) => {
-                            setIsPlaying(false);
-                            setElapsedMs(Number(e.target.value));
-                        }}
-                        style={{ width: 220, accentColor: colors.vyteGreen, cursor: 'pointer' }}
-                    />
-
-                    <span
-                        style={{
-                            fontVariantNumeric: 'tabular-nums',
-                            fontWeight: 600,
-                            minWidth: 155,
-                            color: colors.vyteGreen,
-                        }}
-                    >
-            {elapsedMs < T_MORPH_START
-                ? 'DATABASE'
-                : elapsedMs < T_CONTACT
-                    ? 'DRAWER DROP'
-                    : elapsedMs < T_SHIP_START
-                        ? 'BOX SPRING'
-                        : elapsedMs < T_LOGO_START
-                            ? 'SHIP'
-                            : 'LOGO ARRIVAL'}{' '}
-                        ({(elapsedMs / 1000).toFixed(2)}s)
-          </span>
-                </div>
-            )}
         </div>
     );
 };

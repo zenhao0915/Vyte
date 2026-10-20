@@ -1,7 +1,18 @@
 // src/components/layout/Sidebar.tsx
-import React from 'react';
-import { Package, AlertTriangle, FileText, BarChart3, Search, ShieldCheck } from 'lucide-react';
+import React, { useState } from 'react';
+import {
+    Box,
+    TrendingUp,
+    MessageSquare,
+    AlertTriangle,
+    FileText,
+    Search,
+    ShieldCheck,
+    ChevronLeft,
+    ChevronRight,
+} from 'lucide-react';
 import type { ActiveTab } from '../../types/orbyte';
+import { VyteLogo } from '../common/VyteLogo';
 
 interface SidebarProps {
     activeTab: ActiveTab;
@@ -11,6 +22,7 @@ interface SidebarProps {
     searchQuery: string;
     setSearchQuery: (q: string) => void;
     pendingRestockCount: number;
+    pendingOrderCount: number;
     pendingQcCount: number;
     pendingInvoiceCount: number;
     totalProductCount: number;
@@ -24,150 +36,242 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                                     searchQuery,
                                                     setSearchQuery,
                                                     pendingRestockCount,
+                                                    pendingOrderCount,
                                                     pendingQcCount,
                                                     pendingInvoiceCount,
                                                     totalProductCount,
                                                 }) => {
+    const [isCollapsed, setIsCollapsed] = useState(false);
+
+    const coreModules = [
+        {
+            id: 'mod1' as ActiveTab,
+            label: 'Auto Restock',
+            icon: Box,
+            iconColor: 'text-emerald-600',
+            badge: String(pendingRestockCount),
+            badgeClass: 'bg-amber-100 text-amber-800',
+        },
+        {
+            id: 'mod2' as ActiveTab,
+            label: 'Sales Analytics',
+            icon: TrendingUp,
+            iconColor: 'text-blue-600',
+            badge: 'AI',
+            badgeClass: 'bg-blue-100 text-blue-700 rounded-md',
+        },
+        {
+            id: 'mod3' as ActiveTab,
+            label: 'Order Status',
+            icon: MessageSquare,
+            iconColor: 'text-purple-600',
+            badge: String(pendingOrderCount),
+            badgeClass: 'bg-purple-100 text-purple-700',
+        },
+        {
+            id: 'mod4' as ActiveTab,
+            label: 'Quality & Expiry',
+            icon: AlertTriangle,
+            iconColor: 'text-rose-600',
+            badge: String(pendingQcCount),
+            badgeClass: 'bg-rose-100 text-rose-700',
+        },
+        {
+            id: 'mod5' as ActiveTab,
+            label: 'Smart Invoices',
+            icon: FileText,
+            iconColor: 'text-emerald-600',
+            badge: String(pendingInvoiceCount),
+            badgeClass: 'bg-emerald-100 text-emerald-700',
+        },
+    ];
+
     return (
-        <aside className="w-64 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0">
+        <aside
+            className={`${
+                isCollapsed ? 'w-20' : 'w-64'
+            } bg-white border-r border-slate-200/90 flex flex-col justify-between shrink-0 transition-all duration-300 ease-in-out relative select-none`}
+        >
+            {/* Collapse Toggle Button */}
+            <button
+                type="button"
+                onClick={() => setIsCollapsed(!isCollapsed)}
+                title={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+                className="w-6 h-6 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center text-slate-500 hover:text-emerald-600 hover:border-emerald-300 absolute -right-3 top-7 z-20 transition cursor-pointer"
+            >
+                {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
+            </button>
+
             <div>
-                <div className="p-6 flex items-center gap-3 border-b border-slate-100">
-                    <div className="w-9 h-9 rounded-lg bg-emerald-500 flex items-center justify-center text-white font-bold text-lg shadow-sm">
-                        O
-                    </div>
-                    <div>
-                        <h1 className="font-bold text-slate-900 text-lg leading-none">orbyteflow</h1>
-                        <span className="text-xs text-slate-400">Smart SME Hub • Domain 2</span>
-                    </div>
+                {/* Official Vyte Brand Header */}
+                <div className="p-5 flex items-center justify-center border-b border-slate-100">
+                    {isCollapsed ? (
+                        <VyteLogo iconOnly={true} className="h-8 w-auto" />
+                    ) : (
+                        <VyteLogo variant="dark-text" showSubtitle={true} className="h-12 w-auto" />
+                    )}
                 </div>
 
-                <div className="p-4">
-                    <div className="relative">
-                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                        <input
-                            type="text"
-                            placeholder="Search SKU or item..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500"
-                        />
-                    </div>
-                </div>
-
-                <nav className="px-3 space-y-1">
-                    <p className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                        Zi Yun's Modules (1, 4, 5)
-                    </p>
-                    <button
-                        onClick={() => setActiveTab('mod1')}
-                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition ${
-                            activeTab === 'mod1' ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-slate-50'
-                        }`}
-                    >
-            <span className="flex items-center gap-2.5">
-              <Package className="w-4 h-4" /> 1. Auto Restock
-            </span>
-                        <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-semibold">
-              {pendingRestockCount}
-            </span>
-                    </button>
-
-                    <button
-                        onClick={() => setActiveTab('mod4')}
-                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition ${
-                            activeTab === 'mod4' ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-slate-50'
-                        }`}
-                    >
-            <span className="flex items-center gap-2.5">
-              <AlertTriangle className="w-4 h-4" /> 4. Quality & Expiry
-            </span>
-                        <span className="bg-rose-100 text-rose-700 text-xs px-2 py-0.5 rounded-full font-semibold">
-              {pendingQcCount}
-            </span>
-                    </button>
-
-                    <button
-                        onClick={() => setActiveTab('mod5')}
-                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition ${
-                            activeTab === 'mod5' ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-slate-50'
-                        }`}
-                    >
-            <span className="flex items-center gap-2.5">
-              <FileText className="w-4 h-4" /> 5. AI Invoices
-            </span>
-                        <span className="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full font-semibold">
-              {pendingInvoiceCount}
-            </span>
-                    </button>
-
-                    <div className="pt-4">
-                        <p className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                            Jayden's Modules (2, 3)
-                        </p>
+                {/* Search Input */}
+                <div className="p-3.5">
+                    {isCollapsed ? (
                         <button
-                            onClick={() => setActiveTab('mod2_3')}
-                            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition ${
-                                activeTab === 'mod2_3' ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-slate-50'
-                            }`}
+                            type="button"
+                            onClick={() => setIsCollapsed(false)}
+                            title="Search SKU or item"
+                            className="w-full py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200/80 flex items-center justify-center text-slate-500 cursor-pointer"
                         >
-                            <BarChart3 className="w-4 h-4" /> 2 & 3. Sales & Orders
+                            <Search className="w-4 h-4" />
                         </button>
-                    </div>
+                    ) : (
+                        <div className="relative">
+                            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                            <input
+                                type="text"
+                                placeholder="Search SKU or item..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full pl-9 pr-3 py-2 bg-slate-50 text-slate-900 placeholder-slate-400 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-emerald-500 transition"
+                            />
+                        </div>
+                    )}
+                </div>
 
-                    <div className="pt-4">
-                        <p className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                            Universal SME Profiles
+                {/* CORE MODULES NAVIGATION */}
+                <nav className="px-3 space-y-1.5">
+                    {!isCollapsed && (
+                        <p className="px-3 pt-2 pb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                            CORE MODULES
                         </p>
+                    )}
+
+                    {coreModules.map((mod) => {
+                        const Icon = mod.icon;
+                        const isActive = activeTab === mod.id;
+                        return (
+                            <button
+                                key={mod.id}
+                                onClick={() => setActiveTab(mod.id)}
+                                title={isCollapsed ? mod.label : undefined}
+                                className={`w-full flex items-center ${
+                                    isCollapsed ? 'justify-center px-2 py-3' : 'justify-between px-3.5 py-2.5'
+                                } rounded-xl text-sm transition-all cursor-pointer border ${
+                                    isActive
+                                        ? 'bg-[#EBFDF2] border-[#A7F3D0] text-emerald-950 font-bold shadow-[0_1px_2px_rgba(16,185,129,0.06)]'
+                                        : 'border-transparent text-slate-700 font-medium hover:bg-slate-50'
+                                }`}
+                            >
+                                <span className="flex items-center gap-3">
+                                    <Icon className={`w-4 h-4 shrink-0 ${mod.iconColor}`} />
+                                    {!isCollapsed && <span>{mod.label}</span>}
+                                </span>
+
+                                {!isCollapsed && (
+                                    <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${mod.badgeClass}`}>
+                                        {mod.badge}
+                                    </span>
+                                )}
+                            </button>
+                        );
+                    })}
+
+                    {/* SME INDUSTRY PROFILES */}
+                    <div className="pt-5 space-y-1">
+                        {!isCollapsed && (
+                            <p className="px-3 pb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                                SME INDUSTRY PROFILES
+                            </p>
+                        )}
+
                         <button
                             onClick={() => setIndustryFilter('ALL')}
-                            className={`w-full text-left px-3 py-1.5 text-xs rounded flex items-center justify-between ${
-                                industryFilter === 'ALL' ? 'font-bold text-slate-900 bg-slate-100' : 'text-slate-600'
+                            title="All SME Templates"
+                            className={`w-full text-left ${
+                                isCollapsed ? 'flex justify-center py-2' : 'px-3.5 py-2 flex items-center justify-between'
+                            } text-xs rounded-xl transition cursor-pointer ${
+                                industryFilter === 'ALL'
+                                    ? 'font-bold text-slate-900 bg-slate-100/90'
+                                    : 'text-slate-600 hover:bg-slate-50 font-medium'
                             }`}
                         >
-                            <span>• All SME Templates</span>
-                            <span className="bg-slate-200 px-1.5 py-0.5 rounded text-[10px]">{totalProductCount}</span>
+                            {isCollapsed ? (
+                                <span className="bg-slate-200 text-slate-700 px-2 py-0.5 rounded-md text-[10px] font-bold">
+                                    {totalProductCount}
+                                </span>
+                            ) : (
+                                <>
+                                    <span>• All SME Templates</span>
+                                    <span className="bg-slate-200/80 text-slate-700 px-2 py-0.5 rounded-md text-[11px] font-bold">
+                                        {totalProductCount}
+                                    </span>
+                                </>
+                            )}
                         </button>
+
                         <button
                             onClick={() => setIndustryFilter('FNB_PERISHABLE')}
-                            className={`w-full text-left px-3 py-1.5 text-xs rounded flex items-center justify-between ${
-                                industryFilter === 'FNB_PERISHABLE' ? 'font-bold text-rose-600 bg-rose-50' : 'text-slate-600'
+                            title="F&B / Perishable"
+                            className={`w-full text-left ${
+                                isCollapsed ? 'flex justify-center py-2.5' : 'px-3.5 py-2 flex items-center gap-2.5'
+                            } text-xs rounded-xl transition cursor-pointer ${
+                                industryFilter === 'FNB_PERISHABLE'
+                                    ? 'font-bold text-rose-700 bg-rose-50/90'
+                                    : 'text-slate-600 hover:bg-slate-50 font-medium'
                             }`}
                         >
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-rose-500"></span> F&B / Perishable
-              </span>
+                            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0"></span>
+                            {!isCollapsed && <span>F&amp;B / Perishable</span>}
                         </button>
+
                         <button
                             onClick={() => setIndustryFilter('RETAIL_VARIANT')}
-                            className={`w-full text-left px-3 py-1.5 text-xs rounded flex items-center justify-between ${
-                                industryFilter === 'RETAIL_VARIANT' ? 'font-bold text-blue-600 bg-blue-50' : 'text-slate-600'
+                            title="Retail & Variants"
+                            className={`w-full text-left ${
+                                isCollapsed ? 'flex justify-center py-2.5' : 'px-3.5 py-2 flex items-center gap-2.5'
+                            } text-xs rounded-xl transition cursor-pointer ${
+                                industryFilter === 'RETAIL_VARIANT'
+                                    ? 'font-bold text-blue-700 bg-blue-50/90'
+                                    : 'text-slate-600 hover:bg-slate-50 font-medium'
                             }`}
                         >
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-blue-500"></span> Retail & Variants
-              </span>
+                            <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0"></span>
+                            {!isCollapsed && <span>Retail &amp; Variants</span>}
                         </button>
+
                         <button
                             onClick={() => setIndustryFilter('B2B_RAW_MATERIAL')}
-                            className={`w-full text-left px-3 py-1.5 text-xs rounded flex items-center justify-between ${
-                                industryFilter === 'B2B_RAW_MATERIAL' ? 'font-bold text-emerald-600 bg-emerald-50' : 'text-slate-600'
+                            title="B2B & Packaging"
+                            className={`w-full text-left ${
+                                isCollapsed ? 'flex justify-center py-2.5' : 'px-3.5 py-2 flex items-center gap-2.5'
+                            } text-xs rounded-xl transition cursor-pointer ${
+                                industryFilter === 'B2B_RAW_MATERIAL'
+                                    ? 'font-bold text-emerald-800 bg-[#EBFDF2]'
+                                    : 'text-slate-600 hover:bg-slate-50 font-medium'
                             }`}
                         >
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500"></span> B2B & Packaging
-              </span>
+                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0"></span>
+                            {!isCollapsed && <span>B2B &amp; Packaging</span>}
                         </button>
                     </div>
                 </nav>
             </div>
 
-            <div className="p-4 m-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1">
-                <div className="flex items-center gap-1.5 font-semibold text-slate-700">
-                    <ShieldCheck className="w-4 h-4 text-emerald-600" /> Orbyte Connected Hub
-                </div>
-                <p className="text-slate-500 leading-relaxed">
-                    100% Synthetic Data • Malaysia PDPA Compliant • Human-in-the-Loop Active
-                </p>
+            {/* Footer Compliance Card */}
+            <div className="p-3 m-3 bg-slate-50 rounded-xl border border-slate-200/80 text-xs">
+                {isCollapsed ? (
+                    <div className="flex justify-center" title="Vyte Connected Hub • PDPA Compliant">
+                        <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    </div>
+                ) : (
+                    <div className="space-y-1">
+                        <div className="flex items-center gap-1.5 font-semibold text-slate-700">
+                            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" /> Vyte Connected Hub
+                        </div>
+                        <p className="text-slate-500 text-[11px] leading-relaxed">
+                            Malaysia PDPA Compliant • Human-in-the-Loop Active
+                        </p>
+                    </div>
+                )}
             </div>
         </aside>
     );
