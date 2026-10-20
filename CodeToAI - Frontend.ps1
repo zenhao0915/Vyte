@@ -1,0 +1,1 @@
+Get-ChildItem -Path orbyteflow/src -Recurse -Include *.ts,*.tsx,*.css | ForEach-Object { "`n========== FILE: $($_.FullName) ==========`n"; Get-Content $_.FullName -Raw } | Set-Content frontend_code.txt -Encoding UTF8
