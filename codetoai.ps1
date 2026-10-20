@@ -1,0 +1,1 @@
+Get-ChildItem -Path src -Recurse -Include *.kt,*.sq,*.kts | ForEach-Object { "`n========== FILE: $($_.FullName) ==========`n"; Get-Content $_.FullName -Raw } | Set-Content all_code.txt -Encoding UTF8
