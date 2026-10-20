@@ -1,6 +1,7 @@
 package com.hazendust.vyte.manager
 
 import com.hazendust.vyte.route.order.OrderController
+import com.hazendust.vyte.route.restock.RestockController
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -12,7 +13,8 @@ interface BaseRouteController {
 
 object RouteManager {
     private val controllers: List<BaseRouteController> = listOf(
-        OrderController
+        OrderController,
+        RestockController
     )
 
     fun registerAll(route: Route) {

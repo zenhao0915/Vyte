@@ -14,7 +14,7 @@ object Configs {
     }
 
     object Backend : Configurable("BackEnd") {
-        var serviceName by value("ServiceName", "NodusPosServer")
+        var serviceName by value("ServiceName", "Vyte Server")
         var serviceHost by value("ServiceHost", "0.0.0.0")
         var servicePort by value("ServicePort", 8080)
     }
