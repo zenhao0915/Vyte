@@ -44,3 +44,8 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+
+all_code.txt
+vyte.db
+vyte.db-shm
+vyte.db-wal
