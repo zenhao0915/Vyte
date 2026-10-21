@@ -11,7 +11,8 @@ import {
     ArrowDownLeft,
     X,
 } from 'lucide-react';
-import type { InvoiceItem, UserRole } from '../../types/orbyte';
+import type { InvoiceItem, UserRole } from '../../types/vyte.ts';
+import { VyteDropdown } from '../../components/common/VyteDropdown';
 
 interface InvoiceModuleProps {
     invoices: InvoiceItem[];
@@ -31,7 +32,6 @@ const ACCOUNTING_CATEGORIES = [
     'Store Utilities & Equipment Maintenance',
 ];
 
-// Strips leading zeros and bounds amount input to max 7 digits + 2 decimals
 const sanitizeBoundedDecimal = (raw: string): string => {
     const cleaned = raw.replace(/[^0-9.]/g, '');
     const parts = cleaned.split('.');
@@ -39,6 +39,7 @@ const sanitizeBoundedDecimal = (raw: string): string => {
     return parts.length > 1 ? `${intPart || '0'}.${parts[1].slice(0, 2)}` : intPart;
 };
 
+/** @Composable */
 export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                                                                 invoices,
                                                                 role,
@@ -51,13 +52,14 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
     const [selectedCategories, setSelectedCategories] = useState<Record<string, string>>({});
     const [showUploadForm, setShowUploadForm] = useState<boolean>(false);
 
-    // Validated Upload Form State
     const [invNo, setInvNo] = useState<string>('');
     const [invType, setInvType] = useState<'SUPPLIER_PAYABLE' | 'CUSTOMER_RECEIVABLE'>('SUPPLIER_PAYABLE');
     const [partyName, setPartyName] = useState<string>('');
     const [amountInput, setAmountInput] = useState<string>('');
     const [rawLineDescription, setRawLineDescription] = useState<string>('');
     const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+    const canApprove = role === 'SME_OWNER' || role === 'MANAGER';
 
     const filtered = invoices.filter((inv) => {
         const matchDir = directionFilter === 'ALL' || inv.type === directionFilter;
@@ -149,7 +151,7 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
     };
 
     return (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden space-y-4">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs space-y-4 pb-6">
             <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-4">
                 <div>
                     <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
@@ -162,13 +164,15 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
 
                 <div className="flex items-center gap-3">
                     <div className="hidden sm:flex items-center gap-3 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 text-xs">
-            <span className="flex items-center gap-1 text-amber-700 font-bold">
-              <ArrowUpRight className="w-3.5 h-3.5" /> Payables: RM {totalPayablesRM.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </span>
+                        <span className="flex items-center gap-1 text-amber-700 font-bold">
+                            <ArrowUpRight className="w-3.5 h-3.5" /> Payables: RM{' '}
+                            {totalPayablesRM.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </span>
                         <span className="text-slate-300">|</span>
                         <span className="flex items-center gap-1 text-blue-700 font-bold">
-              <ArrowDownLeft className="w-3.5 h-3.5" /> Receivables: RM {totalReceivablesRM.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </span>
+                            <ArrowDownLeft className="w-3.5 h-3.5" /> Receivables: RM{' '}
+                            {totalReceivablesRM.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </span>
                     </div>
 
                     <button
@@ -200,7 +204,7 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                                 setInvNo(e.target.value);
                                 if (formErrors.invNo) setFormErrors({ ...formErrors, invNo: '' });
                             }}
-                            className={`w-full px-3 py-2 rounded-lg bg-white border ${
+                            className={`w-full px-3 py-2 rounded-xl bg-white border ${
                                 formErrors.invNo ? 'border-rose-500' : 'border-slate-300'
                             }`}
                         />
@@ -213,14 +217,15 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
 
                     <div>
                         <label className="font-bold text-slate-700 block mb-1">Invoice Direction *</label>
-                        <select
+                        <VyteDropdown
+                            variant="light"
                             value={invType}
-                            onChange={(e) => setInvType(e.target.value as 'SUPPLIER_PAYABLE' | 'CUSTOMER_RECEIVABLE')}
-                            className="w-full px-3 py-2 rounded-lg bg-white border border-slate-300 font-semibold text-slate-900"
-                        >
-                            <option value="SUPPLIER_PAYABLE">Supplier Bill (Payable)</option>
-                            <option value="CUSTOMER_RECEIVABLE">Customer Invoice (Receivable)</option>
-                        </select>
+                            onChange={(val) => setInvType(val)}
+                            options={[
+                                { label: 'Supplier Bill (Payable)', value: 'SUPPLIER_PAYABLE' },
+                                { label: 'Customer Invoice (Receivable)', value: 'CUSTOMER_RECEIVABLE' },
+                            ]}
+                        />
                     </div>
 
                     <div>
@@ -234,7 +239,7 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                                 setPartyName(e.target.value);
                                 if (formErrors.partyName) setFormErrors({ ...formErrors, partyName: '' });
                             }}
-                            className={`w-full px-3 py-2 rounded-lg bg-white border ${
+                            className={`w-full px-3 py-2 rounded-xl bg-white border ${
                                 formErrors.partyName ? 'border-rose-500' : 'border-slate-300'
                             }`}
                         />
@@ -256,7 +261,7 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                                 setAmountInput(sanitizeBoundedDecimal(e.target.value));
                                 if (formErrors.amountInput) setFormErrors({ ...formErrors, amountInput: '' });
                             }}
-                            className={`w-full px-3 py-2 rounded-lg bg-white border ${
+                            className={`w-full px-3 py-2 rounded-xl bg-white border ${
                                 formErrors.amountInput ? 'border-rose-500' : 'border-slate-300'
                             }`}
                         />
@@ -280,7 +285,7 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                                 setRawLineDescription(e.target.value);
                                 if (formErrors.rawLineDescription) setFormErrors({ ...formErrors, rawLineDescription: '' });
                             }}
-                            className={`w-full px-3 py-2 rounded-lg bg-white border ${
+                            className={`w-full px-3 py-2 rounded-xl bg-white border ${
                                 formErrors.rawLineDescription ? 'border-rose-500' : 'border-slate-300'
                             }`}
                         />
@@ -294,7 +299,7 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                     <div className="flex items-end">
                         <button
                             type="submit"
-                            className="w-full py-2 px-4 bg-[#2BB656] hover:bg-emerald-600 text-white font-bold rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer"
+                            className="w-full py-2 px-4 bg-[#2BB656] hover:bg-emerald-600 text-white font-bold rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer"
                         >
                             <Sparkles className="w-3.5 h-3.5" /> Save &amp; AI Classify
                         </button>
@@ -369,26 +374,30 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                     {filtered.map((inv) => {
                         const source = getSourceBadge(inv);
                         const activeCategory = selectedCategories[inv.id] ?? inv.aiCategory;
+                        const categoryOptions = [
+                            inv.aiCategory,
+                            ...ACCOUNTING_CATEGORIES.filter((c) => c !== inv.aiCategory),
+                        ].map((cat) => ({ label: cat, value: cat }));
 
                         return (
                             <tr key={inv.id} className="hover:bg-slate-50/80 transition">
                                 <td className="py-3 px-4 whitespace-nowrap">
                                     <p className="font-mono font-bold text-slate-900">{inv.invNo}</p>
                                     <span className={`inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-bold ${source.color}`}>
-                      {source.label}
-                    </span>
+                                            {source.label}
+                                        </span>
                                 </td>
 
                                 <td className="py-3 px-3 whitespace-nowrap">
-                    <span
-                        className={`px-2 py-0.5 rounded-md text-[11px] font-semibold ${
-                            inv.type === 'SUPPLIER_PAYABLE'
-                                ? 'bg-amber-50 text-amber-800'
-                                : 'bg-blue-50 text-blue-800'
-                        }`}
-                    >
-                      {inv.type === 'SUPPLIER_PAYABLE' ? 'Supplier Bill' : 'Customer Sales'}
-                    </span>
+                                        <span
+                                            className={`px-2 py-0.5 rounded-md text-[11px] font-semibold ${
+                                                inv.type === 'SUPPLIER_PAYABLE'
+                                                    ? 'bg-amber-50 text-amber-800'
+                                                    : 'bg-blue-50 text-blue-800'
+                                            }`}
+                                        >
+                                            {inv.type === 'SUPPLIER_PAYABLE' ? 'Supplier Bill' : 'Customer Sales'}
+                                        </span>
                                 </td>
 
                                 <td className="py-3 px-3 font-semibold text-slate-900 max-w-[200px] truncate">
@@ -399,40 +408,39 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                                 <td className="py-3 px-3">
                                     <div className="flex items-center gap-1.5">
                                         {inv.status === 'NEEDS_REVIEW' ? (
-                                            <select
+                                            <VyteDropdown
+                                                variant="purple"
+                                                size="sm"
                                                 value={activeCategory}
-                                                onChange={(e) =>
-                                                    setSelectedCategories({ ...selectedCategories, [inv.id]: e.target.value })
+                                                onChange={(val) =>
+                                                    setSelectedCategories({ ...selectedCategories, [inv.id]: val })
                                                 }
-                                                className="max-w-[230px] px-2 py-1 rounded-lg bg-purple-50/70 border border-purple-200 font-semibold text-purple-800 text-xs focus:outline-none"
-                                            >
-                                                <option value={inv.aiCategory}>{inv.aiCategory}</option>
-                                                {ACCOUNTING_CATEGORIES.filter((c) => c !== inv.aiCategory).map((cat) => (
-                                                    <option key={cat} value={cat}>
-                                                        {cat}
-                                                    </option>
-                                                ))}
-                                            </select>
+                                                options={categoryOptions}
+                                                className="w-[240px]"
+                                            />
                                         ) : (
                                             <span className="font-semibold text-purple-700">{inv.aiCategory}</span>
                                         )}
                                         <span className="bg-purple-100 text-purple-800 text-[10px] px-1.5 py-0.5 rounded font-bold shrink-0">
-                        {inv.aiConfidence}% AI
-                      </span>
+                                                {inv.aiConfidence}% AI
+                                            </span>
                                     </div>
                                 </td>
 
                                 <td className="py-3 px-3 whitespace-nowrap">
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                      <Check className="w-3 h-3" /> Ready
-                    </span>
+                                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                                            <Check className="w-3 h-3" /> Ready
+                                        </span>
                                 </td>
 
                                 <td className="py-3 px-3 font-bold text-slate-900 whitespace-nowrap">
-                                    RM {inv.amountRM.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    RM{' '}
+                                    {inv.amountRM.toLocaleString(undefined, {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                    })}
                                 </td>
 
-                                {/* Dedicated Toggle Button for Paid / Unpaid */}
                                 <td className="py-3 px-3 whitespace-nowrap">
                                     <button
                                         type="button"
@@ -454,12 +462,12 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                                             onClick={() => onVerifyInvoice(inv.id, activeCategory)}
                                             className="px-3 py-1.5 bg-amber-400 hover:bg-amber-500 text-slate-900 rounded-xl text-xs font-bold transition cursor-pointer"
                                         >
-                                            {role === 'SME_OWNER' ? 'Confirm Category' : 'Owner Only'}
+                                            {canApprove ? 'Confirm Category' : 'Owner / Manager Only'}
                                         </button>
                                     ) : (
                                         <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold inline-flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Verified
-                      </span>
+                                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Verified
+                                            </span>
                                     )}
                                 </td>
                             </tr>

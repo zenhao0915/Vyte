@@ -10,7 +10,7 @@ import {
     Lock,
     AlertCircle,
 } from 'lucide-react';
-import type { Product, UserRole } from '../../types/orbyte';
+import type { Product, UserRole } from '../../types/vyte.ts';
 
 interface RestockModuleProps {
     products: Product[];
@@ -243,12 +243,12 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                                             <button
                                                 onClick={() => handleApprovePO(item)}
                                                 className={`w-full px-3 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer whitespace-nowrap ${
-                                                    role === 'SME_OWNER'
+                                                    (role === 'SME_OWNER' || role === 'MANAGER')
                                                         ? 'bg-amber-500 hover:bg-amber-600 text-white'
                                                         : 'bg-slate-200 text-slate-600'
                                                 }`}
                                             >
-                                                {role === 'SME_OWNER' ? (
+                                                {(role === 'SME_OWNER' || role === 'MANAGER') ? (
                                                     <>
                                                         <Send className="w-3 h-3 shrink-0" />
                                                         Approve &amp; Contact (+{currentReorderVal || 0} {item.uom})

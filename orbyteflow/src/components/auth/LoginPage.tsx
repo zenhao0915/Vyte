@@ -1,13 +1,15 @@
 // src/components/auth/LoginPage.tsx
 import React, { useState } from 'react';
 import { Eye, EyeOff, ShieldCheck, Layers, CheckCircle2, TrendingUp, Box } from 'lucide-react';
-import type { UserRole, UserSession } from '../../types/orbyte';
+import type { UserRole, UserSession } from '../../types/vyte.ts';
 import { VyteLogo } from '../common/VyteLogo';
+import { VyteDropdown } from '../common/VyteDropdown';
 
 interface LoginPageProps {
     onAuthenticated: (session: UserSession) => void;
 }
 
+/** @Composable */
 export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
     const [mode, setMode] = useState<'register' | 'login'>('register');
     const [firstName, setFirstName] = useState('Jayden');
@@ -19,9 +21,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
     const [showPassword, setShowPassword] = useState(false);
     const [agreeTerms, setAgreeTerms] = useState(true);
 
+    const mapUserTypeToRole = (type: 'CEO' | 'Manager' | 'Staff'): UserRole => {
+        if (type === 'CEO') return 'SME_OWNER';
+        if (type === 'Manager') return 'MANAGER';
+        return 'OPERATIONS_STAFF';
+    };
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        const mappedRole: UserRole = userType === 'Staff' ? 'OPERATIONS_STAFF' : 'SME_OWNER';
+        const mappedRole = mapUserTypeToRole(userType);
         const fullName = `${firstName.trim() || 'Vyte'} ${lastName.trim() || 'Operator'}`.trim();
 
         onAuthenticated({
@@ -36,28 +44,26 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
     };
 
     const handleQuickSSO = (provider: 'Google' | 'SSO') => {
+        const mappedRole = mapUserTypeToRole(userType);
         onAuthenticated({
-            userID: 'M067',
+            userID: userType === 'CEO' ? 'M067' : userType === 'Manager' ? 'M102' : 'S204',
             userName: `Jayden Lai (${provider})`,
             email: 'jayden@vyte.my',
-            userType: 'CEO',
-            role: 'SME_OWNER',
-            companyName: 'Vyte Smart Logistics Sdn Bhd',
+            userType,
+            role: mappedRole,
+            companyName,
             companyOwnerName: 'Jayden Lai',
         });
     };
 
     return (
         <div className="min-h-screen bg-[#0B0C0E] flex items-center justify-center p-4 md:p-8 font-sans select-none">
-            {/* Ambient Emerald Glow */}
             <div className="fixed w-[580px] h-[580px] rounded-full bg-[#2BB656]/10 blur-[130px] pointer-events-none -top-24 -left-24" />
             <div className="fixed w-[520px] h-[520px] rounded-full bg-[#2BB656]/10 blur-[140px] pointer-events-none bottom-0 right-0" />
 
-            {/* Main Split Container */}
             <div className="w-full max-w-[1080px] bg-[#14181D] border border-slate-800/90 rounded-[28px] p-4 md:p-5 shadow-2xl grid grid-cols-1 lg:grid-cols-12 gap-6 relative z-10">
-                {/* LEFT SHOWCASE PANEL (Redesigned with Official Vyte Logo & No Clutter) */}
+                {/* LEFT SHOWCASE PANEL */}
                 <div className="lg:col-span-6 relative rounded-[22px] overflow-hidden min-h-[500px] lg:min-h-[620px] flex flex-col justify-between p-8 bg-gradient-to-br from-[#0F291E] via-[#0B1913] to-[#080B0E] border border-[#2BB656]/25">
-                    {/* Sculptural Background Geometry */}
                     <svg
                         viewBox="0 0 600 700"
                         preserveAspectRatio="none"
@@ -88,14 +94,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                         />
                     </svg>
 
-                    {/* Top Center: Official Vyte Logo Badge */}
                     <div className="relative z-10 flex flex-col items-center pt-4">
-                        <div className="bg-[#F6F7F4] px-8 py-6 rounded-2xl shadow-xl border border-white/80 flex items-center justify-center">
-                            <VyteLogo variant="dark-text" showSubtitle={true} className="h-20 w-auto" />
+                        <div className="bg-[#F6F7F4] px-7 py-5 rounded-2xl shadow-xl border border-white/80 flex items-center justify-center">
+                            <VyteLogo variant="dark-text" showSubtitle={true} className="h-24 w-auto" />
                         </div>
                     </div>
 
-                    {/* Middle: Glassmorphic Supply Chain Feature Cards */}
                     <div className="relative z-10 grid grid-cols-2 gap-3.5 my-auto py-6">
                         <div className="p-4 rounded-2xl bg-white/[0.06] backdrop-blur-md border border-white/10 space-y-1.5">
                             <div className="w-8 h-8 rounded-lg bg-[#2BB656]/20 text-[#2BB656] flex items-center justify-center">
@@ -118,7 +122,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                         </div>
                     </div>
 
-                    {/* Bottom Tagline */}
                     <div className="relative z-10 text-center space-y-2 pb-1">
                         <h2 className="text-2xl font-bold text-white tracking-tight">
                             Smart Inventory, Zero Stockouts
@@ -197,15 +200,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                                     />
                                 </div>
                                 <div className="sm:col-span-2">
-                                    <select
+                                    <VyteDropdown
+                                        variant="dark"
                                         value={userType}
-                                        onChange={(e) => setUserType(e.target.value as 'CEO' | 'Manager' | 'Staff')}
-                                        className="w-full px-3 py-2.5 rounded-xl bg-[#1E242B] border border-slate-700/80 text-emerald-400 font-semibold text-xs focus:outline-none focus:border-[#2BB656] transition cursor-pointer"
-                                    >
-                                        <option value="CEO" className="bg-[#1E242B] text-white">Role: CEO (Owner)</option>
-                                        <option value="Manager" className="bg-[#1E242B] text-white">Role: Manager</option>
-                                        <option value="Staff" className="bg-[#1E242B] text-white">Role: Ops Staff</option>
-                                    </select>
+                                        onChange={(val) => setUserType(val)}
+                                        options={[
+                                            { label: 'Role: Owner (CEO)', value: 'CEO' },
+                                            { label: 'Role: Manager', value: 'Manager' },
+                                            { label: 'Role: Ops Staff', value: 'Staff' },
+                                        ]}
+                                    />
                                 </div>
                             </div>
 
@@ -243,7 +247,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                                     </span>
                                 </label>
                                 <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
-                                    <CheckCircle2 className="w-3 h-3" /> Role Verified
+                                    <CheckCircle2 className="w-3 h-3" /> Role Locked on Login
                                 </span>
                             </div>
 

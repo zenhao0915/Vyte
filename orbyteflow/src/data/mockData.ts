@@ -1,5 +1,5 @@
 // src/data/mockData.ts
-import type { Product, QCAlert, InvoiceItem, AuditLog, AutoOrderSuggestion } from '../types/orbyte';
+import type { Product, QCAlert, InvoiceItem, AuditLog, AutoOrderSuggestion } from '../types/vyte.ts';
 
 export const INITIAL_PRODUCTS: Product[] = [
     {

@@ -124,12 +124,13 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
         <div
             style={{
                 position: 'fixed',
-                inset: 0,
+                top: 0,
+                left: 0,
+                width: '100vw',
+                height: '100dvh',
                 zIndex: 9999,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
+                display: 'grid',
+                placeItems: 'center',
                 backgroundColor: colors.surfaceOffWhite,
                 opacity: isExiting ? 0 : 1,
                 pointerEvents: isExiting ? 'none' : 'auto',
@@ -139,12 +140,12 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
                 overflow: 'hidden',
             }}
         >
-            {/* Ambient Radial Glow */}
+            {/* Ambient Radial Glow (Centered dynamically in viewport) */}
             <div
                 style={{
                     position: 'absolute',
-                    width: '640px',
-                    height: '640px',
+                    width: 'min(80vw, 640px)',
+                    height: 'min(80vw, 640px)',
                     borderRadius: '50%',
                     background: `radial-gradient(circle, ${colors.vyteGreenGlow} 0%, rgba(246,247,244,0) 70%)`,
                     transform: `scale(${0.85 + 0.35 * tCartonRise})`,
@@ -156,9 +157,13 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
 
             <svg
                 viewBox={animationData.logoGeometry.viewBox}
+                preserveAspectRatio="xMidYMid meet"
                 style={{
-                    width: 'min(92vw, 780px)',
+                    width: 'min(88vw, 740px)',
+                    maxHeight: '82dvh',
                     height: 'auto',
+                    display: 'block',
+                    margin: '0 auto',
                     overflow: 'visible',
                 }}
             >
@@ -392,9 +397,9 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
                     </g>
                 )}
 
-                {/* ACT 4: VYTE LOGO STAGGERED SPRING REVEAL */}
+                {/* ACT 4: VYTE LOGO STAGGERED SPRING REVEAL (Shifted -65.5px X & -20px Y so midpoint 465.5 aligns with viewBox center 400) */}
                 {elapsedMs >= 2220 && (
-                    <g style={{ pointerEvents: 'none' }}>
+                    <g transform="translate(-65.5, -20)" style={{ pointerEvents: 'none' }}>
                         <g
                             style={{
                                 transformOrigin: '245px 235px',

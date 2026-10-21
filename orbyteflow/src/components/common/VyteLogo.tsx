@@ -9,6 +9,7 @@ interface VyteLogoProps {
     className?: string;
 }
 
+/** @Composable */
 export const VyteLogo: React.FC<VyteLogoProps> = ({
                                                       variant = 'dark-text',
                                                       showSubtitle = true,
@@ -21,7 +22,7 @@ export const VyteLogo: React.FC<VyteLogoProps> = ({
 
     if (iconOnly) {
         return (
-            <svg viewBox="120 105 250 260" className={className} aria-label="Vyte">
+            <svg viewBox="115 100 260 270" className={className} aria-label="Vyte">
                 <path d={glyphs.V_leftLeg.d} fill={primaryInk} />
                 <path d={glyphs.V_rightGreenSlash.d} fill={vyteGreen} />
             </svg>
@@ -30,7 +31,8 @@ export const VyteLogo: React.FC<VyteLogoProps> = ({
 
     return (
         <svg
-            viewBox={showSubtitle ? '120 105 690 390' : '120 105 690 325'}
+            viewBox={showSubtitle ? '85 75 760 440' : '85 95 760 345'}
+            preserveAspectRatio="xMidYMid meet"
             className={className}
             aria-label="Vyte Inventory Management"
         >
@@ -60,19 +62,18 @@ export const VyteLogo: React.FC<VyteLogoProps> = ({
             {/* e */}
             <path d={glyphs.e_body.d} fill={primaryInk} fillRule="evenodd" />
 
-            {/* Subtitle: INVENTORY MANAGEMENT */}
+            {/* Subtitle: INVENTORY MANAGEMENT (Locked to Image 2 proportions) */}
             {showSubtitle && (
                 <text
-                    x={subtitle.x}
-                    y={subtitle.y}
+                    x={466}
+                    y={472}
                     textAnchor="middle"
+                    textLength={546}
+                    lengthAdjust="spacing"
                     fill={variant === 'light-text' ? '#CBD5E1' : primaryInk}
-                    style={{
-                        fontSize: `${subtitle.fontSize}px`,
-                        fontWeight: 700,
-                        letterSpacing: subtitle.letterSpacing,
-                        fontFamily: '"Plus Jakarta Sans", "Inter", sans-serif',
-                    }}
+                    fontSize={31}
+                    fontWeight={700}
+                    fontFamily='"Plus Jakarta Sans", "Inter", system-ui, sans-serif'
                 >
                     {subtitle.text}
                 </text>

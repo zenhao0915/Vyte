@@ -1,7 +1,8 @@
 // src/modules/module1-restock/AddProductModal.tsx
 import React, { useState } from 'react';
 import { AlertCircle } from 'lucide-react';
-import type { IndustryProfile, NewProductForm } from '../../types/orbyte';
+import type { IndustryProfile, NewProductForm } from '../../types/vyte.ts';
+import { VyteDropdown } from '../../components/common/VyteDropdown';
 
 interface AddProductModalProps {
     isOpen: boolean;
@@ -15,10 +16,10 @@ interface FormDraft {
     category: string;
     industry: IndustryProfile;
     uom: string;
-    stock: string;         // String state prevents stuck leading '0'
-    minThreshold: string;  // String state prevents stuck leading '0'
-    reorderQty: string;    // String state prevents stuck leading '0'
-    priceRM: string;       // String state prevents stuck leading '0'
+    stock: string;
+    minThreshold: string;
+    reorderQty: string;
+    priceRM: string;
     supplierName: string;
     supplierContact: string;
     batchNo: string;
@@ -29,25 +30,23 @@ interface FormDraft {
 
 type ValidationErrors = Partial<Record<keyof FormDraft, string>>;
 
-// Strips leading zeros when typing (e.g., "05" -> "5"), while allowing "0" or "0.50"
 const sanitizeNumericInput = (raw: string, allowDecimal = false): string => {
     const cleaned = allowDecimal ? raw.replace(/[^0-9.]/g, '') : raw.replace(/[^0-9]/g, '');
     if (!allowDecimal) {
         return cleaned.replace(/^0+(?=\d)/, '');
     }
-    // Allow only one decimal point and strip leading zeros before whole numbers
     const parts = cleaned.split('.');
     const integerPart = parts[0].replace(/^0+(?=\d)/, '');
     return parts.length > 1 ? `${integerPart || '0'}.${parts[1].slice(0, 2)}` : integerPart;
 };
 
-// Validates Malaysian WhatsApp numbers (+6012-3456789, 0123456789, +6011-12345678)
 const isValidWhatsAppNumber = (phone: string): boolean => {
     const trimmed = phone.trim();
     const myPhoneRegex = /^(?:\+?60|0)1[0-9]-?[0-9]{7,8}$/;
     return myPhoneRegex.test(trimmed);
 };
 
+/** @Composable */
 export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClose, onSaveProduct }) => {
     const [draft, setDraft] = useState<FormDraft>({
         name: '',
@@ -265,10 +264,10 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
                     {/* Industry Selector */}
                     <div className="col-span-2">
                         <label className="font-semibold text-slate-700 block mb-1">Target SME Industry Profile</label>
-                        <select
+                        <VyteDropdown
+                            variant="light"
                             value={draft.industry}
-                            onChange={(e) => {
-                                const ind = e.target.value as IndustryProfile;
+                            onChange={(ind) => {
                                 setDraft({
                                     ...draft,
                                     industry: ind,
@@ -282,12 +281,21 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
                                 });
                                 setErrors({});
                             }}
-                            className={getInputClass('industry')}
-                        >
-                            <option value="FNB_PERISHABLE">F&amp;B / Cafe / Grocery (Tracks Batch &amp; Expiry Date)</option>
-                            <option value="RETAIL_VARIANT">Retail &amp; Boutique (Tracks Sizes, Colors &amp; Variants)</option>
-                            <option value="B2B_RAW_MATERIAL">B2B Manufacturing (Tracks MOQ &amp; Lead Time)</option>
-                        </select>
+                            options={[
+                                {
+                                    label: 'F&B / Cafe / Grocery (Tracks Batch & Expiry Date)',
+                                    value: 'FNB_PERISHABLE',
+                                },
+                                {
+                                    label: 'Retail & Boutique (Tracks Sizes, Colors & Variants)',
+                                    value: 'RETAIL_VARIANT',
+                                },
+                                {
+                                    label: 'B2B Manufacturing (Tracks MOQ & Lead Time)',
+                                    value: 'B2B_RAW_MATERIAL',
+                                },
+                            ]}
+                        />
                     </div>
 
                     {/* Product Name */}
@@ -319,17 +327,18 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
                     {/* Unit of Measure */}
                     <div>
                         <label className="font-semibold text-slate-700 block mb-1">Unit of Measure (UOM)</label>
-                        <select
+                        <VyteDropdown
+                            variant="light"
                             value={draft.uom}
-                            onChange={(e) => handleChange('uom', e.target.value)}
-                            className={getInputClass('uom')}
-                        >
-                            <option value="pcs">Pieces (pcs)</option>
-                            <option value="kg">Kilograms (kg)</option>
-                            <option value="L">Liters (L)</option>
-                            <option value="box">Boxes (box)</option>
-                            <option value="pack">Packs (pack)</option>
-                        </select>
+                            onChange={(val) => handleChange('uom', val)}
+                            options={[
+                                { label: 'Pieces (pcs)', value: 'pcs' },
+                                { label: 'Kilograms (kg)', value: 'kg' },
+                                { label: 'Liters (L)', value: 'L' },
+                                { label: 'Boxes (box)', value: 'box' },
+                                { label: 'Packs (pack)', value: 'pack' },
+                            ]}
+                        />
                     </div>
 
                     {/* Selling Price (MYR) */}

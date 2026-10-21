@@ -1,7 +1,7 @@
 // src/components/common/AuditLogPanel.tsx
 import React from 'react';
 import { Clock, Trash2, ShieldCheck } from 'lucide-react';
-import type { AuditLog, UserRole } from '../../types/orbyte';
+import type { AuditLog, UserRole } from '../../types/vyte.ts';
 
 interface AuditLogPanelProps {
     logs: AuditLog[];
@@ -68,7 +68,9 @@ export const AuditLogPanel: React.FC<AuditLogPanelProps> = ({ logs, role, onClea
                         className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                             log.role === 'SME_OWNER'
                                 ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                                : 'bg-amber-950 text-amber-300 border border-amber-800'
+                                : log.role === 'MANAGER'
+                                    ? 'bg-blue-950 text-blue-300 border border-blue-800'
+                                    : 'bg-amber-950 text-amber-300 border border-amber-800'
                         }`}
                     >
                       {log.role}

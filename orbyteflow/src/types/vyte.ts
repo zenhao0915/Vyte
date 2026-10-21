@@ -1,6 +1,6 @@
 // src/types/orbyte.ts
 
-export type UserRole = 'SME_OWNER' | 'OPERATIONS_STAFF';
+export type UserRole = 'SME_OWNER' | 'MANAGER' | 'OPERATIONS_STAFF';
 export type IndustryProfile = 'FNB_PERISHABLE' | 'RETAIL_VARIANT' | 'B2B_RAW_MATERIAL';
 export type ActiveTab = 'mod1' | 'mod2' | 'mod3' | 'mod4' | 'mod5';
 
@@ -27,7 +27,7 @@ export interface Product {
     reorderQty: number;
     priceRM: number;
     unitCostRM?: number;
-    dailyDepletionRate?: number; // units sold per day
+    dailyDepletionRate?: number;
     leadTimeDays?: number;
     moq?: number;
     supplierName: string;
@@ -94,11 +94,6 @@ export interface AuditLog {
     detail: string;
 }
 
-// ============================================================================
-// BACKEND API PAYLOAD INTERFACES (Matches Guide.txt & Guide (1).txt on :8989)
-// ============================================================================
-
-// 1.1 Restock Confirmation with Supplier (POST /api/restock/confirm)
 export interface ConfirmRestockRequest {
     poNumber: string;
     productId: string;
@@ -125,7 +120,6 @@ export interface ConfirmRestockResponse {
     updatedAt: string;
 }
 
-// 1.2 Automatic Contact Supplier (POST /api/restock/contact-supplier)
 export interface ContactSupplierRequest {
     poNumber: string;
     supplierName: string;
@@ -143,7 +137,6 @@ export interface ContactSupplierResponse {
     message: string;
 }
 
-// 2.1 Final Product Report (POST /api/sales-review/report)
 export interface GetSalesReviewReportRequest {
     filterYear: number;
     filterQuarter?: number | null;
@@ -170,7 +163,6 @@ export interface GetSalesReviewReportResponse {
     productBreakdown: ProductSalesBreakdown[];
 }
 
-// 2.2 AI Procurement Analysis (POST /api/sales-review/analyze-procurement)
 export interface AnalyzeProcurementRequest {
     filterYear: number;
     filterQuarter?: number | null;
@@ -197,7 +189,6 @@ export interface AnalyzeProcurementResponse {
     procurementRecommendations: ProcurementRecommendation[];
 }
 
-// 3.1 NLP Customer Order & Stock Check (POST /api/order/nlp-process)
 export interface ProcessNlpOrderRequest {
     rawOrderText: string;
     customerName: string;
@@ -224,7 +215,6 @@ export interface ProcessNlpOrderResponse {
     currency: string;
 }
 
-// 3.2 Generate Invoice & Update Database (POST /api/order)
 export interface CustomerLineOrderPayload {
     lineID: string;
     productID: string;
@@ -252,7 +242,6 @@ export interface CreateInvoiceOrderResponse {
     createdAt: string;
 }
 
-// 3.3 Human Order Approval (PATCH /api/order/status)
 export interface ApproveCustomerOrderRequest {
     orderID: string;
     invoiceID: string;
@@ -269,7 +258,6 @@ export interface ApproveCustomerOrderResponse {
     message: string;
 }
 
-// Module 3 Frontend State: AI Depletion Auto-Order Suggestion (Awaiting Human Intervention)
 export interface AutoOrderSuggestion {
     id: string;
     poNumber: string;
@@ -280,7 +268,7 @@ export interface AutoOrderSuggestion {
     uom: string;
     currentStock: number;
     minThreshold: number;
-    dailyDepletionRate: number; // units/day based on sales velocity
+    dailyDepletionRate: number;
     daysUntilStockout: number;
     leadTimeDays: number;
     suggestedOrderQty: number;
