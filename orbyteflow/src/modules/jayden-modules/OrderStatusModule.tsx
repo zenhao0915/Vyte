@@ -9,6 +9,8 @@ import {
     Truck,
     Package,
     XCircle,
+    AlertTriangle,
+    ArrowUpRight,
 } from 'lucide-react';
 import type { ExtractedNlpOrderItem, Product, UserRole } from '../../types/orbyte';
 import { orbyteApi } from '../../services/api';
@@ -25,6 +27,7 @@ interface OrderStatusModuleProps {
     ) => void;
     onPendingCountChange: (count: number) => void;
     onLogAction: (module: string, detail: string) => void;
+    onNavigateToRestock?: () => void;
 }
 
 interface CustomerOrderRecord {
@@ -45,6 +48,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                                                         onApproveCustomerOrder,
                                                                         onPendingCountChange,
                                                                         onLogAction,
+                                                                        onNavigateToRestock,
                                                                     }) => {
     const [customerName, setCustomerName] = useState('Bangsar Artisan Cafe');
     const [rawOrderText, setRawOrderText] = useState(
@@ -84,7 +88,6 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
         onPendingCountChange(pending);
     }, [customerOrders, onPendingCountChange]);
 
-    // Quick-fill preset messages for easy hackathon live demo
     const applyPresetMessage = (presetCustomer: string, presetText: string) => {
         setCustomerName(presetCustomer);
         setRawOrderText(presetText);
@@ -128,7 +131,6 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                     'i'
                 );
                 const match = rawOrderText.match(regex) || rawOrderText.match(/(\d+)/);
-                // Cap parsed quantity at 9,999 so UI never overflows
                 const qty = match ? Math.min(9999, Math.max(1, Number(match[1]))) : 5;
                 extracted.push({
                     productID: p.id,
@@ -212,15 +214,28 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
         setCustomerOrders((prev) => [newOrder, ...prev]);
         onLogAction(
             'Mod 3: NLP Order Parsed',
-            `Extracted ${newOrder.items.length} SKU(s) for ${newOrder.customerName} (${newOrder.orderID} • RM ${newOrder.subtotal.toFixed(2)}) — awaiting owner approval.`
+            `Extracted ${newOrder.items.length} SKU(s) for ${newOrder.customerName} (${newOrder.orderID} • RM ${newOrder.subtotal.toFixed(2)}) — ${
+                hasSufficientStock ? 'Stock Sufficient, awaiting approval.' : 'Blocked: Insufficient Stock.'
+            }`
         );
         setIsProcessingNlp(false);
     };
 
-    // Step 4: Owner Approves or Rejects Customer Order
-    const handleApproveRejectOrder = async (order: CustomerOrderRecord, action: 'APPROVE' | 'REJECT') => {
+    // Step 4: Owner Approves or Rejects Customer Order (BLOCKS APPROVAL IF STOCK IS INSUFFICIENT)
+    const handleApproveRejectOrder = async (
+        order: CustomerOrderRecord,
+        action: 'APPROVE' | 'REJECT',
+        allEnoughLive: boolean
+    ) => {
         if (role !== 'SME_OWNER') {
             alert('Vyte RBAC Restriction: Only SME_OWNER can approve or reject customer orders.');
+            return;
+        }
+
+        if (action === 'APPROVE' && !allEnoughLive) {
+            alert(
+                'Insufficient Inventory: Cannot approve customer order because warehouse stock is lower than requested quantity. Please restock in Module 1 first.'
+            );
             return;
         }
 
@@ -363,7 +378,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                 </form>
             </div>
 
-            {/* Customer Order Fulfillment Queue (With Live Stock Sync & Confirm Delivery) */}
+            {/* Customer Order Fulfillment Queue */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                     <div>
@@ -371,21 +386,28 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                             <Package className="w-4 h-4 text-emerald-600" /> Active Customer Orders &amp; Fulfillment Pipeline ({customerOrders.length})
                         </h4>
                         <p className="text-[11px] text-slate-500">
-                            Live inventory availability is dynamically synced with Module 1. Approving an order deducts stock and generates a Receivable Invoice in Module 5.
+                            Orders with insufficient stock are automatically blocked from approval until restocked in Module 1.
                         </p>
                     </div>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-4">
                     {customerOrders.map((co) => {
-                        // Dynamically read LIVE stock from `products` prop so stock never stays stale!
+                        const isPendingApproval = co.status === 'PENDING_HUMAN_APPROVAL';
+
+                        // Read live warehouse stock from `products`
                         const liveItems = co.items.map((item) => {
                             const liveProd = products.find((p) => p.id === item.productID || p.sku === item.SKU);
-                            const currentAvail = liveProd ? liveProd.stock : item.availableStock;
+                            const currentWarehouseStock = liveProd ? liveProd.stock : item.availableStock;
+                            const uom = liveProd?.uom ?? 'units';
+                            const shortageQty = Math.max(0, item.requestedQty - currentWarehouseStock);
+
                             return {
                                 ...item,
-                                availableStock: currentAvail,
-                                isStockEnough: currentAvail >= item.requestedQty,
+                                uom,
+                                availableStock: currentWarehouseStock,
+                                shortageQty,
+                                isStockEnough: isPendingApproval ? currentWarehouseStock >= item.requestedQty : true,
                             };
                         });
 
@@ -394,110 +416,194 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                         return (
                             <div
                                 key={co.orderID}
-                                className={`p-4 rounded-xl border flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 transition ${
+                                className={`rounded-2xl border overflow-hidden transition ${
                                     co.status === 'PENDING_HUMAN_APPROVAL'
-                                        ? 'bg-amber-50/30 border-amber-200'
+                                        ? allEnoughLive
+                                            ? 'bg-white border-slate-200'
+                                            : 'bg-rose-50/20 border-rose-200'
                                         : co.status === 'APPROVED_AWAITING_DELIVERY'
-                                            ? 'bg-blue-50/30 border-blue-200'
+                                            ? 'bg-blue-50/15 border-blue-200'
                                             : co.status === 'DELIVERED_COMPLETED'
-                                                ? 'bg-emerald-50/30 border-emerald-200'
+                                                ? 'bg-emerald-50/15 border-emerald-200'
                                                 : 'bg-slate-50 border-slate-200 opacity-70'
                                 }`}
                             >
-                                <div className="space-y-2 flex-1 min-w-0">
-                                    <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded">
+                                {/* Card Top Header Bar */}
+                                <div className="px-5 py-3.5 bg-slate-50/80 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-3">
+                                    <div className="flex flex-wrap items-center gap-2.5">
+                    <span className="font-mono text-xs font-bold text-purple-700 bg-purple-100 px-2.5 py-0.5 rounded-md">
                       {co.orderID}
                     </span>
-                                        <span className="font-mono text-xs text-slate-500">Invoice: {co.invoiceID}</span>
-                                        <span className="text-xs font-bold text-slate-900">• {co.customerName}</span>
-                                        <span className="text-[11px] text-slate-400">({co.requestedDate})</span>
+                                        <span className="font-mono text-xs text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
+                      Invoice: {co.invoiceID}
+                    </span>
+                                        <span className="text-sm font-bold text-slate-900">{co.customerName}</span>
+                                        <span className="text-xs text-slate-400">• {co.requestedDate}</span>
 
-                                        {co.status === 'PENDING_HUMAN_APPROVAL' && (
+                                        {isPendingApproval && (
                                             <span
-                                                className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                                                className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full inline-flex items-center gap-1 ${
                                                     allEnoughLive
                                                         ? 'bg-emerald-100 text-emerald-800'
                                                         : 'bg-rose-100 text-rose-700'
                                                 }`}
                                             >
-                        {allEnoughLive ? '✓ Live Stock Sufficient' : '⚠ Partial / Low Stock Impact'}
+                        {allEnoughLive ? (
+                            <>
+                                <CheckCircle2 className="w-3 h-3" /> Stock Sufficient (Ready to Approve)
+                            </>
+                        ) : (
+                            <>
+                                <AlertTriangle className="w-3 h-3" /> Insufficient Stock — Restock Required
+                            </>
+                        )}
                       </span>
                                         )}
                                     </div>
 
-                                    <p className="text-xs text-slate-500 italic truncate">
-                                        &ldquo;{co.rawMessage}&rdquo;
-                                    </p>
-
-                                    <div className="flex flex-wrap gap-2">
-                                        {liveItems.map((item) => (
-                                            <span
-                                                key={item.SKU}
-                                                className="text-xs bg-white px-2.5 py-1 rounded-lg border border-slate-200 text-slate-700"
-                                            >
-                        <strong>{item.name}</strong> ({item.SKU}): Req{' '}
-                                                <strong className="text-slate-900">{item.requestedQty}</strong> • Live Stock:{' '}
-                                                <strong className={item.isStockEnough ? 'text-emerald-600' : 'text-rose-600'}>
-                          {item.availableStock}
-                        </strong>{' '}
-                                                • RM {item.lineTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                    {/* Right Actions & Total */}
+                                    <div className="flex flex-wrap items-center gap-3">
+                                        <div className="text-right mr-1">
+                                            <span className="text-[10px] uppercase font-bold text-slate-400 block">Order Total</span>
+                                            <span className="text-base font-extrabold text-slate-900 whitespace-nowrap">
+                        RM {co.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </span>
-                                        ))}
+                                        </div>
+
+                                        {co.status === 'PENDING_HUMAN_APPROVAL' && (
+                                            <div className="flex items-center gap-2">
+                                                {allEnoughLive ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleApproveRejectOrder(co, 'APPROVE', allEnoughLive)}
+                                                        className="px-3.5 py-2 bg-[#2BB656] hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer whitespace-nowrap"
+                                                    >
+                                                        <FileCheck className="w-3.5 h-3.5" /> Approve &amp; Generate Invoice
+                                                    </button>
+                                                ) : (
+                                                    <div className="flex items-center gap-1.5">
+                                                        <button
+                                                            type="button"
+                                                            disabled
+                                                            title="Cannot sell to customer while stock is insufficient"
+                                                            className="px-3 py-2 bg-slate-200 text-slate-500 rounded-xl text-xs font-bold flex items-center gap-1 cursor-not-allowed whitespace-nowrap"
+                                                        >
+                                                            <AlertTriangle className="w-3.5 h-3.5 text-rose-500" /> Blocked: Low Stock
+                                                        </button>
+                                                        {onNavigateToRestock && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={onNavigateToRestock}
+                                                                className="px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-xs transition cursor-pointer whitespace-nowrap"
+                                                            >
+                                                                Restock in Mod 1 <ArrowUpRight className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleApproveRejectOrder(co, 'REJECT', allEnoughLive)}
+                                                    className="px-3 py-2 bg-white hover:bg-rose-50 text-rose-600 border border-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
+                                                >
+                                                    <XCircle className="w-3.5 h-3.5" /> Reject
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        {co.status === 'APPROVED_AWAITING_DELIVERY' && (
+                                            <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-1 rounded-lg bg-blue-100 text-blue-800 text-[11px] font-bold">
+                          ✓ Invoiced in Mod 5
+                        </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleConfirmCustomerDelivery(co)}
+                                                    className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer whitespace-nowrap"
+                                                >
+                                                    <Truck className="w-3.5 h-3.5" /> Confirm Customer Delivery
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        {co.status === 'DELIVERED_COMPLETED' && (
+                                            <span className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 text-xs font-bold inline-flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Delivered &amp; Completed
+                      </span>
+                                        )}
+
+                                        {co.status === 'REJECTED' && (
+                                            <span className="px-3 py-1.5 rounded-xl bg-rose-100 text-rose-700 text-xs font-bold">
+                        Rejected
+                      </span>
+                                        )}
                                     </div>
                                 </div>
 
-                                {/* Right Action Column */}
-                                <div className="flex flex-wrap items-center gap-3 shrink-0">
-                                    <div className="text-right mr-2">
-                                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Order Total</span>
-                                        <span className="text-sm font-extrabold text-slate-900 whitespace-nowrap">
-                      RM {co.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </span>
+                                {/* Card Body: Customer Message + Clean 5-Column Line-Item Table */}
+                                <div className="p-4 space-y-3">
+                                    <p className="text-xs text-slate-500 italic">
+                                        Customer Message: &ldquo;{co.rawMessage}&rdquo;
+                                    </p>
+
+                                    <div className="overflow-x-auto rounded-xl border border-slate-200/90 bg-white">
+                                        <table className="w-full text-left border-collapse text-xs">
+                                            <thead>
+                                            <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase">
+                                                <th className="py-2 px-3.5">Product Item &amp; SKU</th>
+                                                <th className="py-2 px-3.5">Customer Requested</th>
+                                                <th className="py-2 px-3.5">
+                                                    {isPendingApproval ? 'Live Warehouse Stock' : 'Stock Allocation Status'}
+                                                </th>
+                                                <th className="py-2 px-3.5">Unit Price</th>
+                                                <th className="py-2 px-3.5 text-right">Line Subtotal</th>
+                                            </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                            {liveItems.map((item) => (
+                                                <tr key={item.SKU} className="hover:bg-slate-50/60">
+                                                    <td className="py-2.5 px-3.5">
+                                                        <span className="font-bold text-slate-900">{item.name}</span>
+                                                        <span className="ml-2 font-mono text-[11px] text-slate-400">({item.SKU})</span>
+                                                    </td>
+
+                                                    <td className="py-2.5 px-3.5 font-extrabold text-slate-900">
+                                                        {item.requestedQty} {item.uom}
+                                                    </td>
+
+                                                    <td className="py-2.5 px-3.5">
+                                                        {isPendingApproval ? (
+                                                            item.isStockEnough ? (
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold text-[11px]">
+                                    ✓ {item.availableStock} {item.uom} Available
+                                  </span>
+                                                            ) : (
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 font-bold text-[11px]">
+                                    ⚠ Only {item.availableStock} {item.uom} Left (Short by {item.shortageQty} {item.uom})
+                                  </span>
+                                                            )
+                                                        ) : co.status === 'REJECTED' ? (
+                                                            <span className="text-slate-400 font-semibold">Order Cancelled</span>
+                                                        ) : (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold text-[11px]">
+                                  ✓ {item.requestedQty} {item.uom} Reserved &amp; Deducted (Rem: {item.availableStock} {item.uom})
+                                </span>
+                                                        )}
+                                                    </td>
+
+                                                    <td className="py-2.5 px-3.5 text-slate-600 font-medium">
+                                                        RM {item.sellingPrice.toFixed(2)} / {item.uom}
+                                                    </td>
+
+                                                    <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900">
+                                                        RM {item.lineTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            </tbody>
+                                        </table>
                                     </div>
-
-                                    {co.status === 'PENDING_HUMAN_APPROVAL' && (
-                                        <div className="flex items-center gap-2">
-                                            <button
-                                                onClick={() => handleApproveRejectOrder(co, 'APPROVE')}
-                                                className="px-3.5 py-2 bg-[#2BB656] hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer whitespace-nowrap"
-                                            >
-                                                <FileCheck className="w-3.5 h-3.5" /> Approve &amp; Generate Invoice
-                                            </button>
-                                            <button
-                                                onClick={() => handleApproveRejectOrder(co, 'REJECT')}
-                                                className="px-3 py-2 bg-white hover:bg-rose-50 text-rose-600 border border-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
-                                            >
-                                                <XCircle className="w-3.5 h-3.5" /> Reject
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    {co.status === 'APPROVED_AWAITING_DELIVERY' && (
-                                        <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-1 rounded-lg bg-blue-100 text-blue-800 text-[11px] font-bold">
-                        Invoiced in Mod 5
-                      </span>
-                                            <button
-                                                onClick={() => handleConfirmCustomerDelivery(co)}
-                                                className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer whitespace-nowrap"
-                                            >
-                                                <Truck className="w-3.5 h-3.5" /> Confirm Customer Delivery
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    {co.status === 'DELIVERED_COMPLETED' && (
-                                        <span className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 text-xs font-bold inline-flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Delivered &amp; Completed
-                    </span>
-                                    )}
-
-                                    {co.status === 'REJECTED' && (
-                                        <span className="px-3 py-1.5 rounded-xl bg-rose-100 text-rose-700 text-xs font-bold">
-                      Rejected
-                    </span>
-                                    )}
                                 </div>
                             </div>
                         );

@@ -532,6 +532,7 @@ export default function App() {
                     onApproveCustomerOrder={handleApproveCustomerOrder}
                     onPendingCountChange={setPendingCustomerOrderCount}
                     onLogAction={addAuditLog}
+                    onNavigateToRestock={() => setActiveTab('mod1')}
                 />
             )}
 
