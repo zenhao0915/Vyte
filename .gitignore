@@ -49,3 +49,4 @@ all_code.txt
 vyte.db
 vyte.db-shm
 vyte.db-wal
+local.properties
