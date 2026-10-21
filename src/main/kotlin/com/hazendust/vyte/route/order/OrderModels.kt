@@ -2,64 +2,92 @@ package com.hazendust.vyte.route.order
 
 import kotlinx.serialization.Serializable
 
-/**
- * 接收客户订单的请求体（支持 WhatsApp 自然语言消息或结构化录入）
- */
-@Serializable
-data class IngestOrderRequest(
-    val rawMessage: String,
-    val customerName: String = "WhatsApp Customer",
-    val channel: String = "WHATSAPP"
-)
+// ==========================================
+// 3. Order Module
+// ==========================================
 
 /**
- * 解析出的商品详情项
+ * 3.1 NLP Customer Order & Stock Check
  */
 @Serializable
-data class ParsedItemDto(
-    val productName: String,
-    val matchedProductId: String?,
-    val requestedQuantity: Int,
-    val unitPrice: Double
-)
-
-/**
- * 缺货差额分析项（用于向前台反馈短缺明细）
- */
-@Serializable
-data class OrderDeficitDto(
-    val productId: String,
-    val productName: String,
-    val requestedQuantity: Int,
-    val currentStock: Int,
-    val deficitQuantity: Int
-)
-
-/**
- * 订单接入处理的响应体
- */
-@Serializable
-data class IngestOrderResponse(
-    val orderId: String,
+data class ProcessNlpOrderRequest(
+    val rawOrderText: String,
     val customerName: String,
-    val hasDeficit: Boolean,
-    val status: String, // "FULFILLED" 或 "PENDING_RESTOCK_APPROVAL"
-    val parsedItems: List<ParsedItemDto>,
-    val deficits: List<OrderDeficitDto>,
-    val invoiceId: String? = null,
-    val restockTaskId: String? = null,
-    val message: String
+    val requestedDate: String,
+    val userID: String
+)
+
+@Serializable
+data class ExtractedOrderItem(
+    val productID: String,
+    val SKU: String,
+    val name: String,
+    val requestedQty: Int,
+    val availableStock: Int,
+    val isStockEnough: Boolean,
+    val sellingPrice: Float,
+    val lineTotal: Double
+)
+
+@Serializable
+data class ProcessNlpOrderResponse(
+    val parseSuccess: Boolean,
+    val hasSufficientStock: Boolean,
+    val extractedItems: List<ExtractedOrderItem>,
+    val calculatedSubtotal: Double,
+    val currency: String
 )
 
 /**
- * 查询历史客户订单简报响应
+ * 3.2 Generate Invoice & Update Database
  */
 @Serializable
-data class CustomerOrderSummaryResponse(
-    val orderId: String,
-    val customerName: String,
-    val rawMessage: String,
-    val totalAmount: Double,
-    val status: String,
+data class LineOrderItemRequest(
+    val lineID: String,
+    val productID: String,
+    val quantity: Int,
+    val lineTotal: Double,
+    val currency: String
+)
+
+@Serializable
+data class CreateInvoiceOrderRequest(
+    val orderID: String,
+    val requestedDate: String,
+    val subtotal: Double,
+    val currency: String,
+    val internalNotes: String? = null,
+    val createdBy: String,
+    val lineOrders: List<LineOrderItemRequest>
+)
+
+@Serializable
+data class CreateInvoiceOrderResponse(
+    val orderID: String,
+    val invoiceID: String,
+    val status: String, // e.g. "PENDING_HUMAN_APPROVAL"
+    val databaseUpdated: Boolean,
+    val invoicePdfUrl: String,
     val createdAt: String
+)
+
+/**
+ * 3.3 Human Order Approval
+ */
+@Serializable
+data class ApproveCustomerOrderRequest(
+    val orderID: String,
+    val invoiceID: String,
+    val approvalAction: String, // "APPROVE", "REJECT", "MODIFY"
+    val approvalNotes: String,
+    val updatedBy: String // userID
+)
+
+@Serializable
+data class ApproveCustomerOrderResponse(
+    val orderID: String,
+    val finalStatus: String, // "APPROVED", "REJECTED"
+    val inventoryDeducted: Boolean,
+    val updatedAt: String,
+    val message: String
 )

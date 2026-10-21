@@ -52,7 +52,7 @@ data class InvoiceEntity(
     val relatedRef: String,
     val amount: Double,
     val category: String,
-    val status: String,
+    var status: String,
     val createdAt: String
 )
 
