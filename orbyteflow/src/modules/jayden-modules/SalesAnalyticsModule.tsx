@@ -43,8 +43,10 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
     const [filterYear, setFilterYear] = useState<number>(2026);
     const [filterQuarter, setFilterQuarter] = useState<number | null>(3);
     const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
-    const [holdingCostPercentage, setHoldingCostPercentage] = useState<number>(18.5);
-    const [targetTurnoverDays, setTargetTurnoverDays] = useState<number>(21);
+    const [holdingCostInput, setHoldingCostInput] = useState<string>('18.5');
+    const [turnoverDaysInput, setTurnoverDaysInput] = useState<string>('21');
+    const holdingCostPercentage = Math.min(50, Math.max(1, Number(holdingCostInput) || 1));
+    const targetTurnoverDays = Math.min(90, Math.max(1, Number(turnoverDaysInput) || 7));
 
     const [isSyncingReport, setIsSyncingReport] = useState(false);
     const [isRunningAi, setIsRunningAi] = useState(false);
@@ -296,27 +298,31 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
 
                 <div className="bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/15 flex items-center gap-5 shrink-0">
                     <div>
-                        <label className="text-[11px] text-slate-300 block">Holding Cost Rate (%)</label>
+                        <label className="text-[11px] text-slate-300 block">Holding Cost Rate (1–50%)</label>
                         <input
-                            type="number"
-                            step="0.5"
-                            min="1"
-                            max="50"
-                            value={holdingCostPercentage}
-                            onChange={(e) => setHoldingCostPercentage(Number(e.target.value))}
-                            className="mt-1 w-20 px-2.5 py-1 rounded-lg bg-white text-slate-900 font-bold text-sm focus:outline-none"
+                            type="text"
+                            inputMode="decimal"
+                            placeholder="18.5"
+                            value={holdingCostInput}
+                            onChange={(e) => {
+                                const cleaned = e.target.value.replace(/[^0-9.]/g, '').replace(/^0+(?=\d)/, '');
+                                setHoldingCostInput(cleaned);
+                            }}
+                            className="mt-1 w-24 px-2.5 py-1 rounded-lg bg-white text-slate-900 font-bold text-sm focus:outline-none"
                         />
                     </div>
                     <div>
-                        <label className="text-[11px] text-slate-300 block">Target Turnover (Days)</label>
+                        <label className="text-[11px] text-slate-300 block">Target Turnover (5–90d)</label>
                         <input
-                            type="number"
-                            step="1"
-                            min="5"
-                            max="90"
-                            value={targetTurnoverDays}
-                            onChange={(e) => setTargetTurnoverDays(Number(e.target.value))}
-                            className="mt-1 w-20 px-2.5 py-1 rounded-lg bg-white text-slate-900 font-bold text-sm focus:outline-none"
+                            type="text"
+                            inputMode="numeric"
+                            placeholder="21"
+                            value={turnoverDaysInput}
+                            onChange={(e) => {
+                                const cleaned = e.target.value.replace(/[^0-9]/g, '').replace(/^0+(?=\d)/, '');
+                                setTurnoverDaysInput(cleaned);
+                            }}
+                            className="mt-1 w-24 px-2.5 py-1 rounded-lg bg-white text-slate-900 font-bold text-sm focus:outline-none"
                         />
                     </div>
                 </div>
