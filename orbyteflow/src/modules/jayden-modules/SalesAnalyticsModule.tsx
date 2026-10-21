@@ -530,12 +530,12 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
                                                         onQueueRestockToOrderModule(
                                                             matchedProduct,
                                                             rec.recommendedProcureQty,
-                                                            `Vyte AI Sales Review (${salesReport.period}): Stock sells off in ${rec.timeNeededToSellOffDays}d. Optimal ${targetTurnoverDays}d stock is ${rec.optimalStockToHold} units.`
+                                                            `Vyte AI Forecast (${salesReport.period}): Sells off in ${rec.timeNeededToSellOffDays}d; optimal ${targetTurnoverDays}d stock is ${rec.optimalStockToHold} units`
                                                         );
                                                     }}
-                                                    className="px-3 py-1.5 bg-slate-900 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold transition cursor-pointer"
+                                                    className="px-3 py-1.5 bg-slate-900 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap"
                                                 >
-                                                    Push to Auto-Order &rarr;
+                                                    Apply to Auto-Restock &rarr;
                                                 </button>
                                             )
                                         ) : (
