@@ -12,73 +12,117 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
     const [form, setForm] = useState<NewProductForm>({
         name: '',
         sku: '',
-        category: 'General Merchandise',
+        category: 'F&B Raw Ingredient',
         industry: 'FNB_PERISHABLE',
-        uom: 'pcs',
+        uom: 'kg',
         stock: 5,
-        minThreshold: 10,
-        reorderQty: 25,
-        priceRM: 50,
+        minThreshold: 15,
+        reorderQty: 30,
+        priceRM: 45.0,
         supplierName: '',
         supplierContact: '',
         extraAttr: '',
     });
 
+    // Dedicated states for industry-specific fields
+    const [batchNo, setBatchNo] = useState('B-2026-10');
+    const [expiryDate, setExpiryDate] = useState('2026-11-15');
+    const [retailVariant, setRetailVariant] = useState('Size: L | Color: Matte Black');
+    const [b2bMoq, setB2bMoq] = useState('MOQ: 20 units | Lead: 3 days');
+
     if (!isOpen) return null;
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onSaveProduct(form);
+
+        // Assemble structured industry attributes based on selected profile
+        let extraAttributeString = '';
+        if (form.industry === 'FNB_PERISHABLE') {
+            extraAttributeString = `Batch: ${batchNo || 'N/A'} • Exp: ${expiryDate || 'N/A'}`;
+        } else if (form.industry === 'RETAIL_VARIANT') {
+            extraAttributeString = retailVariant;
+        } else {
+            extraAttributeString = b2bMoq;
+        }
+
+        onSaveProduct({
+            ...form,
+            extraAttr: extraAttributeString,
+        });
+
+        onClose();
     };
 
     const inputClasses =
-        'w-full px-3 py-2.5 bg-white text-slate-900 placeholder-slate-400 border border-slate-300 rounded-xl text-xs font-medium focus:outline-none focus:border-[#2BB656] focus:ring-2 focus:ring-[#2BB656]/20 transition';
+        'w-full px-3 py-2 bg-white text-slate-900 placeholder-slate-400 border border-slate-300 rounded-xl text-xs font-medium focus:outline-none focus:border-[#2BB656] focus:ring-2 focus:ring-[#2BB656]/20 transition';
 
     return (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
             <form
                 onSubmit={handleSubmit}
-                className="bg-white text-slate-900 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-slate-200"
+                className="bg-white text-slate-900 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-slate-200 my-8"
             >
-                <div>
+                <div className="border-b border-slate-100 pb-3">
                     <h3 className="text-lg font-bold text-slate-900">Add Universal SME Product</h3>
                     <p className="text-xs text-slate-500 mt-0.5">
-                        Select the SME industry profile below to dynamically adapt tracking attributes.
+                        Adapts tracking schema dynamically across F&amp;B, Retail, and B2B wholesale.
                     </p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3.5 text-xs">
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                    {/* Industry Selector */}
                     <div className="col-span-2">
-                        <label className="font-semibold text-slate-700 block mb-1">SME Industry Profile</label>
+                        <label className="font-semibold text-slate-700 block mb-1">Target SME Industry Profile</label>
                         <select
                             value={form.industry}
-                            onChange={(e) => setForm({ ...form, industry: e.target.value as IndustryProfile })}
+                            onChange={(e) => {
+                                const ind = e.target.value as IndustryProfile;
+                                setForm({
+                                    ...form,
+                                    industry: ind,
+                                    category:
+                                        ind === 'FNB_PERISHABLE'
+                                            ? 'F&B Raw Ingredient'
+                                            : ind === 'RETAIL_VARIANT'
+                                                ? 'Apparel & Accessories'
+                                                : 'Packaging & Raw Material',
+                                    uom: ind === 'FNB_PERISHABLE' ? 'kg' : ind === 'RETAIL_VARIANT' ? 'pcs' : 'box',
+                                });
+                            }}
                             className={inputClasses}
                         >
-                            <option value="FNB_PERISHABLE" className="bg-white text-slate-900">
-                                F&amp;B / Grocery (Tracks Batch &amp; Expiry Date)
-                            </option>
-                            <option value="RETAIL_VARIANT" className="bg-white text-slate-900">
-                                Retail / Fashion / Electronics (Tracks Size/Color/Serial)
-                            </option>
-                            <option value="B2B_RAW_MATERIAL" className="bg-white text-slate-900">
-                                B2B / Manufacturing (Tracks MOQ &amp; Lead Time)
-                            </option>
+                            <option value="FNB_PERISHABLE">F&amp;B / Cafe / Grocery (Tracks Batch &amp; Expiry Date)</option>
+                            <option value="RETAIL_VARIANT">Retail &amp; Boutique (Tracks Sizes, Colors &amp; Variants)</option>
+                            <option value="B2B_RAW_MATERIAL">B2B Manufacturing (Tracks MOQ &amp; Lead Time)</option>
                         </select>
                     </div>
 
-                    <div>
+                    {/* Product Name */}
+                    <div className="col-span-2 sm:col-span-1">
                         <label className="font-semibold text-slate-700 block mb-1">Product Name *</label>
                         <input
                             required
                             type="text"
-                            placeholder="e.g., Matcha Powder Grade A"
+                            placeholder="e.g., Premium Matcha Powder"
                             value={form.name}
                             onChange={(e) => setForm({ ...form, name: e.target.value })}
                             className={inputClasses}
                         />
                     </div>
 
+                    {/* SKU */}
+                    <div className="col-span-2 sm:col-span-1">
+                        <label className="font-semibold text-slate-700 block mb-1">SKU / Barcode</label>
+                        <input
+                            type="text"
+                            placeholder="Auto-generated if empty"
+                            value={form.sku}
+                            onChange={(e) => setForm({ ...form, sku: e.target.value })}
+                            className={inputClasses}
+                        />
+                    </div>
+
+                    {/* Unit of Measure */}
                     <div>
                         <label className="font-semibold text-slate-700 block mb-1">Unit of Measure (UOM)</label>
                         <select
@@ -86,71 +130,143 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
                             onChange={(e) => setForm({ ...form, uom: e.target.value })}
                             className={inputClasses}
                         >
-                            <option value="pcs" className="bg-white text-slate-900">Pieces (pcs)</option>
-                            <option value="kg" className="bg-white text-slate-900">Kilograms (kg)</option>
-                            <option value="L" className="bg-white text-slate-900">Liters (L)</option>
-                            <option value="box" className="bg-white text-slate-900">Boxes (box)</option>
+                            <option value="pcs">Pieces (pcs)</option>
+                            <option value="kg">Kilograms (kg)</option>
+                            <option value="L">Liters (L)</option>
+                            <option value="box">Boxes (box)</option>
+                            <option value="pack">Packs (pack)</option>
                         </select>
                     </div>
 
+                    {/* Unit Selling Price */}
                     <div>
-                        <label className="font-semibold text-slate-700 block mb-1">Initial Stock</label>
+                        <label className="font-semibold text-slate-700 block mb-1">Selling Price (MYR) *</label>
                         <input
+                            required
                             type="number"
+                            step="0.10"
+                            min="0"
+                            value={form.priceRM}
+                            onChange={(e) => setForm({ ...form, priceRM: Number(e.target.value) })}
+                            className={inputClasses}
+                        />
+                    </div>
+
+                    {/* Initial Stock */}
+                    <div>
+                        <label className="font-semibold text-slate-700 block mb-1">Initial Current Stock *</label>
+                        <input
+                            required
+                            type="number"
+                            min="0"
                             value={form.stock}
                             onChange={(e) => setForm({ ...form, stock: Number(e.target.value) })}
                             className={inputClasses}
                         />
                     </div>
 
+                    {/* Min Alert Threshold */}
                     <div>
-                        <label className="font-semibold text-slate-700 block mb-1">Alert Min Threshold</label>
+                        <label className="font-semibold text-slate-700 block mb-1">Alert Threshold (Min Stock) *</label>
                         <input
+                            required
                             type="number"
+                            min="1"
                             value={form.minThreshold}
                             onChange={(e) => setForm({ ...form, minThreshold: Number(e.target.value) })}
                             className={inputClasses}
                         />
                     </div>
 
+                    {/* Default Reorder Qty */}
+                    <div className="col-span-2">
+                        <label className="font-semibold text-slate-700 block mb-1">Default Auto-Reorder Quantity *</label>
+                        <input
+                            required
+                            type="number"
+                            min="1"
+                            value={form.reorderQty}
+                            onChange={(e) => setForm({ ...form, reorderQty: Number(e.target.value) })}
+                            className={inputClasses}
+                        />
+                    </div>
+
+                    {/* Supplier Name */}
                     <div>
-                        <label className="font-semibold text-slate-700 block mb-1">Supplier Name *</label>
+                        <label className="font-semibold text-slate-700 block mb-1">Supplier Business Name *</label>
                         <input
                             required
                             type="text"
-                            placeholder="e.g., Uji Tea Supplier MY"
+                            placeholder="e.g., Uji Wholesale MY"
                             value={form.supplierName}
                             onChange={(e) => setForm({ ...form, supplierName: e.target.value })}
                             className={inputClasses}
                         />
                     </div>
 
+                    {/* Supplier Contact */}
                     <div>
-                        <label className="font-semibold text-slate-700 block mb-1">Supplier WhatsApp / Email *</label>
+                        <label className="font-semibold text-slate-700 block mb-1">Supplier WhatsApp / Phone *</label>
                         <input
                             required
                             type="text"
-                            placeholder="+6012-3344556"
+                            placeholder="+6012-3456789"
                             value={form.supplierContact}
                             onChange={(e) => setForm({ ...form, supplierContact: e.target.value })}
                             className={inputClasses}
                         />
                     </div>
 
-                    <div className="col-span-2">
-                        <label className="font-semibold text-slate-700 block mb-1">
-                            {form.industry === 'FNB_PERISHABLE'
-                                ? 'Batch No & Expiry Date (e.g., B-102 • 2026-11-15)'
-                                : 'Variant / B2B Specification (e.g., Size: XL or MOQ: 20 Boxes)'}
-                        </label>
-                        <input
-                            type="text"
-                            placeholder="Enter industry-specific tracking info..."
-                            value={form.extraAttr}
-                            onChange={(e) => setForm({ ...form, extraAttr: e.target.value })}
-                            className={inputClasses}
-                        />
-                    </div>
+                    {/* Dynamic Industry Attributes */}
+                    {form.industry === 'FNB_PERISHABLE' && (
+                        <>
+                            <div>
+                                <label className="font-semibold text-purple-700 block mb-1">Batch Number (F&amp;B)</label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g., B-2026-99"
+                                    value={batchNo}
+                                    onChange={(e) => setBatchNo(e.target.value)}
+                                    className={inputClasses}
+                                />
+                            </div>
+                            <div>
+                                <label className="font-semibold text-purple-700 block mb-1">Expiry Date (F&amp;B) *</label>
+                                <input
+                                    type="date"
+                                    value={expiryDate}
+                                    onChange={(e) => setExpiryDate(e.target.value)}
+                                    className={inputClasses}
+                                />
+                            </div>
+                        </>
+                    )}
+
+                    {form.industry === 'RETAIL_VARIANT' && (
+                        <div className="col-span-2">
+                            <label className="font-semibold text-blue-700 block mb-1">Size / Color Variant Spec</label>
+                            <input
+                                type="text"
+                                placeholder="e.g., Size: S/M/L • Color: Navy Blue"
+                                value={retailVariant}
+                                onChange={(e) => setRetailVariant(e.target.value)}
+                                className={inputClasses}
+                            />
+                        </div>
+                    )}
+
+                    {form.industry === 'B2B_RAW_MATERIAL' && (
+                        <div className="col-span-2">
+                            <label className="font-semibold text-emerald-700 block mb-1">B2B Order Constraints</label>
+                            <input
+                                type="text"
+                                placeholder="e.g., MOQ: 25 Boxes • Lead Time: 3 Business Days"
+                                value={b2bMoq}
+                                onChange={(e) => setB2bMoq(e.target.value)}
+                                className={inputClasses}
+                            />
+                        </div>
+                    )}
                 </div>
 
                 <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-100">

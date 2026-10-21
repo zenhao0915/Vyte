@@ -6,6 +6,17 @@
   <title>Vyte — Inventory Management</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Automatically adapts UI density to laptop screens with 125%-150% scaling */
+    html {
+      font-size: 14px;
+    }
+    @media (min-width: 1600px) {
+      html {
+        font-size: 15px;
+      }
+    }
+  </style>
 </head>
 <body class="bg-[#F5F7FA] antialiased">
 <div id="root"></div>

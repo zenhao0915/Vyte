@@ -57,10 +57,10 @@ export default function App() {
   const handleAuthenticated = (session: UserSession) => {
     setUserSession(session);
     setRole(session.role);
-    setSplashDone(false); // Play splash screen right after login!
+    setSplashDone(false);
     addAuditLog(
         'Vyte Auth',
-        `User ${session.userName} (${session.userID} • ${session.userType}) signed in to ${session.companyName}.`
+        `User ${session.userName} (${session.userID} • ${session.userType}) signed in to${session.companyName}.`
     );
   };
 
@@ -69,8 +69,8 @@ export default function App() {
     setSplashDone(false);
   };
 
-  // Module 1: Approve Auto-Restock
-  const handleApproveRestock = (productId: string) => {
+  // Module 1 (Step 4 -> Step 5a): Owner Approves & Contacts Supplier
+  const handleApproveAndContactSupplier = (productId: string) => {
     if (role !== 'SME_OWNER') {
       alert('Vyte RBAC Restriction: Only SME_OWNER can approve consequential supplier purchase orders.');
       return;
@@ -80,18 +80,86 @@ export default function App() {
           if (p.id === productId) {
             addAuditLog(
                 'Auto Restock',
-                `Approved Auto-Restock PO (${p.reorderQty} ${p.uom}) & sent confirmation to ${p.supplierName}.`
+                `Approved Auto-Restock PO (+${p.reorderQty} ${p.uom}) & dispatched automated supplier message to${p.supplierName}.`
             );
-            return { ...p, stock: p.stock + p.reorderQty, restockStatus: 'CONFIRMED' };
+            return { ...p, restockStatus: 'SUPPLIER_CONTACTED' };
           }
           return p;
         })
     );
   };
 
-  // Module 1: Add Universal Product
+  // Module 1 (Step 5b): Supplier Confirms Delivery -> Updates Stock & Generates Payable Invoice
+  const handleConfirmSupplierDelivery = (productId: string) => {
+    const target = products.find((p) => p.id === productId);
+    if (!target) return;
+
+    setProducts((prev) =>
+        prev.map((p) => {
+          if (p.id === productId) {
+            return { ...p, stock: p.stock + p.reorderQty, restockStatus: 'CONFIRMED' };
+          }
+          return p;
+        })
+    );
+
+    const poCost = Number(((target.unitCostRM ?? target.priceRM * 0.6) * target.reorderQty).toFixed(2));
+    const newSupplierInvoice: InvoiceItem = {
+      id: `INV-${Date.now()}`,
+      invNo: `SUP-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+      type: 'SUPPLIER_PAYABLE',
+      party: target.supplierName,
+      date: '21 Oct 2026',
+      amountRM: poCost,
+      aiCategory: `Inventory Restock (${target.category})`,
+      aiConfidence: 98,
+      paid: false,
+      status: 'NEEDS_REVIEW',
+    };
+    setInvoices((prev) => [newSupplierInvoice, ...prev]);
+
+    addAuditLog(
+        'Auto Restock',
+        `Supplier ${target.supplierName} confirmed delivery: +${target.reorderQty}${target.uom} added to ${target.name} & payable invoice${newSupplierInvoice.invNo} created.`
+    );
+  };
+
+  // Module 1 (Step 1 Demo Trigger): Simulate Stock Drop (-5 units)
+  const handleSimulateStockDrop = (productId: string) => {
+    setProducts((prev) =>
+        prev.map((p) => {
+          if (p.id === productId) {
+            const newStock = Math.max(0, p.stock - 5);
+            const isTriggered = newStock <= p.minThreshold;
+            if (isTriggered) {
+              addAuditLog(
+                  'Auto Restock (Trigger)',
+                  `Low-stock alert triggered for ${p.name} (${p.sku}):${newStock} ${p.uom} remaining (Min Threshold:${p.minThreshold}).`
+              );
+            }
+            return {
+              ...p,
+              stock: newStock,
+              restockStatus: isTriggered ? 'TRIGGERED_PENDING_APPROVAL' : p.restockStatus,
+            };
+          }
+          return p;
+        })
+    );
+  };
+
+  // Module 1: Add Universal Product (Parses F&B Batch & Expiry cleanly)
   const handleSaveProduct = (newProd: NewProductForm) => {
     const isLow = Number(newProd.stock) <= Number(newProd.minThreshold);
+
+    let parsedBatch: string | undefined = undefined;
+    let parsedExpiry: string | undefined = undefined;
+    if (newProd.industry === 'FNB_PERISHABLE' && newProd.extraAttr) {
+      const parts = newProd.extraAttr.split('•');
+      parsedBatch = parts[0]?.replace('Batch:', '').trim() || 'B-2026-NEW';
+      parsedExpiry = parts[1]?.replace('Exp:', '').trim() || '2026-11-15';
+    }
+
     const created: Product = {
       id: `P-${Date.now()}`,
       sku: newProd.sku || `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -111,7 +179,8 @@ export default function App() {
       supplierContact: newProd.supplierContact || '+6012-9998888',
       performance: 'Good',
       visibility: true,
-      batchNo: newProd.industry === 'FNB_PERISHABLE' ? newProd.extraAttr : undefined,
+      batchNo: parsedBatch,
+      expiryDate: parsedExpiry,
       variantSpec: newProd.industry !== 'FNB_PERISHABLE' ? newProd.extraAttr : undefined,
       restockStatus: isLow ? 'TRIGGERED_PENDING_APPROVAL' : 'HEALTHY',
     };
@@ -152,7 +221,7 @@ export default function App() {
     setAutoOrders((prev) => [newSuggestion, ...prev]);
     addAuditLog(
         'Sales Analytics -> Order Status',
-        `Queued Vyte AI restock suggestion for ${product.name} (+${recommendedQty} ${product.uom}) awaiting human permission.`
+        `Queued Vyte AI restock suggestion for ${product.name} (+${recommendedQty}${product.uom}) awaiting human permission.`
     );
   };
 
@@ -189,14 +258,12 @@ export default function App() {
     if (decision === 'APPROVE_AND_CONTACT') {
       setProducts((prev) =>
           prev.map((p) =>
-              p.id === target.productID
-                  ? { ...p, stock: p.stock + finalQty, restockStatus: 'CONFIRMED' }
-                  : p
+              p.id === target.productID ? { ...p, stock: p.stock + finalQty, restockStatus: 'CONFIRMED' } : p
           )
       );
       addAuditLog(
           'Order Status (Human Approved)',
-          `Granted permission & contacted ${target.supplierName} for ${finalQty} ${target.uom} of ${target.productName} (${target.poNumber}).`
+          `Granted permission & contacted ${target.supplierName} for ${finalQty}${target.uom} of ${target.productName} (${target.poNumber}).`
       );
     } else if (decision === 'HOLD') {
       addAuditLog('Order Status', `Placed AI auto-order ${target.poNumber} on hold.`);
@@ -241,7 +308,7 @@ export default function App() {
 
     addAuditLog(
         'Order Status (NLP Approved)',
-        `Approved customer order ${orderId} for ${customerName}, deducted stock, and generated invoice ${newCustInvoice.invNo}.`
+        `Approved customer order ${orderId} for ${customerName}, deducted stock, and generated invoice${newCustInvoice.invNo}.`
     );
   };
 
@@ -262,8 +329,51 @@ export default function App() {
     );
   };
 
-  // Module 5: Verify AI Categorized Invoice
+  // Module 4: Trigger AI Expiry & Batch Quality Scan across F&B products
+  const handleTriggerQCScan = () => {
+    const fnbProducts = products.filter((p) => p.industry === 'FNB_PERISHABLE');
+    const existingSkus = new Set(qcAlerts.map((q) => q.sku));
+    const newlyDetected: QCAlert[] = [];
+
+    fnbProducts.forEach((p) => {
+      if (!existingSkus.has(p.sku)) {
+        newlyDetected.push({
+          id: `QC-${Date.now()}-${p.id}`,
+          productName: p.name,
+          sku: p.sku,
+          batchNo: p.batchNo || 'B-2026-10A',
+          expiryDate: p.expiryDate || '2026-10-26',
+          daysLeft: 5,
+          qtyAffected: `${p.stock}${p.uom}`,
+          triggerReason: 'Batch approaching 5-day freshness window',
+          aiSuggestion: `Bundle ${p.name} into weekend combo promotion (15% off) & pause auto-restock for 3 days.`,
+          actionLabel: 'Approve Bundle Promo',
+          savedRM: Number((p.stock * p.priceRM * 0.75).toFixed(2)),
+          status: 'PENDING_APPROVAL',
+        });
+      }
+    });
+
+    if (newlyDetected.length > 0) {
+      setQcAlerts((prev) => [...newlyDetected, ...prev]);
+      addAuditLog(
+          'Quality & Expiry (AI Scan)',
+          `AI scan detected ${newlyDetected.length} new perishable batch(es) requiring expiry intervention.`
+      );
+    } else {
+      addAuditLog(
+          'Quality & Expiry (AI Scan)',
+          `Completed batch scan across ${products.length} SKUs — all active expiry risks are already queued.`
+      );
+    }
+  };
+
+  // Module 5: Verify AI Categorized Invoice (Enforces RBAC)
   const handleVerifyInvoice = (invId: string) => {
+    if (role !== 'SME_OWNER') {
+      alert('Vyte RBAC Restriction: Only SME_OWNER can verify accounting & e-invoice classifications.');
+      return;
+    }
     setInvoices((prev) =>
         prev.map((inv) => {
           if (inv.id === invId) {
@@ -341,7 +451,7 @@ export default function App() {
               onLogout={handleLogout}
           />
 
-          <div className="p-8 space-y-6">
+          <div className="p-4 lg:p-5 space-y-4 max-w-[1600px] mx-auto w-full">
             <KpiCards
                 totalSkus={products.length}
                 pendingRestocks={
@@ -354,7 +464,10 @@ export default function App() {
             {activeTab === 'mod1' && (
                 <RestockModule
                     products={filteredProducts}
-                    onApproveRestock={handleApproveRestock}
+                    role={role}
+                    onApproveAndContactSupplier={handleApproveAndContactSupplier}
+                    onConfirmSupplierDelivery={handleConfirmSupplierDelivery}
+                    onSimulateStockDrop={handleSimulateStockDrop}
                     onOpenAddModal={() => setShowAddModal(true)}
                 />
             )}
@@ -381,7 +494,12 @@ export default function App() {
             )}
 
             {activeTab === 'mod4' && (
-                <QualityControlModule qcAlerts={qcAlerts} onApproveQC={handleApproveQC} />
+                <QualityControlModule
+                    qcAlerts={qcAlerts}
+                    role={role}
+                    onApproveQC={handleApproveQC}
+                    onTriggerScan={handleTriggerQCScan}
+                />
             )}
 
             {activeTab === 'mod5' && (
