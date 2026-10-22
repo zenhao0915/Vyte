@@ -43,6 +43,9 @@ interface SalesAnalyticsModuleProps {
     onLogAction: (module: string, detail: string) => void;
     onTriggerLoadingScreen?: (message: string, durationMs?: number) => void;
 }
+
+const SALES_ANALYTICS_STORAGE_KEY = 'vyte_sales_analytics_ui_state_v2';
+
 const MONTH_NAMES = [
     'Jan',
     'Feb',
@@ -67,33 +70,35 @@ type ProcureSortField =
     | 'recommendedProcureQty'
     | 'priorityLevel';
 
-/** @Composable */
+interface PersistedSalesUiState {
+    activeSubView: 'breakdown' | 'recommendations';
+    filterMonth: number | null;
+    filterYear: number;
+    filterQuarter: number | null;
+    selectedCategory: string;
+    holdingCostInput: string;
+    turnoverDaysInput: string;
+    tableSearch: string;
+}
+
 export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
                                                                               products,
                                                                               userID,
                                                                               currency = 'MYR',
-                                                                              exchangeRate = 1,
+                                                                              exchangeRate = 1.0,
                                                                               onQueueRestockToOrderModule,
                                                                               onLogAction,
+                                                                              onTriggerLoadingScreen,
                                                                           }) => {
     const currencySymbol = CURRENCY_SYMBOLS[currency] || 'RM';
     const currentYear = new Date().getFullYear();
-
-    // Toggle bar state for switching between Product Sales Breakdown & AI Recommendations
-    const [activeSubView, setActiveSubView] = useState<'breakdown' | 'recommendations'>(
-        'breakdown'
-    );
 
     const availableYears = useMemo(() => {
         const yearSet = new Set<number>([currentYear, currentYear - 1, currentYear - 2]);
         products.forEach((p) => {
             if (p.expiryDate) {
                 const parsedYear = Number(p.expiryDate.slice(0, 4));
-                if (
-                    !isNaN(parsedYear) &&
-                    parsedYear >= 2020 &&
-                    parsedYear <= currentYear + 2
-                ) {
+                if (!isNaN(parsedYear) && parsedYear >= 2020 && parsedYear <= currentYear + 2) {
                     yearSet.add(parsedYear);
                 }
             }
@@ -105,15 +110,63 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
         return Array.from(yearSet).sort((a, b) => b - a);
     }, [products, currentYear]);
 
-    const [filterMonth, setFilterMonth] = useState<number | null>(null);
-    const [filterYear, setFilterYear] = useState<number>(
-        () => availableYears[0] || currentYear
-    );
-    const [filterQuarter, setFilterQuarter] = useState<number | null>(3);
-    const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
+    // Load persisted inputs & filters from localStorage so they stay after refreshing the page
+    const savedUi = useMemo<Partial<PersistedSalesUiState>>(() => {
+        try {
+            const raw = localStorage.getItem(SALES_ANALYTICS_STORAGE_KEY);
+            return raw ? (JSON.parse(raw) as Partial<PersistedSalesUiState>) : {};
+        } catch {
+            return {};
+        }
+    }, []);
 
-    const [holdingCostInput, setHoldingCostInput] = useState<string>('18.5');
-    const [turnoverDaysInput, setTurnoverDaysInput] = useState<string>('21');
+    const [activeSubView, setActiveSubView] = useState<'breakdown' | 'recommendations'>(
+        savedUi.activeSubView ?? 'breakdown'
+    );
+    const [filterMonth, setFilterMonth] = useState<number | null>(
+        savedUi.filterMonth !== undefined ? savedUi.filterMonth : null
+    );
+    const [filterYear, setFilterYear] = useState<number>(
+        savedUi.filterYear ?? (availableYears[0] || currentYear)
+    );
+    const [filterQuarter, setFilterQuarter] = useState<number | null>(
+        savedUi.filterQuarter !== undefined ? savedUi.filterQuarter : 3
+    );
+    const [selectedCategory, setSelectedCategory] = useState<string>(
+        savedUi.selectedCategory ?? 'ALL'
+    );
+
+    const [holdingCostInput, setHoldingCostInput] = useState<string>(
+        savedUi.holdingCostInput !== undefined ? savedUi.holdingCostInput : '18.5'
+    );
+    const [turnoverDaysInput, setTurnoverDaysInput] = useState<string>(
+        savedUi.turnoverDaysInput !== undefined ? savedUi.turnoverDaysInput : '21'
+    );
+    const [tableSearch, setTableSearch] = useState<string>(savedUi.tableSearch ?? '');
+
+    // Persist every input change to localStorage immediately
+    useEffect(() => {
+        const payload: PersistedSalesUiState = {
+            activeSubView,
+            filterMonth,
+            filterYear,
+            filterQuarter,
+            selectedCategory,
+            holdingCostInput,
+            turnoverDaysInput,
+            tableSearch,
+        };
+        localStorage.setItem(SALES_ANALYTICS_STORAGE_KEY, JSON.stringify(payload));
+    }, [
+        activeSubView,
+        filterMonth,
+        filterYear,
+        filterQuarter,
+        selectedCategory,
+        holdingCostInput,
+        turnoverDaysInput,
+        tableSearch,
+    ]);
 
     const inputErrors = useMemo(() => {
         const errs: { holdingCost?: string; turnoverDays?: string } = {};
@@ -137,7 +190,6 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
     const holdingCostPercentage = Math.min(50, Math.max(1, Number(holdingCostInput) || 18.5));
     const targetTurnoverDays = Math.min(90, Math.max(5, Number(turnoverDaysInput) || 21));
 
-    const [tableSearch, setTableSearch] = useState<string>('');
     const [salesSortBy, setSalesSortBy] = useState<SalesSortField>('totalSalesAmount');
     const [salesSortDir, setSalesSortDir] = useState<'asc' | 'desc'>('desc');
     const [procureSortBy, setProcureSortBy] = useState<ProcureSortField>(
@@ -175,8 +227,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
         const breakdown = filtered.map((p) => {
             const dailyRate = p.dailyDepletionRate ?? 2.5;
             const unitsSold = Math.round(dailyRate * daysInPeriod * periodMultiplier);
-            const effectivePrice = p.priceRM * exchangeRate;
-            const totalSalesAmount = Number((unitsSold * effectivePrice).toFixed(2));
+            const totalSalesAmount = Number((unitsSold * p.priceRM * exchangeRate).toFixed(2));
             return {
                 productID: p.id,
                 SKU: p.sku,
@@ -262,7 +313,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
 
         return {
             generatedAt: new Date().toISOString(),
-            aiSummary: `For ${fallbackSalesReport.period}, portfolio revenue reached ${currencySymbol} ${fallbackSalesReport.totalRevenue.toLocaleString()} across ${fallbackSalesReport.totalUnitsSold.toLocaleString()} units. At a ${holdingCostPercentage}% holding cost rate and ${targetTurnoverDays}-day turnover target, Vyte AI identified ${highPriorityCount} high-priority SKUs requiring immediate restock to prevent stockout revenue loss while keeping carrying costs optimal.`,
+            aiSummary: `For ${fallbackSalesReport.period}, portfolio revenue reached ${currencySymbol} ${fallbackSalesReport.totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} across ${fallbackSalesReport.totalUnitsSold.toLocaleString()} units. At a ${holdingCostPercentage}% holding cost rate and ${targetTurnoverDays}-day turnover target, Vyte AI identified ${highPriorityCount} high-priority SKUs requiring immediate restock to prevent stockout revenue loss while keeping carrying costs optimal.`,
             procurementRecommendations: recommendations,
         };
     }, [
@@ -288,6 +339,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
             if (logType === 'manual-ai') {
                 setIsRunningAi(true);
                 setQueuedSkus({});
+                onTriggerLoadingScreen?.('Recalculating Vyte AI Holding-Cost Forecast...', 750);
             } else {
                 setIsSyncingReport(true);
                 if (logType === 'manual-report') {
@@ -357,13 +409,23 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
             inputErrors.holdingCost,
             inputErrors.turnoverDays,
             onLogAction,
+            onTriggerLoadingScreen,
             currencySymbol,
         ]
     );
 
     useEffect(() => {
         void fetchSalesAndProcurement('auto');
-    }, [filterYear, filterQuarter, filterMonth, selectedCategory, products, exchangeRate]);
+    }, [
+        filterYear,
+        filterQuarter,
+        filterMonth,
+        selectedCategory,
+        products,
+        holdingCostPercentage,
+        targetTurnoverDays,
+        exchangeRate,
+    ]);
 
     const handleRefreshSalesReport = async () => {
         await fetchSalesAndProcurement('manual-report');
@@ -375,7 +437,8 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
     };
 
     const handleExportCsv = () => {
-        if (!reportData) return;
+        const activeRep = reportData ?? fallbackSalesReport;
+        const activeProc = procurementData ?? fallbackProcurementAnalysis;
 
         const headers = [
             'Period',
@@ -384,7 +447,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
             'Product Name',
             'Category',
             'Units Sold',
-            `Revenue (${reportData.currency})`,
+            `Revenue (${currency})`,
             'Revenue Share (%)',
             'Remaining Stock',
             `Holding Cost (${currency})`,
@@ -394,12 +457,12 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
             'AI Priority Level',
         ];
 
-        const rows = reportData.productBreakdown.map((item) => {
+        const rows = activeRep.productBreakdown.map((item) => {
             const sharePct =
-                reportData.totalRevenue > 0
-                    ? ((item.totalSalesAmount / reportData.totalRevenue) * 100).toFixed(2)
+                activeRep.totalRevenue > 0
+                    ? ((item.totalSalesAmount / activeRep.totalRevenue) * 100).toFixed(2)
                     : '0.00';
-            const rec = procurementData?.procurementRecommendations.find(
+            const rec = activeProc.procurementRecommendations.find(
                 (r) => r.productID === item.productID || r.SKU === item.SKU
             );
 
@@ -411,7 +474,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
             };
 
             return [
-                reportData.period,
+                activeRep.period,
                 item.productID,
                 item.SKU,
                 item.name,
@@ -434,7 +497,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
-        const safePeriod = reportData.period.replace(/[^a-zA-Z0-9-_]/g, '_');
+        const safePeriod = activeRep.period.replace(/[^a-zA-Z0-9-_]/g, '_');
         link.href = url;
         link.setAttribute('download', `vyte_sales_analytics_${safePeriod}.csv`);
         document.body.appendChild(link);
@@ -444,7 +507,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
 
         onLogAction(
             'Sales Analytics',
-            `Exported CSV report (vyte_sales_analytics_${safePeriod}.csv) with ${reportData.productBreakdown.length} SKUs.`
+            `Exported CSV report (vyte_sales_analytics_${safePeriod}.csv) with ${activeRep.productBreakdown.length} SKUs.`
         );
     };
 
@@ -453,10 +516,12 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
         [products]
     );
 
+    const activeReport = fallbackSalesReport;
+    const activeProcurement = fallbackProcurementAnalysis;
+
     const displayedBreakdown = useMemo(() => {
-        if (!reportData) return [];
         const q = tableSearch.trim().toLowerCase();
-        const filtered = reportData.productBreakdown.filter(
+        const filtered = activeReport.productBreakdown.filter(
             (item) =>
                 !q ||
                 item.name.toLowerCase().includes(q) ||
@@ -469,10 +534,9 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
             if (salesSortBy === 'name') return a.name.localeCompare(b.name) * dir;
             return (a[salesSortBy] - b[salesSortBy]) * dir;
         });
-    }, [reportData, tableSearch, salesSortBy, salesSortDir]);
+    }, [activeReport, tableSearch, salesSortBy, salesSortDir]);
 
     const displayedRecommendations = useMemo(() => {
-        if (!procurementData) return [];
         const q = tableSearch.trim().toLowerCase();
         const priorityRank: Record<'HIGH' | 'MEDIUM' | 'LOW', number> = {
             HIGH: 3,
@@ -480,7 +544,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
             LOW: 1,
         };
 
-        const filtered = procurementData.procurementRecommendations.filter(
+        const filtered = activeProcurement.procurementRecommendations.filter(
             (rec) =>
                 !q ||
                 rec.name.toLowerCase().includes(q) ||
@@ -497,7 +561,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
             }
             return (a[procureSortBy] - b[procureSortBy]) * dir;
         });
-    }, [procurementData, tableSearch, procureSortBy, procureSortDir]);
+    }, [activeProcurement, tableSearch, procureSortBy, procureSortDir]);
 
     const toggleSalesSort = (field: SalesSortField) => {
         if (salesSortBy === field) {
@@ -517,8 +581,6 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
         }
     };
 
-    const activeReport = reportData ?? fallbackSalesReport;
-    const activeProcurement = procurementData ?? fallbackProcurementAnalysis;
     const isLoading = isSyncingReport || isRunningAi;
 
     const topProduct = useMemo(() => {
@@ -528,7 +590,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
         )[0];
     }, [activeReport]);
 
-    const totalHoldingCostRM = useMemo(
+    const totalHoldingCostFormatted = useMemo(
         () =>
             activeProcurement.procurementRecommendations
                 .reduce((acc, r) => acc + r.costOfHoldingStock, 0)
@@ -561,11 +623,9 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
 
     return (
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 items-start">
-            {/* ================================================================= */}
-            {/* LEFT 80% WORKSPACE (4 of 5 cols): TOGGLE BAR -> DATES BAR -> TABLE */}
-            {/* ================================================================= */}
+            {/* LEFT 80% WORKSPACE (4 of 5 cols) */}
             <div className="lg:col-span-4 space-y-3.5 min-w-0">
-                {/* 1. Toggle Bar (Swapped to Top Position) */}
+                {/* 1. Sub-View Toggle Bar */}
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="inline-flex items-center bg-slate-200/80 p-1 rounded-xl border border-slate-300/70 text-xs font-semibold">
                         <button
@@ -588,30 +648,30 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
                                     : 'text-slate-600 hover:text-slate-900'
                             }`}
                         >
-                            AI Restock &amp; Holding-Cost Recommendations (
-                            {displayedRecommendations.length})
+                            AI Restock &amp; Holding-Cost Recommendations ({displayedRecommendations.length})
                         </button>
                     </div>
                 </div>
 
-                {/* 2. Dates & Recalculation Bar (Swapped Below Toggle Bar) */}
-                <div className="bg-white px-4 py-3 rounded-2xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-2.5">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <VyteDropdown
-                            variant="soft"
-                            size="sm"
-                            prefix="Year:"
-                            icon={<Calendar className="w-3.5 h-3.5 text-emerald-600" />}
-                            value={filterYear}
-                            onChange={(val) => setFilterYear(Number(val))}
-                            options={availableYears.map((yr) => ({
-                                label: String(yr),
-                                value: yr,
-                            }))}
-                            className="min-w-[120px]"
-                        />
+                {/* 2. Date & Category Filter Bar (Recalculate AI Forecast button moved to Right AI Card) */}
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                        <div className="w-36">
+                            <VyteDropdown
+                                variant="soft"
+                                size="sm"
+                                prefix="Year:"
+                                icon={<Calendar className="w-3.5 h-3.5 text-emerald-600" />}
+                                value={filterYear}
+                                onChange={(val) => setFilterYear(Number(val))}
+                                options={availableYears.map((yr) => ({
+                                    label: String(yr),
+                                    value: yr,
+                                }))}
+                            />
+                        </div>
 
-                        <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200">
+                        <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
                             {[
                                 { label: 'Q1', val: 1 },
                                 { label: 'Q2', val: 2 },
@@ -637,162 +697,121 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
                             ))}
                         </div>
 
-                        <VyteDropdown
-                            variant="soft"
-                            size="sm"
-                            prefix="Month:"
-                            value={filterMonth ?? ''}
-                            onChange={(val) => {
-                                const parsed = val === '' ? null : Number(val);
-                                setFilterMonth(parsed);
-                                if (parsed !== null) setFilterQuarter(null);
-                            }}
-                            options={[
-                                { label: 'All Months', value: '' },
-                                ...MONTH_NAMES.map((m, idx) => ({
-                                    label: m,
-                                    value: idx + 1,
-                                })),
-                            ]}
-                            className="min-w-[140px]"
-                        />
+                        <div className="w-40">
+                            <VyteDropdown
+                                variant="soft"
+                                size="sm"
+                                prefix="Month:"
+                                value={filterMonth ?? ''}
+                                onChange={(val) => {
+                                    const parsed = val === '' ? null : Number(val);
+                                    setFilterMonth(parsed);
+                                    if (parsed !== null) setFilterQuarter(null);
+                                }}
+                                options={[
+                                    { label: 'All Months', value: '' },
+                                    ...MONTH_NAMES.map((m, idx) => ({
+                                        label: m,
+                                        value: idx + 1,
+                                    })),
+                                ]}
+                            />
+                        </div>
 
-                        <VyteDropdown
-                            variant="soft"
-                            size="sm"
-                            value={selectedCategory}
-                            onChange={(val) => setSelectedCategory(val)}
-                            options={categories.map((cat) => ({
-                                label: cat === 'ALL' ? 'All Product Categories' : cat,
-                                value: cat,
-                            }))}
-                            className="min-w-[175px]"
-                        />
+                        <div className="w-52">
+                            <VyteDropdown
+                                variant="soft"
+                                size="sm"
+                                value={selectedCategory}
+                                onChange={(val) => setSelectedCategory(String(val))}
+                                options={categories.map((cat) => ({
+                                    label: cat === 'ALL' ? 'All Product Categories' : cat,
+                                    value: cat,
+                                }))}
+                            />
+                        </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2">
-                        <span
-                            className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold inline-flex items-center gap-1.5 border ${
-                                isSimulatedData
-                                    ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                    : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                            }`}
-                        >
-                            {isSimulatedData ? (
-                                <>
-                                    <WifiOff className="w-3.5 h-3.5 text-amber-600" />
-                                    Simulated Data
-                                </>
-                            ) : (
-                                <>
-                                    <Wifi className="w-3.5 h-3.5 text-emerald-600" />
-                                    Live API Data
-                                </>
-                            )}
-                        </span>
+                    <div className="flex items-center gap-2">
+            <span
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 border ${
+                    isSimulatedData
+                        ? 'bg-amber-50 text-amber-800 border-amber-200'
+                        : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                }`}
+            >
+              {isSimulatedData ? (
+                  <>
+                      <WifiOff className="w-3 h-3" /> Simulated Data
+                  </>
+              ) : (
+                  <>
+                      <Wifi className="w-3 h-3" /> Live Backend
+                  </>
+              )}
+            </span>
 
                         <button
                             type="button"
                             onClick={() => void handleRefreshSalesReport()}
                             disabled={isLoading}
-                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
                         >
-                            <RefreshCw
-                                className={`w-3.5 h-3.5 ${
-                                    isSyncingReport ? 'animate-spin' : ''
-                                }`}
-                            />
+                            <RefreshCw className={`w-3.5 h-3.5 ${isSyncingReport ? 'animate-spin' : ''}`} />
                             Refresh Report
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={() => void handleRunAiProcurement()}
-                            disabled={
-                                isLoading ||
-                                Boolean(inputErrors.holdingCost || inputErrors.turnoverDays)
-                            }
-                            className="px-3.5 py-1.5 bg-[#2BB656] hover:bg-emerald-600 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
-                        >
-                            <Sparkles className="w-3.5 h-3.5" />
-                            {isRunningAi ? 'Analyzing...' : 'Recalculate AI Forecast'}
                         </button>
                     </div>
                 </div>
 
                 {errorMessage && (
-                    <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-center justify-between gap-4 text-xs text-rose-800">
-                        <div className="flex items-center gap-2.5 font-semibold">
-                            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                            <span>Failed to load analytics: {errorMessage}</span>
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => void fetchSalesAndProcurement('manual-report')}
-                            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg transition cursor-pointer shrink-0"
-                        >
-                            Retry
-                        </button>
+                    <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        <span>{errorMessage}</span>
                     </div>
                 )}
 
-                {/* 3. Active Table Card (Search Bar Next to Export CSV) */}
-                {activeSubView === 'breakdown' ? (
+                {/* 3A. Product Sales Breakdown Table */}
+                {activeSubView === 'breakdown' && (
                     <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
                         <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
                             <div>
-                                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                                     <TrendingUp className="w-4 h-4 text-blue-600" /> Product Sales Breakdown ({activeReport.period})
                                 </h3>
-                                <p className="text-xs text-slate-500 mt-0.5">
+                                <p className="text-[11px] text-slate-500 mt-0.5">
                                     Tracks unit turnover, share of total period revenue, and remaining inventory levels per SKU.
                                 </p>
                             </div>
 
-                            {/* Search Bar Positioned Right Next to Export CSV */}
-                            <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex items-center gap-2">
                                 {renderSearchBox()}
                                 <button
                                     type="button"
                                     onClick={handleExportCsv}
-                                    disabled={displayedBreakdown.length === 0}
-                                    className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shrink-0"
+                                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
                                 >
                                     <Download className="w-3.5 h-3.5" /> Export CSV
                                 </button>
                             </div>
                         </div>
 
-                        {isLoading && !reportData ? (
-                            <div className="p-10 text-center space-y-2">
-                                <RefreshCw className="w-6 h-6 text-emerald-600 animate-spin mx-auto" />
-                                <p className="text-xs font-semibold text-slate-500">
-                                    Loading sales breakdown...
-                                </p>
-                            </div>
-                        ) : displayedBreakdown.length === 0 ? (
-                            <div className="p-10 text-center space-y-2">
-                                <Inbox className="w-8 h-8 text-slate-300 mx-auto" />
-                                <p className="text-sm font-bold text-slate-700">
-                                    No matching products in sales report
-                                </p>
-                                <p className="text-xs text-slate-500">
-                                    Try clearing your search filter or selecting "All Product Categories".
-                                </p>
+                        {displayedBreakdown.length === 0 ? (
+                            <div className="p-10 text-center text-xs text-slate-400 flex flex-col items-center gap-2">
+                                <Inbox className="w-6 h-6 text-slate-300" />
+                                <span>No matching SKU sales records found.</span>
                             </div>
                         ) : (
                             <div className="overflow-x-auto">
-                                <table className="w-full text-left border-collapse">
+                                <table className="w-full text-left border-collapse text-xs">
                                     <thead>
-                                    <tr className="border-b border-slate-200 bg-slate-50/70 text-xs font-semibold text-slate-600">
+                                    <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-semibold text-slate-600">
                                         <th className="py-3 px-4">
                                             <button
                                                 type="button"
                                                 onClick={() => toggleSalesSort('name')}
-                                                className="inline-flex items-center gap-1 hover:text-slate-900 cursor-pointer"
+                                                className="inline-flex items-center gap-1 font-bold hover:text-slate-900 cursor-pointer"
                                             >
-                                                Product Name &amp; SKU{' '}
-                                                <ArrowUpDown className="w-3 h-3" />
+                                                Product Name &amp; SKU <ArrowUpDown className="w-3 h-3" />
                                             </button>
                                         </th>
                                         <th className="py-3 px-4">Category</th>
@@ -800,7 +819,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
                                             <button
                                                 type="button"
                                                 onClick={() => toggleSalesSort('unitsSold')}
-                                                className="inline-flex items-center gap-1 hover:text-slate-900 cursor-pointer"
+                                                className="inline-flex items-center gap-1 font-bold hover:text-slate-900 cursor-pointer"
                                             >
                                                 Units Sold <ArrowUpDown className="w-3 h-3" />
                                             </button>
@@ -808,87 +827,60 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
                                         <th className="py-3 px-4">
                                             <button
                                                 type="button"
-                                                onClick={() =>
-                                                    toggleSalesSort('totalSalesAmount')
-                                                }
-                                                className="inline-flex items-center gap-1 hover:text-slate-900 cursor-pointer"
+                                                onClick={() => toggleSalesSort('totalSalesAmount')}
+                                                className="inline-flex items-center gap-1 font-bold hover:text-slate-900 cursor-pointer"
                                             >
-                                                Period Revenue ({activeReport.currency}){' '}
-                                                <ArrowUpDown className="w-3 h-3" />
+                                                Period Revenue ({currency}) <ArrowUpDown className="w-3 h-3" />
                                             </button>
                                         </th>
-                                        <th className="py-3 px-4 w-56">
-                                            Revenue Share (% of Total)
-                                        </th>
+                                        <th className="py-3 px-4 w-52">Revenue Share (% of Total)</th>
                                         <th className="py-3 px-4">
                                             <button
                                                 type="button"
-                                                onClick={() =>
-                                                    toggleSalesSort('remainingStock')
-                                                }
-                                                className="inline-flex items-center gap-1 hover:text-slate-900 cursor-pointer"
+                                                onClick={() => toggleSalesSort('remainingStock')}
+                                                className="inline-flex items-center gap-1 font-bold hover:text-slate-900 cursor-pointer"
                                             >
-                                                Remaining Stock{' '}
-                                                <ArrowUpDown className="w-3 h-3" />
+                                                Remaining Stock <ArrowUpDown className="w-3 h-3" />
                                             </button>
                                         </th>
                                     </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-100 text-sm">
+                                    <tbody className="divide-y divide-slate-100">
                                     {displayedBreakdown.map((item) => {
                                         const sharePct =
                                             activeReport.totalRevenue > 0
                                                 ? Number(
-                                                    (
-                                                        (item.totalSalesAmount /
-                                                            activeReport.totalRevenue) *
-                                                        100
-                                                    ).toFixed(1)
+                                                    ((item.totalSalesAmount / activeReport.totalRevenue) * 100).toFixed(1)
                                                 )
                                                 : 0;
-
                                         return (
-                                            <tr
-                                                key={item.productID}
-                                                className="hover:bg-slate-50/80 transition"
-                                            >
+                                            <tr key={item.productID} className="hover:bg-slate-50/80 transition">
                                                 <td className="py-3 px-4">
-                                                    <p className="font-semibold text-slate-900">
-                                                        {item.name}
-                                                    </p>
-                                                    <p className="text-xs font-mono text-slate-400">
-                                                        {item.SKU}
-                                                    </p>
+                                                    <p className="font-bold text-slate-900">{item.name}</p>
+                                                    <p className="text-[11px] font-mono text-slate-400">{item.SKU}</p>
                                                 </td>
-                                                <td className="py-3 px-4 text-xs text-slate-600">
-                                                    {item.category}
-                                                </td>
-                                                <td className="py-3 px-4 font-bold text-slate-800">
+                                                <td className="py-3 px-4 text-slate-600">{item.category}</td>
+                                                <td className="py-3 px-4 font-bold text-slate-900">
                                                     {item.unitsSold.toLocaleString()}
                                                 </td>
                                                 <td className="py-3 px-4 font-bold text-emerald-700">
-                                                    {activeReport.currency}{' '}
-                                                    {item.totalSalesAmount.toLocaleString(
-                                                        undefined,
-                                                        { minimumFractionDigits: 2 }
-                                                    )}
+                                                    {currencySymbol}{' '}
+                                                    {item.totalSalesAmount.toLocaleString(undefined, {
+                                                        minimumFractionDigits: 2,
+                                                        maximumFractionDigits: 2,
+                                                    })}
                                                 </td>
                                                 <td className="py-3 px-4">
-                                                    <div className="flex items-center gap-2.5">
-                                                        <div className="flex-1 bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="flex-1 bg-slate-100 h-2 rounded-full overflow-hidden">
                                                             <div
                                                                 className="bg-[#2BB656] h-full rounded-full transition-all duration-500"
-                                                                style={{
-                                                                    width: `${Math.min(
-                                                                        100,
-                                                                        sharePct
-                                                                    )}%`,
-                                                                }}
+                                                                style={{ width: `${Math.min(100, sharePct)}%` }}
                                                             />
                                                         </div>
-                                                        <span className="text-xs font-bold text-slate-600 w-12 text-right">
-                                                                {sharePct.toFixed(1)}%
-                                                            </span>
+                                                        <span className="text-[11px] font-semibold text-slate-600 w-10 text-right">
+                                {sharePct}%
+                              </span>
                                                     </div>
                                                 </td>
                                                 <td className="py-3 px-4 font-semibold text-slate-700">
@@ -902,252 +894,157 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
                             </div>
                         )}
                     </div>
-                ) : (
+                )}
+
+                {/* 3B. AI Procurement & Holding-Cost Recommendations Table */}
+                {activeSubView === 'recommendations' && (
                     <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
                         <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
                             <div>
-                                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                                     <Sparkles className="w-4 h-4 text-emerald-600" /> AI Restock &amp; Holding-Cost Recommendations
                                 </h3>
-                                <p className="text-xs text-slate-500 mt-0.5">
-                                    Evaluates holding cost against time needed to sell off current inventory.
+                                <p className="text-[11px] text-slate-500 mt-0.5">
+                                    Evaluates holding cost against time to sell off current inventory and applies optimal restock quantities.
                                 </p>
                             </div>
-
-                            <div className="flex flex-wrap items-center gap-2.5">
-                                {renderSearchBox()}
-                                <button
-                                    type="button"
-                                    onClick={handleExportCsv}
-                                    disabled={displayedRecommendations.length === 0}
-                                    className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shrink-0"
-                                >
-                                    <Download className="w-3.5 h-3.5" /> Export CSV
-                                </button>
-                            </div>
+                            {renderSearchBox()}
                         </div>
 
-                        {displayedRecommendations.length === 0 ? (
-                            <div className="p-10 text-center space-y-2">
-                                <Inbox className="w-8 h-8 text-slate-300 mx-auto" />
-                                <p className="text-sm font-bold text-slate-700">
-                                    No procurement recommendations found
-                                </p>
-                                <p className="text-xs text-slate-500">
-                                    Adjust your search or category filter to view SKUs.
-                                </p>
-                            </div>
-                        ) : (
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left border-collapse">
-                                    <thead>
-                                    <tr className="border-b border-slate-200 bg-slate-50/70 text-xs font-semibold text-slate-600">
-                                        <th className="py-3 px-4">
-                                            <button
-                                                type="button"
-                                                onClick={() => toggleProcureSort('name')}
-                                                className="inline-flex items-center gap-1 hover:text-slate-900 cursor-pointer"
-                                            >
-                                                SKU &amp; Product{' '}
-                                                <ArrowUpDown className="w-3 h-3" />
-                                            </button>
-                                        </th>
-                                        <th className="py-3 px-4">
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    toggleProcureSort('currentStock')
-                                                }
-                                                className="inline-flex items-center gap-1 hover:text-slate-900 cursor-pointer"
-                                            >
-                                                Current Stock{' '}
-                                                <ArrowUpDown className="w-3 h-3" />
-                                            </button>
-                                        </th>
-                                        <th className="py-3 px-4">
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    toggleProcureSort('costOfHoldingStock')
-                                                }
-                                                className="inline-flex items-center gap-1 hover:text-slate-900 cursor-pointer"
-                                            >
-                                                Holding Cost{' '}
-                                                <ArrowUpDown className="w-3 h-3" />
-                                            </button>
-                                        </th>
-                                        <th className="py-3 px-4">
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    toggleProcureSort(
-                                                        'timeNeededToSellOffDays'
-                                                    )
-                                                }
-                                                className="inline-flex items-center gap-1 hover:text-slate-900 cursor-pointer"
-                                            >
-                                                Time to Sell Off{' '}
-                                                <ArrowUpDown className="w-3 h-3" />
-                                            </button>
-                                        </th>
-                                        <th className="py-3 px-4">
-                                            Optimal Stock ({targetTurnoverDays}d)
-                                        </th>
-                                        <th className="py-3 px-4">
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    toggleProcureSort(
-                                                        'recommendedProcureQty'
-                                                    )
-                                                }
-                                                className="inline-flex items-center gap-1 hover:text-slate-900 cursor-pointer"
-                                            >
-                                                AI Recommended Procure{' '}
-                                                <ArrowUpDown className="w-3 h-3" />
-                                            </button>
-                                        </th>
-                                        <th className="py-3 px-4">
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    toggleProcureSort('priorityLevel')
-                                                }
-                                                className="inline-flex items-center gap-1 hover:text-slate-900 cursor-pointer"
-                                            >
-                                                Priority <ArrowUpDown className="w-3 h-3" />
-                                            </button>
-                                        </th>
-                                        <th className="py-3 px-4">Action</th>
-                                    </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100 text-sm">
-                                    {displayedRecommendations.map((rec) => {
-                                        const matchedProduct = products.find(
-                                            (p) => p.id === rec.productID
-                                        );
-                                        const isQueued = queuedSkus[rec.SKU];
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse text-xs">
+                                <thead>
+                                <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-semibold text-slate-600">
+                                    <th className="py-3 px-4">
+                                        <button
+                                            type="button"
+                                            onClick={() => toggleProcureSort('name')}
+                                            className="inline-flex items-center gap-1 font-bold hover:text-slate-900 cursor-pointer"
+                                        >
+                                            SKU &amp; Product <ArrowUpDown className="w-3 h-3" />
+                                        </button>
+                                    </th>
+                                    <th className="py-3 px-3">Current Stock</th>
+                                    <th className="py-3 px-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => toggleProcureSort('costOfHoldingStock')}
+                                            className="inline-flex items-center gap-1 font-bold hover:text-slate-900 cursor-pointer"
+                                        >
+                                            Holding Cost ({currency}) <ArrowUpDown className="w-3 h-3" />
+                                        </button>
+                                    </th>
+                                    <th className="py-3 px-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => toggleProcureSort('timeNeededToSellOffDays')}
+                                            className="inline-flex items-center gap-1 font-bold hover:text-slate-900 cursor-pointer"
+                                        >
+                                            Time to Sell Off <ArrowUpDown className="w-3 h-3" />
+                                        </button>
+                                    </th>
+                                    <th className="py-3 px-3">Optimal ({targetTurnoverDays}d)</th>
+                                    <th className="py-3 px-3">AI Recommended</th>
+                                    <th className="py-3 px-3">Priority</th>
+                                    <th className="py-3 px-4">Action</th>
+                                </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                {displayedRecommendations.map((rec) => {
+                                    const matchedProduct = products.find((p) => p.id === rec.productID);
+                                    const isQueued = queuedSkus[rec.SKU];
 
-                                        return (
-                                            <tr
-                                                key={rec.productID}
-                                                className="hover:bg-slate-50/80 transition"
-                                            >
-                                                <td className="py-3.5 px-4">
-                                                    <p className="font-semibold text-slate-900">
-                                                        {rec.name}
-                                                    </p>
-                                                    <p className="text-xs font-mono text-slate-400">
-                                                        {rec.SKU}
-                                                    </p>
-                                                </td>
-                                                <td className="py-3.5 px-4 font-bold text-slate-800">
-                                                    {rec.currentStock}
-                                                </td>
-                                                <td className="py-3.5 px-4 text-slate-700 font-medium">
-                                                    {currencySymbol} {rec.costOfHoldingStock.toFixed(2)}
-                                                </td>
-                                                <td className="py-3.5 px-4">
-                                                        <span
-                                                            className={`font-semibold text-xs px-2.5 py-1 rounded-full ${
-                                                                rec.timeNeededToSellOffDays <= 4
-                                                                    ? 'bg-rose-100 text-rose-700'
-                                                                    : 'bg-slate-100 text-slate-700'
-                                                            }`}
-                                                        >
-                                                            {rec.timeNeededToSellOffDays} days left
-                                                        </span>
-                                                </td>
-                                                <td className="py-3.5 px-4 font-semibold text-slate-700">
-                                                    {rec.optimalStockToHold} units
-                                                </td>
-                                                <td className="py-3.5 px-4 font-extrabold text-emerald-700">
-                                                    +{rec.recommendedProcureQty} units
-                                                </td>
-                                                <td className="py-3.5 px-4">
-                                                        <span
-                                                            className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                                                                rec.priorityLevel === 'HIGH'
-                                                                    ? 'bg-rose-100 text-rose-700'
-                                                                    : rec.priorityLevel === 'MEDIUM'
-                                                                        ? 'bg-amber-100 text-amber-800'
-                                                                        : 'bg-emerald-100 text-emerald-700'
-                                                            }`}
-                                                        >
-                                                            {rec.priorityLevel}
-                                                        </span>
-                                                </td>
-                                                <td className="py-3.5 px-4">
-                                                    {rec.recommendedProcureQty > 0 &&
-                                                    matchedProduct ? (
-                                                        isQueued ? (
-                                                            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600">
-                                                                    <CheckCircle2 className="w-4 h-4" />{' '}
-                                                                Sent to Order Queue
-                                                                </span>
-                                                        ) : (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => {
-                                                                    setQueuedSkus((prev) => ({
-                                                                        ...prev,
-                                                                        [rec.SKU]: true,
-                                                                    }));
-                                                                    onQueueRestockToOrderModule(
-                                                                        matchedProduct,
-                                                                        rec.recommendedProcureQty,
-                                                                        `Vyte AI Forecast (${activeReport.period}): Sells off in ${rec.timeNeededToSellOffDays}d; optimal ${targetTurnoverDays}d stock is ${rec.optimalStockToHold} units`
-                                                                    );
-                                                                }}
-                                                                className="px-3 py-1.5 bg-slate-900 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap"
-                                                            >
-                                                                Apply to Auto-Restock &rarr;
-                                                            </button>
-                                                        )
+                                    return (
+                                        <tr key={rec.productID} className="hover:bg-slate-50/80 transition">
+                                            <td className="py-3 px-4">
+                                                <p className="font-bold text-slate-900">{rec.name}</p>
+                                                <p className="text-[11px] font-mono text-slate-400">{rec.SKU}</p>
+                                            </td>
+                                            <td className="py-3 px-3 font-bold text-slate-800">{rec.currentStock}</td>
+                                            <td className="py-3 px-3 text-slate-700 font-medium">
+                                                {currencySymbol} {rec.costOfHoldingStock.toFixed(2)}
+                                            </td>
+                                            <td className="py-3 px-3">
+                          <span
+                              className={`font-semibold text-[11px] px-2.5 py-0.5 rounded-full ${
+                                  rec.timeNeededToSellOffDays <= 4
+                                      ? 'bg-rose-100 text-rose-700'
+                                      : 'bg-slate-100 text-slate-700'
+                              }`}
+                          >
+                            {rec.timeNeededToSellOffDays} days left
+                          </span>
+                                            </td>
+                                            <td className="py-3 px-3 font-semibold text-slate-700">
+                                                {rec.optimalStockToHold} units
+                                            </td>
+                                            <td className="py-3 px-3 font-extrabold text-emerald-700">
+                                                +{rec.recommendedProcureQty} units
+                                            </td>
+                                            <td className="py-3 px-3">
+                          <span
+                              className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                                  rec.priorityLevel === 'HIGH'
+                                      ? 'bg-rose-100 text-rose-700'
+                                      : rec.priorityLevel === 'MEDIUM'
+                                          ? 'bg-amber-100 text-amber-800'
+                                          : 'bg-emerald-100 text-emerald-700'
+                              }`}
+                          >
+                            {rec.priorityLevel}
+                          </span>
+                                            </td>
+                                            <td className="py-3 px-4">
+                                                {rec.recommendedProcureQty > 0 && matchedProduct ? (
+                                                    isQueued ? (
+                                                        <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600">
+                                <CheckCircle2 className="w-3.5 h-3.5" /> Applied to Auto Restock
+                              </span>
                                                     ) : (
-                                                        <span className="text-xs text-slate-400">
-                                                                Stock Optimal
-                                                            </span>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setQueuedSkus((prev) => ({ ...prev, [rec.SKU]: true }));
+                                                                onQueueRestockToOrderModule(
+                                                                    matchedProduct,
+                                                                    rec.recommendedProcureQty,
+                                                                    `Vyte AI Forecast (${activeReport.period}): Sells off in ${rec.timeNeededToSellOffDays}d; optimal ${targetTurnoverDays}d stock is ${rec.optimalStockToHold} units`
+                                                                );
+                                                            }}
+                                                            className="px-3 py-1.5 bg-slate-900 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap"
+                                                        >
+                                                            Apply to Auto Restock &rarr;
+                                                        </button>
+                                                    )
+                                                ) : (
+                                                    <span className="text-xs text-slate-400">Stock Optimal</span>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 )}
             </div>
 
-            {/* ================================================================= */}
-            {/* RIGHT 20% PANEL (1 of 5 cols): AI BREAKDOWN ON TOP + 3 KPIs BELOW */}
-            {/* ================================================================= */}
-            <div className="lg:col-span-1 space-y-3 min-w-0">
-                {/* Top of Right Column: AI Breakdown Card */}
-                <div className="bg-gradient-to-br from-[#0B0C0E] via-[#12221B] to-[#0E291E] text-white p-4 rounded-2xl shadow-sm border border-emerald-500/20 space-y-3.5">
-                    <div className="space-y-2">
-                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-[10px] font-bold leading-tight">
-                            <Sparkles className="w-3 h-3 shrink-0" />
-                            <span>Vyte AI Intelligence ({activeReport.period})</span>
-                        </div>
-
-                        {isLoading && (
-                            <p className="text-[10px] text-emerald-300/90 font-semibold animate-pulse">
-                                Syncing latest metrics...
-                            </p>
-                        )}
-
-                        <p className="text-[11px] text-slate-200 leading-relaxed">
-                            {activeProcurement.aiSummary}
-                        </p>
+            {/* RIGHT 20% COLUMN (1 of 5 cols): VYTE AI INTELLIGENCE + RECALCULATE BUTTON + KPI CARDS */}
+            <div className="lg:col-span-1 space-y-3.5">
+                <div className="bg-gradient-to-b from-[#0B0C0E] via-[#10231B] to-[#0D261C] text-white p-5 rounded-2xl shadow-md border border-emerald-500/25 space-y-4">
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-[11px] font-bold">
+                        <Sparkles className="w-3.5 h-3.5" /> Vyte AI Intelligence ({activeReport.period})
                     </div>
 
-                    {/* Holding Cost & Turnover Inputs */}
-                    <div className="bg-white/10 backdrop-blur-md p-2.5 rounded-xl border border-white/15 space-y-2">
+                    <p className="text-xs text-slate-200 leading-relaxed">
+                        {activeProcurement.aiSummary}
+                    </p>
+
+                    {/* Persisted Holding Cost & Target Turnover Inputs + Recalculate Button Underneath */}
+                    <div className="p-3.5 rounded-xl bg-white/10 border border-white/15 space-y-3">
                         <div>
-                            <label className="text-[10px] text-slate-300 block">
+                            <label className="text-[11px] text-slate-300 font-semibold block">
                                 Holding Cost Rate (1–50%)
                             </label>
                             <input
@@ -1161,22 +1058,19 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
                                         .replace(/^0+(?=\d)/, '');
                                     setHoldingCostInput(cleaned);
                                 }}
-                                className={`mt-1 w-full px-2.5 py-1 rounded-lg bg-white text-slate-900 font-bold text-xs focus:outline-none border-2 ${
-                                    inputErrors.holdingCost
-                                        ? 'border-rose-500'
-                                        : 'border-transparent'
+                                className={`mt-1 w-full px-3 py-1.5 rounded-lg bg-white text-slate-900 font-bold text-xs focus:outline-none border-2 ${
+                                    inputErrors.holdingCost ? 'border-rose-500' : 'border-transparent focus:border-emerald-400'
                                 }`}
                             />
                             {inputErrors.holdingCost && (
-                                <p className="text-[9px] text-rose-300 font-semibold mt-0.5 flex items-center gap-1">
-                                    <AlertCircle className="w-2.5 h-2.5 shrink-0" />
-                                    <span>{inputErrors.holdingCost}</span>
+                                <p className="text-[10px] text-rose-300 font-semibold mt-1 flex items-center gap-1">
+                                    <AlertCircle className="w-3 h-3 shrink-0" /> {inputErrors.holdingCost}
                                 </p>
                             )}
                         </div>
 
                         <div>
-                            <label className="text-[10px] text-slate-300 block">
+                            <label className="text-[11px] text-slate-300 font-semibold block">
                                 Target Turnover (5–90d)
                             </label>
                             <input
@@ -1190,78 +1084,89 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
                                         .replace(/^0+(?=\d)/, '');
                                     setTurnoverDaysInput(cleaned);
                                 }}
-                                className={`mt-1 w-full px-2.5 py-1 rounded-lg bg-white text-slate-900 font-bold text-xs focus:outline-none border-2 ${
-                                    inputErrors.turnoverDays
-                                        ? 'border-rose-500'
-                                        : 'border-transparent'
+                                className={`mt-1 w-full px-3 py-1.5 rounded-lg bg-white text-slate-900 font-bold text-xs focus:outline-none border-2 ${
+                                    inputErrors.turnoverDays ? 'border-rose-500' : 'border-transparent focus:border-emerald-400'
                                 }`}
                             />
                             {inputErrors.turnoverDays && (
-                                <p className="text-[9px] text-rose-300 font-semibold mt-0.5 flex items-center gap-1">
-                                    <AlertCircle className="w-2.5 h-2.5 shrink-0" />
-                                    <span>{inputErrors.turnoverDays}</span>
+                                <p className="text-[10px] text-rose-300 font-semibold mt-1 flex items-center gap-1">
+                                    <AlertCircle className="w-3 h-3 shrink-0" /> {inputErrors.turnoverDays}
                                 </p>
                             )}
                         </div>
+
+                        {/* Requirement 3: Recalculate AI Forecast button placed directly under Vyte AI Intelligence inputs */}
+                        <button
+                            type="button"
+                            onClick={() => void handleRunAiProcurement()}
+                            disabled={
+                                isLoading ||
+                                Boolean(inputErrors.holdingCost) ||
+                                Boolean(inputErrors.turnoverDays)
+                            }
+                            className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition ${
+                                inputErrors.holdingCost || inputErrors.turnoverDays
+                                    ? 'bg-slate-600 text-slate-300 cursor-not-allowed'
+                                    : 'bg-[#2BB656] hover:bg-emerald-500 text-white cursor-pointer'
+                            }`}
+                        >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            {isRunningAi ? 'Recalculating...' : 'Recalculate AI Forecast'}
+                        </button>
                     </div>
                 </div>
 
-                {/* Positioned Directly Under AI Breakdown: 3 Stacked KPI Displays */}
-                <div className="space-y-2.5">
-                    <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide truncate">
-                                {activeReport.period} Revenue
-                            </p>
-                            <p className="text-base font-extrabold text-slate-900 leading-tight mt-0.5 truncate">
-                                {activeReport.currency}{' '}
-                                {activeReport.totalRevenue.toLocaleString(undefined, {
-                                    minimumFractionDigits: 2,
-                                })}
-                            </p>
+                {/* Stacked Right KPI Cards */}
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+                    <div className="min-w-0">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">
+                            {activeReport.period} Revenue
+                        </p>
+                        <p className="text-lg font-extrabold text-slate-900 mt-0.5 truncate">
+                            {currencySymbol}{' '}
+                            {activeReport.totalRevenue.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                            })}
+                        </p>
+                        {topProduct && (
                             <span className="text-[10px] text-slate-500 block truncate mt-0.5">
-                                {topProduct
-                                    ? `Top: ${topProduct.SKU} (${activeReport.currency} ${topProduct.totalSalesAmount.toLocaleString()})`
-                                    : 'No sales recorded'}
-                            </span>
-                        </div>
-                        <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-                            <DollarSign className="w-4 h-4" />
-                        </div>
+                Top: {topProduct.SKU} ({currencySymbol} {topProduct.totalSalesAmount.toLocaleString()})
+              </span>
+                        )}
                     </div>
-
-                    <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide truncate">
-                                Total Units Sold
-                            </p>
-                            <p className="text-base font-extrabold text-slate-900 leading-tight mt-0.5">
-                                {activeReport.totalUnitsSold.toLocaleString()} Units
-                            </p>
-                            <span className="text-[10px] text-slate-500 block truncate mt-0.5">
-                                Across {activeReport.productBreakdown.length} active SKUs
-                            </span>
-                        </div>
-                        <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                            <PackageCheck className="w-4 h-4" />
-                        </div>
+                    <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                        <DollarSign className="w-4 h-4" />
                     </div>
+                </div>
 
-                    <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide truncate">
-                                Est. Holding Cost
-                            </p>
-                            <p className="text-base font-extrabold text-amber-600 leading-tight mt-0.5">
-                                {currencySymbol} {totalHoldingCostRM}
-                            </p>
-                            <span className="text-[10px] text-slate-500 block truncate mt-0.5">
-                                At {holdingCostPercentage}% annual rate
-                            </span>
-                        </div>
-                        <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-                            <Clock className="w-4 h-4" />
-                        </div>
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+                    <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">Total Units Sold</p>
+                        <p className="text-lg font-extrabold text-slate-900 mt-0.5">
+                            {activeReport.totalUnitsSold.toLocaleString()} Units
+                        </p>
+                        <span className="text-[10px] text-slate-500 block mt-0.5">
+              Across {activeReport.productBreakdown.length} active SKUs
+            </span>
+                    </div>
+                    <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                        <PackageCheck className="w-4 h-4" />
+                    </div>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+                    <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">Est. Holding Cost</p>
+                        <p className="text-lg font-extrabold text-amber-600 mt-0.5">
+                            {currencySymbol} {totalHoldingCostFormatted}
+                        </p>
+                        <span className="text-[10px] text-slate-500 block mt-0.5">
+              At {holdingCostPercentage}% annual rate
+            </span>
+                    </div>
+                    <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                        <Clock className="w-4 h-4" />
                     </div>
                 </div>
             </div>

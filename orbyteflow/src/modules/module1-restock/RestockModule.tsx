@@ -1,5 +1,5 @@
 // src/modules/module1-restock/RestockModule.tsx
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
     Plus,
     Send,
@@ -12,6 +12,7 @@ import {
     Loader2,
     FileSpreadsheet,
     Camera,
+    X,
 } from 'lucide-react';
 import type { CurrencyCode, Product, UserRole } from '../../types/vyte.ts';
 import { CURRENCY_SYMBOLS } from '../../types/vyte.ts';
@@ -31,6 +32,9 @@ interface RestockModuleProps {
     onBatchImportProducts?: (imported: Product[]) => void;
 }
 
+const USAGE_INPUTS_STORAGE_KEY = 'vyte_restock_usage_inputs_v2';
+const REORDER_INPUTS_STORAGE_KEY = 'vyte_restock_reorder_inputs_v2';
+
 const sanitizeBoundedInt = (raw: string, maxDigits = 5): string => {
     return raw.replace(/[^0-9]/g, '').replace(/^0+/, '').slice(0, maxDigits);
 };
@@ -48,10 +52,32 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                                                             }) => {
     const currencySymbol = CURRENCY_SYMBOLS[currency] || 'RM';
 
-    const [usageInputs, setUsageInputs] = useState<Record<string, string>>({});
+    // Persisted row text inputs (survive full page refresh)
+    const [usageInputs, setUsageInputs] = useState<Record<string, string>>(() => {
+        try {
+            const saved = localStorage.getItem(USAGE_INPUTS_STORAGE_KEY);
+            return saved ? JSON.parse(saved) : {};
+        } catch {
+            return {};
+        }
+    });
     const [usageErrors, setUsageErrors] = useState<Record<string, string>>({});
-    const [reorderInputs, setReorderInputs] = useState<Record<string, string>>({});
+
+    const [reorderInputs, setReorderInputs] = useState<Record<string, string>>(() => {
+        try {
+            const saved = localStorage.getItem(REORDER_INPUTS_STORAGE_KEY);
+            return saved ? JSON.parse(saved) : {};
+        } catch {
+            return {};
+        }
+    });
     const [reorderErrors, setReorderErrors] = useState<Record<string, string>>({});
+
+    // Requirement 4: Confirmation Modal state before deducting stock
+    const [pendingSaleConfirm, setPendingSaleConfirm] = useState<{
+        item: Product;
+        qty: number;
+    } | null>(null);
 
     const [approvingIds, setApprovingIds] = useState<Record<string, boolean>>({});
     const [confirmingIds, setConfirmingIds] = useState<Record<string, boolean>>({});
@@ -59,7 +85,14 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
     const excelInputRef = useRef<HTMLInputElement>(null);
     const photoInputRef = useRef<HTMLInputElement>(null);
 
-    // Excel / CSV Spreadsheet Upload Handler
+    useEffect(() => {
+        localStorage.setItem(USAGE_INPUTS_STORAGE_KEY, JSON.stringify(usageInputs));
+    }, [usageInputs]);
+
+    useEffect(() => {
+        localStorage.setItem(REORDER_INPUTS_STORAGE_KEY, JSON.stringify(reorderInputs));
+    }, [reorderInputs]);
+
     const handleSpreadsheetImport = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !onBatchImportProducts) return;
@@ -136,7 +169,6 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
         reader.readAsText(file);
     };
 
-    // Photo AI Shelf Scanner Handler
     const handleShelfPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !onBatchImportProducts) return;
@@ -173,7 +205,8 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
         reader.readAsDataURL(file);
     };
 
-    const handleDispatchUsage = (item: Product) => {
+    // Validate and open Confirmation Box before deducting stock
+    const handleRequestSaleConfirmation = (item: Product) => {
         if (item.stock <= 0) return;
         const rawStr = usageInputs[item.id] ?? '3';
         const qty = Number(rawStr);
@@ -191,7 +224,13 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
         }
 
         setUsageErrors((prev) => ({ ...prev, [item.id]: '' }));
-        onRecordStockUsage(item.id, qty);
+        setPendingSaleConfirm({ item, qty });
+    };
+
+    const handleExecuteConfirmedSale = () => {
+        if (!pendingSaleConfirm) return;
+        onRecordStockUsage(pendingSaleConfirm.item.id, pendingSaleConfirm.qty);
+        setPendingSaleConfirm(null);
     };
 
     const handleApprovePO = async (item: Product) => {
@@ -390,7 +429,7 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                                                 />
                                                 <button
                                                     type="button"
-                                                    onClick={() => handleDispatchUsage(item)}
+                                                    onClick={() => handleRequestSaleConfirmation(item)}
                                                     className="px-2.5 py-1 bg-slate-900 hover:bg-emerald-600 text-white rounded-lg text-[11px] font-semibold inline-flex items-center gap-1 transition cursor-pointer"
                                                 >
                                                     <ShoppingBag className="w-3 h-3" /> Sell / Use
@@ -521,6 +560,110 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                     </tbody>
                 </table>
             </div>
+
+            {/* REQUIREMENT 4: CONFIRMATION MODAL BEFORE DEDUCTING STOCK */}
+            {pendingSaleConfirm && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-2xl border border-slate-200 max-w-md w-full p-6 shadow-2xl space-y-4">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                            <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                                    <ShoppingBag className="w-4 h-4" />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-bold text-slate-900">
+                                        Confirm Stock Deduction &amp; Sale
+                                    </h3>
+                                    <p className="text-[11px] text-slate-500">
+                                        Human confirmation before updating live inventory
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setPendingSaleConfirm(null)}
+                                className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5 text-xs">
+                            <div className="flex items-center justify-between">
+                                <span className="text-slate-500">Product SKU:</span>
+                                <strong className="text-slate-900">
+                                    {pendingSaleConfirm.item.name} ({pendingSaleConfirm.item.sku})
+                                </strong>
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <span className="text-slate-500">Quantity to Deduct:</span>
+                                <strong className="text-rose-600 text-sm">
+                                    -{pendingSaleConfirm.qty} {pendingSaleConfirm.item.uom}
+                                </strong>
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <span className="text-slate-500">Warehouse Stock Balance:</span>
+                                <span className="font-bold text-slate-900">
+                  {pendingSaleConfirm.item.stock} {pendingSaleConfirm.item.uom} &rarr;{' '}
+                                    <strong
+                                        className={
+                                            pendingSaleConfirm.item.stock - pendingSaleConfirm.qty <=
+                                            pendingSaleConfirm.item.minThreshold
+                                                ? 'text-rose-600'
+                                                : 'text-emerald-700'
+                                        }
+                                    >
+                    {Math.max(0, pendingSaleConfirm.item.stock - pendingSaleConfirm.qty)}{' '}
+                                        {pendingSaleConfirm.item.uom}
+                  </strong>
+                </span>
+                            </div>
+                            <div className="flex items-center justify-between border-t border-slate-200 pt-2">
+                                <span className="text-slate-500">Auto-Generated Receivable Invoice:</span>
+                                <strong className="text-emerald-700 text-sm">
+                                    {currencySymbol}{' '}
+                                    {(
+                                        pendingSaleConfirm.qty *
+                                        pendingSaleConfirm.item.priceRM *
+                                        exchangeRate
+                                    ).toLocaleString(undefined, {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                    })}
+                                </strong>
+                            </div>
+                        </div>
+
+                        {pendingSaleConfirm.item.stock - pendingSaleConfirm.qty <=
+                            pendingSaleConfirm.item.minThreshold && (
+                                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-800 font-semibold flex items-center gap-2">
+                                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                                    <span>
+                  Deducting this quantity will bring stock below the minimum threshold (
+                                        {pendingSaleConfirm.item.minThreshold} {pendingSaleConfirm.item.uom}) and automatically trigger a supplier restock alert.
+                </span>
+                                </div>
+                            )}
+
+                        <div className="flex justify-end gap-2.5 pt-2 border-t border-slate-100">
+                            <button
+                                type="button"
+                                onClick={() => setPendingSaleConfirm(null)}
+                                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleExecuteConfirmedSale}
+                                className="px-4 py-2 bg-[#2BB656] hover:bg-emerald-600 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer"
+                            >
+                                Confirm &amp; Deduct Stock
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

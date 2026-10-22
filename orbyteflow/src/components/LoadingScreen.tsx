@@ -33,7 +33,6 @@ const INITIAL_PARTICLES: StreamParticle[] = [
     { id: 10, x: 220, y: 195, length: 48, size: 3, speed: 8.9, color: '#2BB656', opacity: 0.35, type: 'streak' },
     { id: 11, x: 850, y: 390, length: 58, size: 4, speed: 12.8, color: '#0B0C0E', opacity: 0.28, type: 'streak' },
     { id: 12, x: 410, y: 375, length: 0, size: 5.5, speed: 10.6, color: '#2BB656', opacity: 0.65, type: 'dot' },
-    // Ground tread dashes aligned symmetrically under V's feet & cart wheels (x = 115..860, center = 488.5)
     { id: 13, x: 140, y: 466, length: 36, size: 4, speed: 11.5, color: '#CBD5E1', opacity: 0.85, type: 'ground' },
     { id: 14, x: 280, y: 466, length: 48, size: 4, speed: 11.5, color: '#94A3B8', opacity: 0.75, type: 'ground' },
     { id: 15, x: 430, y: 466, length: 32, size: 4, speed: 11.5, color: '#2BB656', opacity: 0.65, type: 'ground' },
@@ -42,7 +41,6 @@ const INITIAL_PARTICLES: StreamParticle[] = [
     { id: 18, x: 830, y: 466, length: 38, size: 4, speed: 11.5, color: '#2BB656', opacity: 0.6, type: 'ground' },
 ];
 
-/** @Composable */
 export const LoadingScreen: React.FC<LoadingScreenProps> = ({
                                                                 isOpen = true,
                                                                 message = 'Syncing Vyte Inventory Engine...',
@@ -76,21 +74,17 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
 
     if (!isOpen) return null;
 
-    // 0 -> 1 growth factor over first 420ms as 'V' sprouts stick-figure legs & arms
     const sproutProgress = Math.min(1, elapsedMs / 420);
     const sproutEase = 1 - Math.pow(1 - sproutProgress, 3);
 
-    // Continuous walking cycle phase
     const walkTime = Math.max(0, elapsedMs - 250) / 1000;
     const walkPhase = walkTime * 9.2;
 
-    // Subtle vertical bobbing of V and cart suspension
     const vBobY = sproutEase * Math.abs(Math.sin(walkPhase)) * -6;
     const vLeanDeg = sproutEase * (4.5 + Math.sin(walkPhase * 2) * 1.2);
     const cartBounceY = sproutEase * Math.sin(walkPhase * 2 - 0.7) * 2.2;
     const wheelRotation = (walkTime * 340) % 360;
 
-    // Hip attachment point at bottom vertex of 'V'
     const hipX = 238;
     const hipY = 342 + vBobY;
 
@@ -120,7 +114,6 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
     const backLeg = computeLegJoints(Math.PI);
     const frontLeg = computeLegJoints(0);
 
-    // Shoulder attachment on V's green right slash reaching to push the cart handlebar
     const shoulderX = 296;
     const shoulderY = 248 + vBobY;
     const handleGripX = 334;
@@ -129,59 +122,25 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
     const elbowY = (shoulderY + handleGripY) / 2 + 18 * sproutEase;
 
     return (
-        <div
-            style={{
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                width: '100vw',
-                height: '100dvh',
-                zIndex: 9998,
-                display: 'grid',
-                placeItems: 'center',
-                backgroundColor: colors.surfaceOffWhite,
-                fontFamily: '"Plus Jakarta Sans", "Inter", system-ui, sans-serif',
-                userSelect: 'none',
-                overflow: 'hidden',
-            }}
-        >
-            {/* Ambient Radial Glow (15% smaller: 525px vs 620px) */}
-            <div
-                style={{
-                    position: 'absolute',
-                    width: 'min(70vw, 525px)',
-                    height: 'min(70vw, 525px)',
-                    borderRadius: '50%',
-                    background: `radial-gradient(circle, ${colors.vyteGreenGlow} 0%, rgba(246,247,244,0) 70%)`,
-                    pointerEvents: 'none',
-                }}
-            />
+        <div className="fixed inset-0 z-[9998] bg-slate-900/45 backdrop-blur-xs flex items-center justify-center p-4 select-none">
+            {/* Compact Pop-Up Modal Box */}
+            <div className="relative bg-white border border-slate-200 rounded-3xl shadow-2xl w-full max-w-md px-6 py-6 flex flex-col items-center justify-center overflow-hidden">
+                {/* Subtle Green Radial Accent Inside Pop-Up */}
+                <div
+                    style={{
+                        position: 'absolute',
+                        width: '280px',
+                        height: '280px',
+                        borderRadius: '50%',
+                        background: `radial-gradient(circle, ${colors.vyteGreenGlow} 0%, rgba(255,255,255,0) 70%)`,
+                        pointerEvents: 'none',
+                    }}
+                />
 
-            {/* Centered Content Wrapper (Scaled down by 15% from original dimensions) */}
-            <div
-                style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: '100%',
-                    maxWidth: '646px', // 760px * 0.85 = 646px (15% smaller)
-                    padding: '0 20px',
-                    zIndex: 10,
-                }}
-            >
-                {/* viewBox="88.5 73 800 440" places exact center at X=488.5 (midpoint of 135..842) and Y=293 (midpoint of 120..466) */}
                 <svg
                     viewBox="88.5 73 800 440"
                     preserveAspectRatio="xMidYMid meet"
-                    style={{
-                        width: 'min(78vw, 646px)',
-                        maxHeight: '62dvh',
-                        height: 'auto',
-                        display: 'block',
-                        margin: '0 auto',
-                        overflow: 'visible',
-                    }}
+                    className="w-full max-w-[320px] h-auto block mx-auto overflow-visible relative z-10"
                     aria-label="Vyte Loading Animation"
                 >
                     <defs>
@@ -190,7 +149,6 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
                         </filter>
                     </defs>
 
-                    {/* 1. STREAMING PARTICLES & SPEED LINES (Centered across x=115..862, midpoint 488.5) */}
                     <g style={{ pointerEvents: 'none' }}>
                         <line
                             x1={115}
@@ -204,7 +162,7 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
 
                         {INITIAL_PARTICLES.map((p) => {
                             const span = 740;
-                            const rawX = ((p.x - (elapsedMs * p.speed) / 16) % span + span) % span + 115;
+                            const rawX = (((p.x - (elapsedMs * p.speed) / 16) % span) + span) % span + 115;
 
                             if (p.type === 'dot') {
                                 return (
@@ -235,7 +193,6 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
                         })}
                     </g>
 
-                    {/* 2. BACK STICK-FIGURE LEG & BACK ARM */}
                     {sproutEase > 0.02 && (
                         <g
                             stroke="#334155"
@@ -254,7 +211,6 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
                         </g>
                     )}
 
-                    {/* 3. ROLLING CART CARRYING "yte" */}
                     <g
                         filter="url(#vyte-cart-shadow)"
                         style={{
@@ -305,7 +261,6 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
                             />
                         </g>
 
-                        {/* "yte" Glyphs Sitting on the Cart */}
                         <g style={{ transform: 'translate(14px, -6px)' }}>
                             <path d={glyphs.y_leftFork.d} fill={glyphs.y_leftFork.fill} />
                             <path d={glyphs.y_descender.d} fill={glyphs.y_descender.fill} />
@@ -344,7 +299,6 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
                         ))}
                     </g>
 
-                    {/* 4. THE "V" CHARACTER + FRONT STICK-FIGURE LEG & ARM */}
                     <g>
                         {sproutEase > 0.02 && (
                             <g
@@ -400,14 +354,13 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
                     </g>
                 </svg>
 
-                {/* Compact Status Pill (Scaled down 15%) */}
-                <div className="mt-1.5 flex flex-col items-center gap-2">
+                <div className="mt-3 flex flex-col items-center gap-2 relative z-10">
                     {message && (
-                        <div className="px-3.5 py-1 rounded-full bg-white/90 border border-slate-200 shadow-xs flex items-center gap-2">
-                            <span className="w-1.5 h-1.5 rounded-full bg-[#2BB656] animate-ping" />
-                            <span className="text-[11px] font-bold text-slate-700 tracking-wide">
-                                {message}
-                            </span>
+                        <div className="px-4 py-1.5 rounded-full bg-slate-50 border border-slate-200 shadow-2xs flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-[#2BB656] animate-ping shrink-0" />
+                            <span className="text-xs font-bold text-slate-800 tracking-wide text-center">
+                {message}
+              </span>
                         </div>
                     )}
 
@@ -415,7 +368,7 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
                         <button
                             type="button"
                             onClick={onClose}
-                            className="px-3 py-1 rounded-lg bg-slate-900 hover:bg-emerald-600 text-white text-[10px] font-bold transition cursor-pointer shadow-xs"
+                            className="px-3.5 py-1 rounded-lg bg-slate-900 hover:bg-emerald-600 text-white text-[11px] font-bold transition cursor-pointer"
                         >
                             Dismiss
                         </button>

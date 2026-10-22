@@ -1,5 +1,5 @@
 // src/components/auth/LoginPage.tsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Eye,
     EyeOff,
@@ -52,9 +52,12 @@ interface LoginFormErrors {
     password?: string;
 }
 
+const REG_DRAFT_STORAGE_KEY = 'vyte_register_draft_v2';
+const LOGIN_DRAFT_STORAGE_KEY = 'vyte_login_draft_v2';
+const ACCOUNTS_STORAGE_KEY = 'vyte_registered_accounts_v2';
+
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-// Explicit field validators with specific number-rejection messages
 const validatePersonName = (value: string, label: 'First name' | 'Last name'): string | undefined => {
     const trimmed = value.trim();
     if (!trimmed) return `${label} is required.`;
@@ -87,9 +90,9 @@ const validatePasswordField = (value: string, isRegister: boolean): string | und
     if (!value) return 'Password is required.';
     if (value.length < 8) return 'Password must be at least 8 characters long.';
     if (isRegister) {
-        if (!/[A-Z]/.test(value)) return 'Password must include at least one uppercase letter (A–Z).';
-        if (!/[a-z]/.test(value)) return 'Password must include at least one lowercase letter (a–z).';
-        if (!/\d/.test(value)) return 'Password must include at least one number (0–9).';
+        if (!/[A-Z]/.test(value)) return 'Password must include at least one uppercase letter (A-Z).';
+        if (!/[a-z]/.test(value)) return 'Password must include at least one lowercase letter (a-z).';
+        if (!/\d/.test(value)) return 'Password must include at least one number (0-9).';
         if (!/[!@#$%^&*(),.?":{}|<>_\-=+]/.test(value)) {
             return 'Password must include at least one special character (e.g., @, !, #).';
         }
@@ -97,39 +100,50 @@ const validatePasswordField = (value: string, isRegister: boolean): string | und
     return undefined;
 };
 
-/** @Composable */
 export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
     const [mode, setMode] = useState<'register' | 'login'>('register');
 
-    // 1. COMPLETELY SEPARATE STATE FOR CREATE ACCOUNT
-    const [registerForm, setRegisterForm] = useState<RegisterFormState>({
-        firstName: '',
-        lastName: '',
-        email: '',
-        companyName: '',
-        userType: 'CEO',
-        password: '',
-        agreeTerms: false,
+    const [registerForm, setRegisterForm] = useState<RegisterFormState>(() => {
+        try {
+            const saved = localStorage.getItem(REG_DRAFT_STORAGE_KEY);
+            if (saved) return JSON.parse(saved) as RegisterFormState;
+        } catch {
+            // ignore
+        }
+        return {
+            firstName: '',
+            lastName: '',
+            email: '',
+            companyName: '',
+            userType: 'CEO',
+            password: '',
+            agreeTerms: false,
+        };
     });
     const [showRegisterPassword, setShowRegisterPassword] = useState(false);
     const [registerErrors, setRegisterErrors] = useState<RegisterFormErrors>({});
 
-    // 2. COMPLETELY SEPARATE STATE FOR LOGIN
-    const [loginForm, setLoginForm] = useState<LoginFormState>({
-        email: '',
-        password: '',
-        userType: 'CEO',
+    const [loginForm, setLoginForm] = useState<LoginFormState>(() => {
+        try {
+            const saved = localStorage.getItem(LOGIN_DRAFT_STORAGE_KEY);
+            if (saved) return JSON.parse(saved) as LoginFormState;
+        } catch {
+            // ignore
+        }
+        return {
+            email: '',
+            password: '',
+            userType: 'CEO',
+        };
     });
     const [showLoginPassword, setShowLoginPassword] = useState(false);
     const [loginErrors, setLoginErrors] = useState<LoginFormErrors>({});
 
-    // Shared UI & Loading Button states
     const [showTermsModal, setShowTermsModal] = useState(false);
     const [statusBanner, setStatusBanner] = useState<string | null>(null);
     const [isSubmittingMain, setIsSubmittingMain] = useState(false);
     const [ssoLoadingProvider, setSsoLoadingProvider] = useState<'Google' | 'SSO' | null>(null);
 
-    // Local registry cache of accounts created in this session
     const [registeredAccounts, setRegisteredAccounts] = useState<
         Record<
             string,
@@ -143,9 +157,28 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                 userID: string;
             }
         >
-    >({});
+    >(() => {
+        try {
+            const saved = localStorage.getItem(ACCOUNTS_STORAGE_KEY);
+            return saved ? JSON.parse(saved) : {};
+        } catch {
+            return {};
+        }
+    });
 
-    // 3. FORGOT PASSWORD MODAL STATE
+    // Persist typed form inputs & registered accounts in localStorage
+    useEffect(() => {
+        localStorage.setItem(REG_DRAFT_STORAGE_KEY, JSON.stringify(registerForm));
+    }, [registerForm]);
+
+    useEffect(() => {
+        localStorage.setItem(LOGIN_DRAFT_STORAGE_KEY, JSON.stringify(loginForm));
+    }, [loginForm]);
+
+    useEffect(() => {
+        localStorage.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(registeredAccounts));
+    }, [registeredAccounts]);
+
     const [showForgotModal, setShowForgotModal] = useState(false);
     const [forgotStep, setForgotStep] = useState<'REQUEST' | 'RESET'>('REQUEST');
     const [forgotEmail, setForgotEmail] = useState('');
@@ -175,7 +208,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
         setShowLoginPassword(false);
     };
 
-    // Live onChange handlers for Register
     const updateRegisterField = <K extends keyof RegisterFormState>(
         field: K,
         value: RegisterFormState[K]
@@ -203,7 +235,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
         });
     };
 
-    // Live onChange handlers for Login
     const updateLoginField = <K extends keyof LoginFormState>(
         field: K,
         value: LoginFormState[K]
@@ -262,58 +293,54 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
             setIsSubmittingMain(true);
             try {
                 const mappedRole = mapUserTypeToRole(registerForm.userType);
-                const fullName = `${registerForm.firstName.trim()} ${registerForm.lastName.trim()}`.trim();
+                const cleanFirst = registerForm.firstName.trim();
+                const cleanLast = registerForm.lastName.trim();
+                const fullName = `${cleanFirst} ${cleanLast}`.trim();
+                const cleanEmail = registerForm.email.trim();
+                const cleanCompany = registerForm.companyName.trim();
+                const selectedType = registerForm.userType;
 
                 const res = await orbyteApi.registerAccount({
-                    firstName: registerForm.firstName.trim(),
-                    lastName: registerForm.lastName.trim(),
-                    email: registerForm.email.trim(),
+                    firstName: cleanFirst,
+                    lastName: cleanLast,
+                    email: cleanEmail,
                     password: registerForm.password,
-                    companyName: registerForm.companyName.trim(),
-                    userType: registerForm.userType,
+                    companyName: cleanCompany,
+                    userType: selectedType,
                     role: mappedRole,
                     acceptedTermsAt: new Date().toISOString(),
                 });
 
-                const emailKey = registerForm.email.trim().toLowerCase();
+                const emailKey = cleanEmail.toLowerCase();
                 setRegisteredAccounts((prev) => ({
                     ...prev,
                     [emailKey]: {
-                        firstName: registerForm.firstName.trim(),
-                        lastName: registerForm.lastName.trim(),
-                        email: registerForm.email.trim(),
+                        firstName: cleanFirst,
+                        lastName: cleanLast,
+                        email: cleanEmail,
                         password: registerForm.password,
-                        companyName: registerForm.companyName.trim(),
-                        userType: registerForm.userType,
+                        companyName: cleanCompany,
+                        userType: selectedType,
                         userID: res.data.userID,
                     },
                 }));
 
-                // Reset Create Account fields so nothing is shared or leftover
-                setRegisterForm({
-                    firstName: '',
-                    lastName: '',
-                    email: '',
-                    companyName: '',
-                    userType: 'CEO',
-                    password: '',
-                    agreeTerms: false,
-                });
-                setRegisterErrors({});
-                setShowRegisterPassword(false);
+                localStorage.removeItem(REG_DRAFT_STORAGE_KEY);
 
-                // Switch to clean Login screen (user must type credentials to log in)
-                setLoginForm({
-                    email: '',
-                    password: '',
-                    userType: registerForm.userType,
-                });
-                setLoginErrors({});
-                setShowLoginPassword(false);
-                setMode('login');
-
-                setStatusBanner(
-                    `Account created for ${fullName} (${res.data.userID}). Please log in with your email and password.`
+                // Requirement 2: Immediately auto-login with the registered email & account!
+                onAuthenticated(
+                    {
+                        userID:
+                            res.data.userID ||
+                            (selectedType === 'CEO' ? 'M067' : selectedType === 'Manager' ? 'M102' : 'S204'),
+                        userName: fullName,
+                        email: cleanEmail,
+                        userType: selectedType,
+                        role: mappedRole,
+                        companyName: cleanCompany,
+                        companyOwnerName: fullName,
+                    },
+                    `vyte-jwt-${Date.now()}`
                 );
             } finally {
                 setIsSubmittingMain(false);
@@ -383,34 +410,33 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
         setSsoLoadingProvider(provider);
         const activeUserType = mode === 'register' ? registerForm.userType : loginForm.userType;
         const mappedRole = mapUserTypeToRole(activeUserType);
+        const targetEmail =
+            (mode === 'register' ? registerForm.email : loginForm.email).trim() || 'jayden@vyte.my';
+        const targetFullName =
+            mode === 'register' && (registerForm.firstName.trim() || registerForm.lastName.trim())
+                ? `${registerForm.firstName.trim()} ${registerForm.lastName.trim()}`.trim()
+                : targetEmail.split('@')[0] || 'Jayden Lai';
 
         try {
             if (provider === 'Google') {
-                const targetEmail =
-                    (mode === 'register' ? registerForm.email : loginForm.email).trim() ||
-                    'jayden@vyte.my';
                 const googleRes = await orbyteApi.loginWithGoogle({
                     idToken: `mock-google-jwt-${Date.now()}`,
                     email: targetEmail,
-                    fullName: 'Jayden Lai',
+                    fullName: targetFullName,
                     companyName: registerForm.companyName.trim() || 'Vyte Smart Logistics Sdn Bhd',
                     userType: activeUserType,
                     role: mappedRole,
                 });
 
-                if (mode === 'register') {
-                    setMode('login');
-                    setStatusBanner(
-                        'Google account registered! Click Google below to log in to your dashboard.'
-                    );
-                    return;
-                }
-
-                onAuthenticated(googleRes.data.session, googleRes.data.accessToken);
+                onAuthenticated(
+                    {
+                        ...googleRes.data.session,
+                        email: targetEmail,
+                        userName: targetFullName,
+                    },
+                    googleRes.data.accessToken
+                );
             } else {
-                const targetEmail =
-                    (mode === 'register' ? registerForm.email : loginForm.email).trim() ||
-                    'jayden@vyte.my';
                 const ssoRes = await orbyteApi.loginWithEnterpriseSso({
                     ssoAssertionToken: `mock-saml-oidc-token-${Date.now()}`,
                     corporateDomain: (targetEmail.split('@')[1] || 'vyte.my').trim(),
@@ -420,22 +446,20 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                     role: mappedRole,
                 });
 
-                if (mode === 'register') {
-                    setMode('login');
-                    setStatusBanner(
-                        'Enterprise SSO registered! Click Enterprise SSO below to log in to your dashboard.'
-                    );
-                    return;
-                }
-
-                onAuthenticated(ssoRes.data.session, ssoRes.data.accessToken);
+                onAuthenticated(
+                    {
+                        ...ssoRes.data.session,
+                        email: targetEmail,
+                        userName: targetFullName,
+                    },
+                    ssoRes.data.accessToken
+                );
             }
         } finally {
             setSsoLoadingProvider(null);
         }
     };
 
-    // FORGOT PASSWORD HANDLERS
     const handleRequestResetCode = async (e: React.FormEvent) => {
         e.preventDefault();
         const emailErr = validateEmailField(forgotEmail);
@@ -632,9 +656,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                             </div>
                         )}
 
-                        {/* ============================================================ */}
-                        {/* MODE 1: CREATE ACCOUNT FORM (ISOLATED STATE)                 */}
-                        {/* ============================================================ */}
                         {mode === 'register' ? (
                             <form
                                 key="vyte-register-form"
@@ -787,8 +808,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                                         </div>
 
                                         <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
-                                            <CheckCircle2 className="w-3 h-3" /> Role Locked on Login
-                                        </span>
+                      <CheckCircle2 className="w-3 h-3" /> Auto-Sign In Enabled
+                    </span>
                                     </div>
                                     {renderFieldError(registerErrors.agreeTerms)}
                                 </div>
@@ -800,14 +821,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                                 >
                                     {isSubmittingMain && <Loader2 className="w-4 h-4 animate-spin" />}
                                     <span>
-                                        {isSubmittingMain ? 'Creating account...' : 'Create account'}
-                                    </span>
+                    {isSubmittingMain
+                        ? 'Creating account & signing in...'
+                        : 'Create account & Enter Hub'}
+                  </span>
                                 </button>
                             </form>
                         ) : (
-                            /* ============================================================ */
-                            /* MODE 2: LOGIN FORM (ISOLATED STATE + FORGOT PASSWORD)        */
-                            /* ============================================================ */
                             <form
                                 key="vyte-login-form"
                                 onSubmit={handleSubmit}
@@ -831,9 +851,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                                 </div>
 
                                 <div className="flex items-center justify-between gap-3">
-                                    <span className="text-xs text-slate-400">
-                                        Workspace Role Profile:
-                                    </span>
+                  <span className="text-xs text-slate-400">
+                    Workspace Role Profile:
+                  </span>
                                     <div className="w-48">
                                         <VyteDropdown
                                             variant="dark"
@@ -913,8 +933,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                                 >
                                     {isSubmittingMain && <Loader2 className="w-4 h-4 animate-spin" />}
                                     <span>
-                                        {isSubmittingMain ? 'Signing in...' : 'Log in to Vyte'}
-                                    </span>
+                    {isSubmittingMain ? 'Signing in...' : 'Log in to Vyte'}
+                  </span>
                                 </button>
                             </form>
                         )}
@@ -922,8 +942,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                         <div className="relative flex py-1 items-center">
                             <div className="flex-grow border-t border-slate-800"></div>
                             <span className="flex-shrink mx-4 text-xs text-slate-500">
-                                Or {mode === 'register' ? 'register' : 'continue'} with
-                            </span>
+                Or {mode === 'register' ? 'register' : 'continue'} with
+              </span>
                             <div className="flex-grow border-t border-slate-800"></div>
                         </div>
 
@@ -1059,8 +1079,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                                 <div className="p-3 rounded-xl bg-emerald-950/60 border border-[#2BB656]/40 text-xs text-emerald-200">
                                     Verification code for <strong>{forgotEmail}</strong>:{' '}
                                     <span className="font-mono font-bold text-[#2BB656]">
-                                        {generatedResetToken}
-                                    </span>
+                    {generatedResetToken}
+                  </span>
                                 </div>
 
                                 <div>
@@ -1166,7 +1186,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                 </div>
             )}
 
-            {/* TERMS & CONDITIONS MODAL */}
             <TermsAndConditionsModal
                 isOpen={showTermsModal}
                 onAccept={() => {

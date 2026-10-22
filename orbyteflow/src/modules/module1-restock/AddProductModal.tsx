@@ -34,6 +34,7 @@ interface FormDraft {
 }
 
 type ValidationErrors = Partial<Record<keyof FormDraft, string>>;
+const ADD_PROD_DRAFT_KEY = 'vyte_add_product_draft_v2';
 
 const isValidWhatsAppNumber = (phone: string): boolean => {
     const trimmed = phone.trim();
@@ -49,26 +50,38 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
                                                                 }) => {
     const currencySymbol = CURRENCY_SYMBOLS[currency] || 'RM';
 
-    const [draft, setDraft] = useState<FormDraft>({
-        name: '',
-        sku: '',
-        category: 'F&B Raw Ingredient',
-        industry: 'FNB_PERISHABLE',
-        uom: 'kg',
-        stock: '',
-        minThreshold: '',
-        reorderQty: '',
-        priceRM: '',
-        unitCostRM: '',
-        supplierName: '',
-        supplierContact: '',
-        batchNo: '',
-        expiryDate: '',
-        storageCondition: 'Chilled',
-        variantSpec: '',
-        b2bMoq: '',
-        serialOrWarranty: '',
+    const [draft, setDraft] = useState<FormDraft>(() => {
+        try {
+            const saved = localStorage.getItem(ADD_PROD_DRAFT_KEY);
+            if (saved) return JSON.parse(saved) as FormDraft;
+        } catch {
+            // ignore
+        }
+        return {
+            name: '',
+            sku: '',
+            category: 'F&B Raw Ingredient',
+            industry: 'FNB_PERISHABLE',
+            uom: 'kg',
+            stock: '',
+            minThreshold: '',
+            reorderQty: '',
+            priceRM: '',
+            unitCostRM: '',
+            supplierName: '',
+            supplierContact: '',
+            batchNo: '',
+            expiryDate: '',
+            storageCondition: 'Chilled',
+            variantSpec: '',
+            b2bMoq: '',
+            serialOrWarranty: '',
+        };
     });
+
+    React.useEffect(() => {
+        localStorage.setItem(ADD_PROD_DRAFT_KEY, JSON.stringify(draft));
+    }, [draft]);
 
     const [errors, setErrors] = useState<ValidationErrors>({});
 

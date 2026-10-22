@@ -36,17 +36,20 @@ import { orbyteApi } from './services/api';
 
 const SESSION_STORAGE_KEY = 'vyte_active_session_v1';
 const CURRENCY_STORAGE_KEY = 'vyte_currency';
+const FX_RATES_STORAGE_KEY = 'vyte_live_fx_rates_v2';
 const STATE_PRODUCTS_KEY = 'vyte_state_products_v2';
 const STATE_QC_KEY = 'vyte_state_qc_v2';
 const STATE_INVOICES_KEY = 'vyte_state_invoices_v2';
 const STATE_LOGS_KEY = 'vyte_state_logs_v2';
 const STATE_TAB_KEY = 'vyte_state_active_tab_v2';
 const STATE_SUBTAB_KEY = 'vyte_state_subtab_v2';
+const STATE_SEARCH_KEY = 'vyte_state_global_search_v2';
+const STATE_IND_FILTER_KEY = 'vyte_state_industry_filter_v2';
 
 const FALLBACK_RATES: Record<CurrencyCode, number> = {
   MYR: 1.0,
-  SGD: 0.302,
-  USD: 0.231,
+  SGD: 0.313,
+  USD: 0.244,
 };
 
 interface StoredSessionPayload {
@@ -70,6 +73,14 @@ function loadPersistedState<T>(key: string, fallback: T): T {
   }
 }
 
+// Strips any legacy "Mod 1:", "Module 1:" references from saved strings
+function stripModulePrefix(text: string): string {
+  return text
+      .replace(/\bMod(?:ule)?\s*[1-5]\s*[:\-]?\s*/gi, '')
+      .replace(/\bin\s+Mod(?:ule)?\s*[1-5]\b/gi, '')
+      .trim();
+}
+
 export default function App() {
   const [userSession, setUserSession] = useState<UserSession | null>(null);
   const [splashDone, setSplashDone] = useState<boolean>(false);
@@ -81,30 +92,33 @@ export default function App() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [role, setRole] = useState<UserRole>('SME_OWNER');
 
-  // Persisted Navigation Tabs (Remember State)
   const [activeTab, setActiveTab] = useState<ActiveTab>(() =>
       loadPersistedState<ActiveTab>(STATE_TAB_KEY, 'mod1')
   );
   const [inventorySubTab, setInventorySubTab] = useState<'restock' | 'orders'>(() =>
       loadPersistedState<'restock' | 'orders'>(STATE_SUBTAB_KEY, 'restock')
   );
+  const [industryFilter, setIndustryFilter] = useState<string>(() =>
+      loadPersistedState<string>(STATE_IND_FILTER_KEY, 'ALL')
+  );
+  const [searchQuery, setSearchQuery] = useState<string>(() =>
+      loadPersistedState<string>(STATE_SEARCH_KEY, '')
+  );
 
-  // Operating Currency & Live Exchange Rate API State
   const [currency, setCurrency] = useState<CurrencyCode>(() => {
     const stored = localStorage.getItem(CURRENCY_STORAGE_KEY);
     return stored && stored in CURRENCY_SYMBOLS ? (stored as CurrencyCode) : 'MYR';
   });
-  const [exchangeRates, setExchangeRates] = useState<Record<CurrencyCode, number>>(FALLBACK_RATES);
-  const [rateSourceLabel, setRateSourceLabel] = useState<string>('Live FX Syncing...');
+  const [exchangeRates, setExchangeRates] = useState<Record<CurrencyCode, number>>(() =>
+      loadPersistedState<Record<CurrencyCode, number>>(FX_RATES_STORAGE_KEY, FALLBACK_RATES)
+  );
+  const [rateSourceLabel, setRateSourceLabel] = useState<string>('Syncing Live FX API...');
 
   const [loadingOverlayMessage, setLoadingOverlayMessage] = useState<string | null>(null);
-  const [industryFilter, setIndustryFilter] = useState<string>('ALL');
-  const [searchQuery, setSearchQuery] = useState<string>('');
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [pendingCustomerOrderCount, setPendingCustomerOrderCount] = useState<number>(1);
   const [deductedOrderIds, setDeductedOrderIds] = useState<Record<string, boolean>>({});
 
-  // Persisted Core Data States (Remember State across refreshes & tab switches)
   const [products, setProducts] = useState<Product[]>(() =>
       loadPersistedState<Product[]>(STATE_PRODUCTS_KEY, INITIAL_PRODUCTS)
   );
@@ -113,18 +127,26 @@ export default function App() {
   );
   const [invoices, setInvoices] = useState<InvoiceItem[]>(() => {
     const loaded = loadPersistedState<InvoiceItem[]>(STATE_INVOICES_KEY, INITIAL_INVOICES);
-    // Filter out any legacy CLM- QC invoices so Smart Invoices only contains genuine payables/receivables
-    return loaded.filter((inv) => !inv.invNo.startsWith('CLM-'));
+    return loaded
+        .filter((inv) => !inv.invNo.startsWith('CLM-'))
+        .map((inv) => ({
+          ...inv,
+          aiCategory: stripModulePrefix(inv.aiCategory),
+        }));
   });
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() =>
-      loadPersistedState<AuditLog[]>(STATE_LOGS_KEY, INITIAL_AUDIT_LOGS)
-  );
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
+    const loaded = loadPersistedState<AuditLog[]>(STATE_LOGS_KEY, INITIAL_AUDIT_LOGS);
+    return loaded.map((log) => ({
+      ...log,
+      module: stripModulePrefix(log.module) || 'System Hub',
+      detail: stripModulePrefix(log.detail),
+    }));
+  });
 
   const canApprove = role === 'SME_OWNER' || role === 'MANAGER';
   const activeExchangeRate = exchangeRates[currency] ?? 1.0;
   const currencySymbol = CURRENCY_SYMBOLS[currency] || 'RM';
 
-  // Save state changes to localStorage automatically
   useEffect(() => {
     localStorage.setItem(STATE_PRODUCTS_KEY, JSON.stringify(products));
   }, [products]);
@@ -149,32 +171,13 @@ export default function App() {
     localStorage.setItem(STATE_SUBTAB_KEY, JSON.stringify(inventorySubTab));
   }, [inventorySubTab]);
 
-  // 1. LIVE CURRENCY EXCHANGE RATE API INTEGRATION
-  const fetchLiveExchangeRates = useCallback(async () => {
-    try {
-      const response = await fetch('https://open.er-api.com/v6/latest/MYR');
-      if (!response.ok) throw new Error('FX network response error');
-      const data = await response.json();
-      if (data?.rates) {
-        const nextRates: Record<CurrencyCode, number> = {
-          MYR: 1.0,
-          SGD: Number(data.rates.SGD) || FALLBACK_RATES.SGD,
-          USD: Number(data.rates.USD) || FALLBACK_RATES.USD,
-        };
-        setExchangeRates(nextRates);
-        setRateSourceLabel(
-            `Live FX API: 1 MYR = ${nextRates.SGD.toFixed(3)} SGD | ${nextRates.USD.toFixed(3)} USD`
-        );
-      }
-    } catch {
-      setExchangeRates(FALLBACK_RATES);
-      setRateSourceLabel('Fallback FX Rate Active');
-    }
-  }, []);
+  useEffect(() => {
+    localStorage.setItem(STATE_IND_FILTER_KEY, JSON.stringify(industryFilter));
+  }, [industryFilter]);
 
   useEffect(() => {
-    void fetchLiveExchangeRates();
-  }, [fetchLiveExchangeRates]);
+    localStorage.setItem(STATE_SEARCH_KEY, JSON.stringify(searchQuery));
+  }, [searchQuery]);
 
   const pushToast = useCallback(
       (type: 'success' | 'error' | 'warning' | 'info', message: string) => {
@@ -187,13 +190,102 @@ export default function App() {
       []
   );
 
+  const fetchLiveExchangeRates = useCallback(
+      async (notifyUser = false) => {
+        try {
+          const res1 = await fetch('https://open.er-api.com/v6/latest/MYR');
+          if (res1.ok) {
+            const data1 = await res1.json();
+            if (data1?.rates?.SGD && data1?.rates?.USD) {
+              const nextRates: Record<CurrencyCode, number> = {
+                MYR: 1.0,
+                SGD: Number(data1.rates.SGD),
+                USD: Number(data1.rates.USD),
+              };
+              setExchangeRates(nextRates);
+              localStorage.setItem(FX_RATES_STORAGE_KEY, JSON.stringify(nextRates));
+              setRateSourceLabel(
+                  `ExchangeRate-API Live • 1 RM = ${nextRates.SGD.toFixed(3)} SGD | ${nextRates.USD.toFixed(3)} USD`
+              );
+              if (notifyUser) {
+                pushToast(
+                    'success',
+                    `Synced live market rates: 1 MYR = ${nextRates.SGD.toFixed(3)} SGD / ${nextRates.USD.toFixed(3)} USD`
+                );
+              }
+              return;
+            }
+          }
+        } catch {
+          // Fallback to Provider 2
+        }
+
+        try {
+          const res2 = await fetch('https://api.frankfurter.dev/v1/latest?base=MYR&symbols=SGD,USD');
+          if (res2.ok) {
+            const data2 = await res2.json();
+            if (data2?.rates?.SGD && data2?.rates?.USD) {
+              const nextRates: Record<CurrencyCode, number> = {
+                MYR: 1.0,
+                SGD: Number(data2.rates.SGD),
+                USD: Number(data2.rates.USD),
+              };
+              setExchangeRates(nextRates);
+              localStorage.setItem(FX_RATES_STORAGE_KEY, JSON.stringify(nextRates));
+              setRateSourceLabel(
+                  `ECB Frankfurter Live • 1 RM = ${nextRates.SGD.toFixed(3)} SGD | ${nextRates.USD.toFixed(3)} USD`
+              );
+              if (notifyUser) {
+                pushToast(
+                    'success',
+                    `Synced ECB live rates: 1 MYR = ${nextRates.SGD.toFixed(3)} SGD / ${nextRates.USD.toFixed(3)} USD`
+                );
+              }
+              return;
+            }
+          }
+        } catch {
+          // Fallback to Provider 3
+        }
+
+        try {
+          const res3 = await fetch(
+              'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/myr.json'
+          );
+          if (res3.ok) {
+            const data3 = await res3.json();
+            if (data3?.myr?.sgd && data3?.myr?.usd) {
+              const nextRates: Record<CurrencyCode, number> = {
+                MYR: 1.0,
+                SGD: Number(data3.myr.sgd),
+                USD: Number(data3.myr.usd),
+              };
+              setExchangeRates(nextRates);
+              localStorage.setItem(FX_RATES_STORAGE_KEY, JSON.stringify(nextRates));
+              setRateSourceLabel(
+                  `CDN Forex Live • 1 RM = ${nextRates.SGD.toFixed(3)} SGD | ${nextRates.USD.toFixed(3)} USD`
+              );
+              return;
+            }
+          }
+        } catch {
+          setRateSourceLabel('Cached Market FX Rate Active');
+        }
+      },
+      [pushToast]
+  );
+
+  useEffect(() => {
+    void fetchLiveExchangeRates(false);
+  }, [fetchLiveExchangeRates]);
+
   const handleCurrencyChange = (newCurrency: CurrencyCode) => {
     setCurrency(newCurrency);
     localStorage.setItem(CURRENCY_STORAGE_KEY, newCurrency);
     const rate = exchangeRates[newCurrency] ?? 1.0;
     pushToast(
         'success',
-        `Currency switched to ${newCurrency} (${CURRENCY_SYMBOLS[newCurrency]}) • Live Rate: 1 MYR = ${rate.toFixed(3)} ${newCurrency}`
+        `Operating currency set to ${newCurrency} (${CURRENCY_SYMBOLS[newCurrency]}) • 1 MYR = ${rate.toFixed(3)} ${newCurrency}`
     );
   };
 
@@ -209,9 +301,9 @@ export default function App() {
           {
             id: `L-${Date.now()}-${Math.random()}`,
             time: now,
-            module,
+            module: stripModulePrefix(module) || 'System Hub',
             role: overrideRole ?? role,
-            detail,
+            detail: stripModulePrefix(detail),
           },
           ...prev,
         ]);
@@ -219,7 +311,6 @@ export default function App() {
       [role]
   );
 
-  // Validate Stored Session on Page Refresh
   useEffect(() => {
     const rawStored = localStorage.getItem(SESSION_STORAGE_KEY);
     if (!rawStored) {
@@ -245,7 +336,7 @@ export default function App() {
               },
               parsed.session
           ),
-          new Promise((resolve) => setTimeout(resolve, 650)),
+          new Promise((resolve) => setTimeout(resolve, 450)),
         ]);
 
         if (!isMounted) return;
@@ -365,7 +456,7 @@ export default function App() {
     setInvoices((prev) => [supplierBill, ...prev]);
 
     addAuditLog(
-        'Mod 1: Auto Restock',
+        'Auto Restock',
         `Approved PO (+${orderQty} ${target.uom} ${target.name}) to ${target.supplierName}. Created Supplier Bill ${poInvoiceNo} (${currencySymbol} ${(poTotalRM * activeExchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) in Smart Invoices.`
     );
     pushToast('success', `PO sent to ${target.supplierName} & logged in Smart Invoices.`);
@@ -410,7 +501,7 @@ export default function App() {
     );
 
     addAuditLog(
-        'Mod 1: Delivery Confirmed',
+        'Delivery Confirmed',
         `Received +${target.reorderQty} ${target.uom} of ${target.name} from ${target.supplierName}. Stock updated to ${newStockTotal} ${target.uom}.`
     );
     pushToast(
@@ -461,15 +552,18 @@ export default function App() {
     setInvoices((prev) => [salesInvoice, ...prev]);
 
     addAuditLog(
-        'Mod 1: Stock Dispatch',
+        'Stock Dispatch',
         `Dispatched ${actualDeducted} ${target.uom} of ${target.name} (Invoice ${posInvoiceNo}: ${currencySymbol} ${(saleAmountRM * activeExchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}). Remaining: ${newStock} ${target.uom}.${
             isTriggered ? ' [LOW STOCK TRIGGERED]' : ''
         }`
     );
+    pushToast(
+        'success',
+        `Deducted ${actualDeducted} ${target.uom} of ${target.name} & created Invoice ${posInvoiceNo}.`
+    );
   };
 
   const handleSaveProduct = (newProd: NewProductForm) => {
-    // Convert entered price back to base MYR if user entered it in SGD/USD
     const basePriceRM = Number((Number(newProd.priceRM) / activeExchangeRate).toFixed(2));
     const isLow = Number(newProd.stock) <= Number(newProd.minThreshold);
 
@@ -508,7 +602,7 @@ export default function App() {
     };
     setProducts((prev) => [created, ...prev]);
     addAuditLog(
-        'Mod 1: Catalog',
+        'Catalog',
         `Added ${created.industry} SKU "${created.name}" (${created.stock} ${created.uom}). ${
             isLow ? 'Low-stock trigger activated.' : ''
         }`
@@ -517,12 +611,11 @@ export default function App() {
     pushToast('success', `Added ${created.name} (${created.sku}) to catalog.`);
   };
 
-  // Batch Import Products from Excel / CSV Spreadsheet
   const handleBatchImportProducts = (importedList: Product[]) => {
     if (importedList.length === 0) return;
     setProducts((prev) => [...importedList, ...prev]);
     addAuditLog(
-        'Mod 1: Spreadsheet Import',
+        'Spreadsheet Import',
         `Batch-imported ${importedList.length} SKU(s) via Excel/CSV spreadsheet upload.`
     );
     pushToast('success', `Successfully imported ${importedList.length} products from spreadsheet.`);
@@ -546,7 +639,7 @@ export default function App() {
     );
 
     addAuditLog(
-        'Mod 2: AI Forecast Applied',
+        'AI Forecast Applied',
         `${aiReason} -> Updated ${product.name} reorder quantity to +${recommendedQty} ${product.uom} & triggered approval in Auto Restock.`
     );
 
@@ -554,6 +647,33 @@ export default function App() {
     setInventorySubTab('restock');
     pushToast('info', `AI restock forecast applied to ${product.name}.`);
   };
+
+  // Requirement 4: When Customer Orders detects a stock shortage, automatically flag those SKUs in Auto Restock
+  const handleTriggerShortageRestock = useCallback(
+      (shortageItems: { productID: string; neededQty: number }[]) => {
+        if (shortageItems.length === 0) return;
+
+        setProducts((prev) =>
+            prev.map((p) => {
+              const match = shortageItems.find((s) => s.productID === p.id);
+              if (!match) return p;
+              const recommendedPoQty = Math.max(
+                  p.reorderQty,
+                  match.neededQty + p.minThreshold
+              );
+              return {
+                ...p,
+                reorderQty: recommendedPoQty,
+                restockStatus:
+                    p.restockStatus === 'SUPPLIER_CONTACTED'
+                        ? 'SUPPLIER_CONTACTED'
+                        : 'TRIGGERED_PENDING_APPROVAL',
+              };
+            })
+        );
+      },
+      []
+  );
 
   const handleApproveCustomerOrder = (
       items: ExtractedNlpOrderItem[],
@@ -599,17 +719,13 @@ export default function App() {
     setInvoices((prev) => [newCustInvoice, ...prev]);
 
     addAuditLog(
-        'Mod 3: Order Approved',
+        'Order Approved',
         `Approved NLP Order ${orderId} for ${customerName}. ${
             inventoryDeducted ? 'Deducted stock' : 'Stock unchanged'
         } & created Invoice ${invoiceId} (${currencySymbol} ${(totalOrderRM * activeExchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) in Smart Invoices.`
     );
   };
 
-  // =========================================================================
-  // POINT 4: MODULE 4 QUALITY CONTROL -> DISPATCHES TASK TO ORBYTE HR STAFF
-  // (No longer creates a CLM invoice in Smart Invoices!)
-  // =========================================================================
   const handleDispatchQCToHrStaff = (
       qcId: string,
       staff: OrbyteHrStaff,
@@ -649,7 +765,7 @@ export default function App() {
     );
 
     addAuditLog(
-        'Mod 4 -> Orbyte HR Hub',
+        'Orbyte HR Hub',
         `Dispatched QC Task ${hrTaskId} ("${targetQc.actionLabel}" for ${targetQc.productName} • Batch ${targetQc.batchNo}) to Orbyte HR Staff: ${staff.name} (${staff.staffId} • ${staff.position}) [Priority: ${priority}].`
     );
     pushToast(
@@ -667,7 +783,7 @@ export default function App() {
     );
 
     addAuditLog(
-        'Mod 4: Orbyte HR Completed',
+        'Orbyte HR Completed',
         `Orbyte HR Staff ${targetQc.assignedStaffName || 'Operator'} (${targetQc.hrTaskId || 'QC-TASK'}) completed execution for ${targetQc.productName} (${targetQc.batchNo}). Prevented loss: ${currencySymbol} ${(targetQc.savedRM * activeExchangeRate).toFixed(2)}.`
     );
     pushToast('success', `Marked ${targetQc.hrTaskId || targetQc.batchNo} as completed by HR staff.`);
@@ -676,7 +792,7 @@ export default function App() {
   const handleAddCustomQCAlert = (newAlert: QCAlert) => {
     setQcAlerts((prev) => [newAlert, ...prev]);
     addAuditLog(
-        'Mod 4: Batch Logged',
+        'Quality & Expiry',
         `Reported quality/expiry issue for ${newAlert.productName} (${newAlert.batchNo}: ${newAlert.triggerReason}).`
     );
     pushToast('info', `Logged QC batch alert for ${newAlert.productName}.`);
@@ -709,13 +825,13 @@ export default function App() {
     if (newlyDetected.length > 0) {
       setQcAlerts((prev) => [...newlyDetected, ...prev]);
       addAuditLog(
-          'Mod 4: AI Scan',
+          'Quality AI Scan',
           `AI Expiry Scan detected ${newlyDetected.length} new at-risk perishable batch(es).`
       );
       pushToast('warning', `Detected ${newlyDetected.length} new at-risk batch(es).`);
     } else {
       addAuditLog(
-          'Mod 4: AI Scan',
+          'Quality AI Scan',
           'Completed batch scan — all active perishable batches are monitored.'
       );
       pushToast('info', 'Batch scan complete. All perishable SKUs are up to date.');
@@ -745,7 +861,7 @@ export default function App() {
         )
     );
     addAuditLog(
-        'Mod 5: Smart Invoices',
+        'Smart Invoices',
         `Verified invoice ${target.invNo} (${target.party}) under category "${
             updatedCategory ?? target.aiCategory
         }".`
@@ -761,7 +877,7 @@ export default function App() {
         prev.map((inv) => (inv.id === invId ? { ...inv, paid: nextPaid } : inv))
     );
     addAuditLog(
-        'Mod 5: Payment Status',
+        'Payment Status',
         `Marked invoice ${target.invNo} (${target.party}) as ${nextPaid ? 'PAID' : 'UNPAID'}.`
     );
   };
@@ -769,7 +885,7 @@ export default function App() {
   const handleAddValidatedInvoice = (createdInv: InvoiceItem) => {
     setInvoices((prev) => [createdInv, ...prev]);
     addAuditLog(
-        'Mod 5: Invoice Uploaded',
+        'Invoice Uploaded',
         `Uploaded & AI-classified ${createdInv.invNo} (${createdInv.party} • ${currencySymbol} ${(createdInv.amountRM * activeExchangeRate).toFixed(2)}) -> ${createdInv.aiCategory}.`
     );
     pushToast('success', `Uploaded & classified invoice ${createdInv.invNo}.`);
@@ -779,7 +895,7 @@ export default function App() {
     if (importedInvoices.length === 0) return;
     setInvoices((prev) => [...importedInvoices, ...prev]);
     addAuditLog(
-        'Mod 5: Spreadsheet Import',
+        'Spreadsheet Import',
         `Batch-imported ${importedInvoices.length} invoice(s) via Excel/CSV spreadsheet.`
     );
     pushToast('success', `Imported ${importedInvoices.length} invoices from spreadsheet.`);
@@ -844,7 +960,7 @@ export default function App() {
               currency={currency}
               exchangeRate={activeExchangeRate}
               rateSourceLabel={rateSourceLabel}
-              onRefreshRates={fetchLiveExchangeRates}
+              onRefreshRates={() => void fetchLiveExchangeRates(true)}
               totalSkus={products.length}
               pendingRestocks={pendingRestockCount}
               pendingOrders={pendingCustomerOrderCount}
@@ -855,10 +971,9 @@ export default function App() {
           />
 
           <main className="flex-1 overflow-y-auto pr-1 space-y-4">
-            {/* COMBINED MODULE 1 & MODULE 3 SCREEN WITH COMPACT TOGGLE BAR */}
             {(activeTab === 'mod1' || activeTab === 'mod3') && (
                 <div className="space-y-3.5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="inline-flex items-center bg-slate-200/80 p-1 rounded-xl border border-slate-300/70 text-xs font-semibold">
                       <button
                           type="button"
@@ -872,7 +987,7 @@ export default function App() {
                                   : 'text-slate-600 hover:text-slate-900'
                           }`}
                       >
-                        1. Auto Restock &amp; Catalog ({pendingRestockCount} Pending)
+                        Auto Restock &amp; Catalog ({pendingRestockCount} Pending)
                       </button>
                       <button
                           type="button"
@@ -886,7 +1001,72 @@ export default function App() {
                                   : 'text-slate-600 hover:text-slate-900'
                           }`}
                       >
-                        3. Customer Orders &amp; NLP ({pendingCustomerOrderCount})
+                        Customer Orders &amp; NLP ({pendingCustomerOrderCount})
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-xl border border-slate-200/90 shadow-2xs text-xs">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1.5">
+                    SME Industry Profile:
+                  </span>
+                      <button
+                          type="button"
+                          onClick={() => setIndustryFilter('ALL')}
+                          className={`px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+                              industryFilter === 'ALL'
+                                  ? 'bg-slate-900 text-white font-bold'
+                                  : 'text-slate-600 hover:bg-slate-100 font-medium'
+                          }`}
+                      >
+                        <span>All Templates</span>
+                        <span
+                            className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                                industryFilter === 'ALL'
+                                    ? 'bg-white/20 text-white'
+                                    : 'bg-slate-200 text-slate-700'
+                            }`}
+                        >
+                      {products.length}
+                    </span>
+                      </button>
+
+                      <button
+                          type="button"
+                          onClick={() => setIndustryFilter('FNB_PERISHABLE')}
+                          className={`px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+                              industryFilter === 'FNB_PERISHABLE'
+                                  ? 'bg-rose-100 text-rose-800 font-bold border border-rose-200'
+                                  : 'text-slate-600 hover:bg-slate-100 font-medium'
+                          }`}
+                      >
+                        <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                        <span>F&amp;B / Perishable</span>
+                      </button>
+
+                      <button
+                          type="button"
+                          onClick={() => setIndustryFilter('RETAIL_VARIANT')}
+                          className={`px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+                              industryFilter === 'RETAIL_VARIANT'
+                                  ? 'bg-blue-100 text-blue-800 font-bold border border-blue-200'
+                                  : 'text-slate-600 hover:bg-slate-100 font-medium'
+                          }`}
+                      >
+                        <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                        <span>Retail &amp; Variants</span>
+                      </button>
+
+                      <button
+                          type="button"
+                          onClick={() => setIndustryFilter('B2B_RAW_MATERIAL')}
+                          className={`px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+                              industryFilter === 'B2B_RAW_MATERIAL'
+                                  ? 'bg-emerald-100 text-emerald-900 font-bold border border-emerald-200'
+                                  : 'text-slate-600 hover:bg-slate-100 font-medium'
+                          }`}
+                      >
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        <span>B2B &amp; Packaging</span>
                       </button>
                     </div>
                   </div>
@@ -913,6 +1093,7 @@ export default function App() {
                         currency={currency}
                         exchangeRate={activeExchangeRate}
                         onApproveCustomerOrder={handleApproveCustomerOrder}
+                        onTriggerShortageRestock={handleTriggerShortageRestock}
                         onPendingCountChange={setPendingCustomerOrderCount}
                         onLogAction={addAuditLog}
                         onNavigateToRestock={() => setInventorySubTab('restock')}

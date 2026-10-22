@@ -95,14 +95,14 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
         .reduce((s, i) => s + i.amountRM, 0);
 
     const getSourceBadge = (inv: InvoiceItem) => {
-        if (inv.invNo.startsWith('SUP-PO-')) {
-            return { label: 'Mod 1: Auto-Restock PO', color: 'bg-amber-100 text-amber-800' };
+        if (inv.invNo.startsWith('SUP-PO-') || inv.invNo.startsWith('SUP-')) {
+            return { label: 'Auto-Restock PO', color: 'bg-amber-100 text-amber-800' };
         }
         if (inv.invNo.startsWith('SALE-')) {
-            return { label: 'Mod 1: Counter Sale', color: 'bg-emerald-100 text-emerald-800' };
+            return { label: 'Direct Counter Sale', color: 'bg-emerald-100 text-emerald-800' };
         }
         if (inv.invNo.startsWith('CUST-')) {
-            return { label: 'Mod 3: NLP Customer Order', color: 'bg-blue-100 text-blue-800' };
+            return { label: 'NLP Customer Order', color: 'bg-blue-100 text-blue-800' };
         }
         if (inv.attachmentName?.endsWith('.csv') || inv.attachmentName?.endsWith('.xlsx')) {
             return { label: `Excel: ${inv.attachmentName}`, color: 'bg-teal-100 text-teal-800' };
@@ -110,7 +110,7 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
         if (inv.attachmentPreviewUrl) {
             return { label: 'Photo OCR Extracted', color: 'bg-purple-100 text-purple-800' };
         }
-        return { label: 'Mod 5: Uploaded Invoice', color: 'bg-slate-100 text-slate-700' };
+        return { label: 'Uploaded Invoice', color: 'bg-slate-100 text-slate-700' };
     };
 
     // Handle Photo / Receipt Image Upload with AI OCR Auto-Fill
@@ -319,7 +319,7 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                         <FileText className="w-5 h-5 text-emerald-600" /> Supplier &amp; Customer Smart Invoice Repository
                     </h3>
                     <p className="text-xs text-slate-500 mt-0.5">
-                        Automatically gathers supplier bills &amp; customer invoices from Modules 1 and 3, plus supports Photo OCR &amp; Excel/CSV batch import.
+                        Automatically gathers supplier bills &amp; customer invoices across Auto Restock and Customer Orders, plus supports Photo OCR &amp; Excel/CSV batch import.
                     </p>
                 </div>
 

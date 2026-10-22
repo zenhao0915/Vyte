@@ -27,8 +27,8 @@ interface SidebarProps {
     role: UserRole;
     operatingCurrency: CurrencyCode;
     onCurrencyChange: (currency: CurrencyCode) => void;
-    industryFilter: string;
-    setIndustryFilter: (filter: string) => void;
+    industryFilter?: string;
+    setIndustryFilter?: (filter: string) => void;
     searchQuery: string;
     setSearchQuery: (q: string) => void;
     pendingRestockCount: number;
@@ -47,8 +47,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                                     role,
                                                     operatingCurrency,
                                                     onCurrencyChange,
-                                                    industryFilter,
-                                                    setIndustryFilter,
                                                     searchQuery,
                                                     setSearchQuery,
                                                     pendingRestockCount,
@@ -56,7 +54,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                                     pendingQcCount,
                                                     pendingInvoiceCount,
                                                     auditLogCount,
-                                                    totalProductCount,
                                                     userSession,
                                                     onLogout,
                                                 }) => {
@@ -214,97 +211,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                             : 'border-transparent text-slate-700 font-medium hover:bg-slate-50'
                                     }`}
                                 >
-                                    <span className="flex items-center gap-3">
-                                        <Icon className={`w-4 h-4 shrink-0 ${mod.iconColor}`} />
-                                        {!isCollapsed && <span>{mod.label}</span>}
-                                    </span>
+                  <span className="flex items-center gap-3">
+                    <Icon className={`w-4 h-4 shrink-0 ${mod.iconColor}`} />
+                      {!isCollapsed && <span>{mod.label}</span>}
+                  </span>
 
                                     {!isCollapsed && (
                                         <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${mod.badgeClass}`}>
-                                            {mod.badge}
-                                        </span>
+                      {mod.badge}
+                    </span>
                                     )}
                                 </button>
                             );
                         })}
-
-                        <div className="pt-4 space-y-1">
-                            {!isCollapsed && (
-                                <p className="px-3 pb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                                    SME INDUSTRY PROFILES
-                                </p>
-                            )}
-
-                            <button
-                                onClick={() => setIndustryFilter('ALL')}
-                                title="All SME Templates"
-                                className={`w-full text-left ${
-                                    isCollapsed ? 'flex justify-center py-2' : 'px-3.5 py-2 flex items-center justify-between'
-                                } text-xs rounded-xl transition cursor-pointer ${
-                                    industryFilter === 'ALL'
-                                        ? 'font-bold text-slate-900 bg-slate-100/90'
-                                        : 'text-slate-600 hover:bg-slate-50 font-medium'
-                                }`}
-                            >
-                                {isCollapsed ? (
-                                    <span className="bg-slate-200 text-slate-700 px-2 py-0.5 rounded-md text-[10px] font-bold">
-                                        {totalProductCount}
-                                    </span>
-                                ) : (
-                                    <>
-                                        <span>• All SME Templates</span>
-                                        <span className="bg-slate-200/80 text-slate-700 px-2 py-0.5 rounded-md text-[11px] font-bold">
-                                            {totalProductCount}
-                                        </span>
-                                    </>
-                                )}
-                            </button>
-
-                            <button
-                                onClick={() => setIndustryFilter('FNB_PERISHABLE')}
-                                title="F&B / Perishable"
-                                className={`w-full text-left ${
-                                    isCollapsed ? 'flex justify-center py-2.5' : 'px-3.5 py-2 flex items-center gap-2.5'
-                                } text-xs rounded-xl transition cursor-pointer ${
-                                    industryFilter === 'FNB_PERISHABLE'
-                                        ? 'font-bold text-rose-700 bg-rose-50/90'
-                                        : 'text-slate-600 hover:bg-slate-50 font-medium'
-                                }`}
-                            >
-                                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0"></span>
-                                {!isCollapsed && <span>F&amp;B / Perishable</span>}
-                            </button>
-
-                            <button
-                                onClick={() => setIndustryFilter('RETAIL_VARIANT')}
-                                title="Retail & Variants"
-                                className={`w-full text-left ${
-                                    isCollapsed ? 'flex justify-center py-2.5' : 'px-3.5 py-2 flex items-center gap-2.5'
-                                } text-xs rounded-xl transition cursor-pointer ${
-                                    industryFilter === 'RETAIL_VARIANT'
-                                        ? 'font-bold text-blue-700 bg-blue-50/90'
-                                        : 'text-slate-600 hover:bg-slate-50 font-medium'
-                                }`}
-                            >
-                                <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0"></span>
-                                {!isCollapsed && <span>Retail &amp; Variants</span>}
-                            </button>
-
-                            <button
-                                onClick={() => setIndustryFilter('B2B_RAW_MATERIAL')}
-                                title="B2B & Packaging"
-                                className={`w-full text-left ${
-                                    isCollapsed ? 'flex justify-center py-2.5' : 'px-3.5 py-2 flex items-center gap-2.5'
-                                } text-xs rounded-xl transition cursor-pointer ${
-                                    industryFilter === 'B2B_RAW_MATERIAL'
-                                        ? 'font-bold text-emerald-800 bg-[#EBFDF2]'
-                                        : 'text-slate-600 hover:bg-slate-50 font-medium'
-                                }`}
-                            >
-                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0"></span>
-                                {!isCollapsed && <span>B2B &amp; Packaging</span>}
-                            </button>
-                        </div>
                     </nav>
                 </div>
 

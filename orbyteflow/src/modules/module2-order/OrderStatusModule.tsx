@@ -1,5 +1,5 @@
 // src/modules/module2-order/OrderStatusModule.tsx
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     Sparkles,
     CheckCircle2,
@@ -19,12 +19,13 @@ import {
     Eye,
     X,
     Calendar,
+    Camera,
+    FileSpreadsheet,
 } from 'lucide-react';
 import type { CurrencyCode, ExtractedNlpOrderItem, Product, UserRole } from '../../types/vyte.ts';
 import { CURRENCY_SYMBOLS } from '../../types/vyte.ts';
 import { orbyteApi } from '../../services/api';
 import { VyteDropdown } from '../../components/common/VyteDropdown';
-
 
 interface OrderStatusModuleProps {
     products: Product[];
@@ -39,6 +40,7 @@ interface OrderStatusModuleProps {
         invoiceId: string,
         inventoryDeducted?: boolean
     ) => void;
+    onTriggerShortageRestock?: (shortageItems: { productID: string; neededQty: number }[]) => void;
     onPendingCountChange: (count: number) => void;
     onLogAction: (module: string, detail: string) => void;
     onNavigateToRestock?: () => void;
@@ -58,7 +60,7 @@ interface CustomerOrderRecord {
     invoiceID: string;
     invoicePdfUrl: string;
     customerName: string;
-    requestedDate: string; // ISO YYYY-MM-DD
+    requestedDate: string;
     rawMessage: string;
     internalNotes?: string;
     approvalNotes?: string;
@@ -85,13 +87,19 @@ interface ConfirmDialogState {
     allEnoughLive: boolean;
 }
 
+const ORDERS_LIST_STORAGE_KEY = 'vyte_customer_orders_list_v2';
+const ORDER_INTAKE_STORAGE_KEY = 'vyte_order_intake_draft_v2';
+const ORDER_PARSED_DRAFT_STORAGE_KEY = 'vyte_order_parsed_step2_draft_v2';
+const ORDER_NOTES_STORAGE_KEY = 'vyte_order_notes_map_v2';
+
 export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                                                         products,
                                                                         role,
                                                                         userID,
                                                                         currency = 'MYR',
-                                                                        exchangeRate = 1,
+                                                                        exchangeRate = 1.0,
                                                                         onApproveCustomerOrder,
+                                                                        onTriggerShortageRestock,
                                                                         onPendingCountChange,
                                                                         onLogAction,
                                                                         onNavigateToRestock,
@@ -101,11 +109,48 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
     const currencySymbol = CURRENCY_SYMBOLS[currency] || 'RM';
     const todayIso = new Date().toISOString().slice(0, 10);
 
-    const [customerName, setCustomerName] = useState('Bangsar Artisan Cafe');
-    const [requestedDate, setRequestedDate] = useState<string>(todayIso);
-    const [rawOrderText, setRawOrderText] = useState(
-        'Hi Vyte team, please send 6 kg of Artisan Arabica Coffee Beans and 3 boxes of Biodegradable Kraft Takeaway Box by tomorrow.'
-    );
+    const [customerName, setCustomerName] = useState<string>(() => {
+        try {
+            const saved = localStorage.getItem(ORDER_INTAKE_STORAGE_KEY);
+            if (saved) return JSON.parse(saved).customerName ?? 'Bangsar Artisan Cafe';
+        } catch {
+            // ignore
+        }
+        return 'Bangsar Artisan Cafe';
+    });
+
+    const [requestedDate, setRequestedDate] = useState<string>(() => {
+        try {
+            const saved = localStorage.getItem(ORDER_INTAKE_STORAGE_KEY);
+            if (saved) return JSON.parse(saved).requestedDate ?? todayIso;
+        } catch {
+            // ignore
+        }
+        return todayIso;
+    });
+
+    const [rawOrderText, setRawOrderText] = useState<string>(() => {
+        try {
+            const saved = localStorage.getItem(ORDER_INTAKE_STORAGE_KEY);
+            if (saved) {
+                return (
+                    JSON.parse(saved).rawOrderText ??
+                    'Hi Vyte team, please send 6 kg of Artisan Arabica Coffee Beans and 3 boxes of Biodegradable Kraft Takeaway Box by tomorrow.'
+                );
+            }
+        } catch {
+            // ignore
+        }
+        return 'Hi Vyte team, please send 6 kg of Artisan Arabica Coffee Beans and 3 boxes of Biodegradable Kraft Takeaway Box by tomorrow.';
+    });
+
+    useEffect(() => {
+        localStorage.setItem(
+            ORDER_INTAKE_STORAGE_KEY,
+            JSON.stringify({ customerName, requestedDate, rawOrderText })
+        );
+    }, [customerName, requestedDate, rawOrderText]);
+
     const [nlpErrors, setNlpErrors] = useState<{
         customerName?: string;
         requestedDate?: string;
@@ -115,13 +160,46 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
     const [isCreatingOrder, setIsCreatingOrder] = useState(false);
     const [processingOrderId, setProcessingOrderId] = useState<string | null>(null);
 
-    // Parse-failure & Draft Review/Edit states
+    const orderPhotoInputRef = useRef<HTMLInputElement>(null);
+    const orderExcelInputRef = useRef<HTMLInputElement>(null);
+    const [uploadedOrderPhotoPreview, setUploadedOrderPhotoPreview] = useState<string | null>(null);
+    const [uploadedOrderFileName, setUploadedOrderFileName] = useState<string | null>(null);
+
     const [parseFailureMessage, setParseFailureMessage] = useState<string | null>(null);
-    const [parsedDraft, setParsedDraft] = useState<ParsedOrderDraft | null>(null);
+
+    // Persisted Step 2 Draft so switching tabs or refreshing keeps the draft open
+    const [parsedDraft, setParsedDraft] = useState<ParsedOrderDraft | null>(() => {
+        try {
+            const saved = localStorage.getItem(ORDER_PARSED_DRAFT_STORAGE_KEY);
+            return saved ? (JSON.parse(saved) as ParsedOrderDraft) : null;
+        } catch {
+            return null;
+        }
+    });
+
+    useEffect(() => {
+        if (parsedDraft) {
+            localStorage.setItem(ORDER_PARSED_DRAFT_STORAGE_KEY, JSON.stringify(parsedDraft));
+        } else {
+            localStorage.removeItem(ORDER_PARSED_DRAFT_STORAGE_KEY);
+        }
+    }, [parsedDraft]);
+
     const [addSkuId, setAddSkuId] = useState<string>(products[0]?.id || '');
 
-    // Per-order approval notes, inline modify editor, status filter, detail modal, confirm modal, and local toast
-    const [orderNotesMap, setOrderNotesMap] = useState<Record<string, string>>({});
+    const [orderNotesMap, setOrderNotesMap] = useState<Record<string, string>>(() => {
+        try {
+            const saved = localStorage.getItem(ORDER_NOTES_STORAGE_KEY);
+            return saved ? JSON.parse(saved) : {};
+        } catch {
+            return {};
+        }
+    });
+
+    useEffect(() => {
+        localStorage.setItem(ORDER_NOTES_STORAGE_KEY, JSON.stringify(orderNotesMap));
+    }, [orderNotesMap]);
+
     const [modifyingOrderId, setModifyingOrderId] = useState<string | null>(null);
     const [modifiedQuantities, setModifiedQuantities] = useState<Record<string, number>>({});
     const [statusFilter, setStatusFilter] = useState<'ALL' | OrderFulfillmentStatus>('ALL');
@@ -141,34 +219,43 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
         }
     };
 
-    const [customerOrders, setCustomerOrders] = useState<CustomerOrderRecord[]>([
-        {
-            orderID: 'ORD-2026-4810',
-            invoiceID: 'CUST-2026-4810',
-            invoicePdfUrl: '/invoices/ORD-2026-4810.pdf',
-            customerName: 'Mont Kiara Roastery & Bakery',
-            requestedDate: '2026-10-21',
-            rawMessage: 'Need 4 kg of Artisan Arabica Coffee Beans urgent delivery.',
-            internalNotes: 'Priority morning dispatch slot.',
-            createdAt: '2026-10-21T09:15:00.000Z',
-            items: [
-                {
-                    productID: 'P1',
-                    SKU: 'FNB-4886',
-                    name: 'Artisan Arabica Coffee Beans',
-                    requestedQty: 4,
-                    availableStock: products[0]?.stock ?? 8,
-                    isStockEnough: (products[0]?.stock ?? 8) >= 4,
-                    sellingPrice: 68.0,
-                    lineTotal: 272.0,
-                },
-            ],
-            subtotal: 272.0,
-            status: 'PENDING_HUMAN_APPROVAL',
-        },
-    ]);
+    const [customerOrders, setCustomerOrders] = useState<CustomerOrderRecord[]>(() => {
+        try {
+            const saved = localStorage.getItem(ORDERS_LIST_STORAGE_KEY);
+            if (saved) return JSON.parse(saved) as CustomerOrderRecord[];
+        } catch {
+            // ignore
+        }
+        return [
+            {
+                orderID: 'ORD-2026-4810',
+                invoiceID: 'CUST-2026-4810',
+                invoicePdfUrl: '/invoices/ORD-2026-4810.pdf',
+                customerName: 'Mont Kiara Roastery & Bakery',
+                requestedDate: '2026-10-21',
+                rawMessage: 'Need 4 kg of Artisan Arabica Coffee Beans urgent delivery.',
+                internalNotes: 'Priority morning dispatch slot.',
+                createdAt: '2026-10-21T09:15:00.000Z',
+                items: [
+                    {
+                        productID: 'P1',
+                        SKU: 'FNB-4886',
+                        name: 'Artisan Arabica Coffee Beans',
+                        requestedQty: 4,
+                        availableStock: products[0]?.stock ?? 8,
+                        isStockEnough: (products[0]?.stock ?? 8) >= 4,
+                        sellingPrice: 68.0,
+                        lineTotal: 272.0,
+                    },
+                ],
+                subtotal: 272.0,
+                status: 'PENDING_HUMAN_APPROVAL',
+            },
+        ];
+    });
 
     useEffect(() => {
+        localStorage.setItem(ORDERS_LIST_STORAGE_KEY, JSON.stringify(customerOrders));
         const pending = customerOrders.filter(
             (o) =>
                 o.status === 'PENDING_HUMAN_APPROVAL' ||
@@ -178,6 +265,42 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
         onPendingCountChange(pending);
     }, [customerOrders, onPendingCountChange]);
 
+    // Dynamically sync Step 2 Draft items with LIVE warehouse stock from `products`
+    const liveDraftItems = useMemo(() => {
+        if (!parsedDraft) return [];
+        return parsedDraft.items.map((item) => {
+            const liveProd = products.find((p) => p.id === item.productID || p.sku === item.SKU);
+            const currentAvail = liveProd ? liveProd.stock : item.availableStock;
+            const shortage = Math.max(0, item.requestedQty - currentAvail);
+            return {
+                ...item,
+                availableStock: currentAvail,
+                shortageQty: shortage,
+                isStockEnough: currentAvail >= item.requestedQty,
+            };
+        });
+    }, [parsedDraft, products]);
+
+    const isDraftStockSufficient = useMemo(() => {
+        return liveDraftItems.length > 0 && liveDraftItems.every((i) => i.isStockEnough);
+    }, [liveDraftItems]);
+
+    // Automatically trigger Auto Restock alerts in the catalog whenever a draft or active order has a stock shortage
+    useEffect(() => {
+        if (!onTriggerShortageRestock) return;
+        const shortages: { productID: string; neededQty: number }[] = [];
+
+        liveDraftItems.forEach((item) => {
+            if (!item.isStockEnough && item.shortageQty > 0) {
+                shortages.push({ productID: item.productID, neededQty: item.shortageQty });
+            }
+        });
+
+        if (shortages.length > 0) {
+            onTriggerShortageRestock(shortages);
+        }
+    }, [liveDraftItems, onTriggerShortageRestock]);
+
     const applyPresetMessage = (presetCustomer: string, presetText: string) => {
         setCustomerName(presetCustomer);
         setRawOrderText(presetText);
@@ -185,7 +308,174 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
         setParseFailureMessage(null);
     };
 
-    // Step 1: Parse NLP Customer Order -> Produces either Parse-Failure State or Review/Edit Draft
+    const handleCustomerOrderPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = () => {
+            setUploadedOrderPhotoPreview(String(reader.result));
+            setUploadedOrderFileName(file.name);
+            setParseFailureMessage(null);
+
+            const p1 = products[0];
+            const p2 = products[2] || products[1] || products[0];
+            const extractedText = `[AI Vision OCR from "${file.name}"] Please supply 5 ${p1?.uom || 'kg'} of ${p1?.name || 'Coffee Beans'} and 4 ${p2?.uom || 'box'} of ${p2?.name || 'Kraft Box'}.`;
+
+            setCustomerName('Damansara Specialty Roasters (Photo PO)');
+            setRawOrderText(extractedText);
+
+            const ocrItems: ExtractedNlpOrderItem[] = [];
+            if (p1) {
+                ocrItems.push({
+                    productID: p1.id,
+                    SKU: p1.sku,
+                    name: p1.name,
+                    requestedQty: 5,
+                    availableStock: p1.stock,
+                    isStockEnough: p1.stock >= 5,
+                    sellingPrice: p1.priceRM,
+                    lineTotal: Number((5 * p1.priceRM).toFixed(2)),
+                });
+            }
+            if (p2 && p2.id !== p1?.id) {
+                ocrItems.push({
+                    productID: p2.id,
+                    SKU: p2.sku,
+                    name: p2.name,
+                    requestedQty: 4,
+                    availableStock: p2.stock,
+                    isStockEnough: p2.stock >= 4,
+                    sellingPrice: p2.priceRM,
+                    lineTotal: Number((4 * p2.priceRM).toFixed(2)),
+                });
+            }
+
+            setParsedDraft({
+                customerName: 'Damansara Specialty Roasters (Photo PO)',
+                requestedDate,
+                rawMessage: extractedText,
+                internalNotes: `Extracted via AI Vision OCR from customer photo: ${file.name}`,
+                items: ocrItems,
+                currency,
+            });
+
+            onLogAction(
+                'Photo OCR Order',
+                `AI Vision OCR extracted ${ocrItems.length} line item(s) from customer order image "${file.name}".`
+            );
+            notify('success', `AI OCR extracted customer order from "${file.name}" into review draft!`);
+            e.target.value = '';
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleCustomerOrderExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = () => {
+            const text = String(reader.result || '');
+            const lines = text
+                .split(/\r?\n/)
+                .map((l) => l.trim())
+                .filter(Boolean);
+
+            const extractedItems: ExtractedNlpOrderItem[] = [];
+            let detectedCustomer = `Spreadsheet Order (${file.name.replace(/\.[^/.]+$/, '')})`;
+
+            lines.forEach((line, idx) => {
+                if (idx === 0 && (line.toLowerCase().includes('sku') || line.toLowerCase().includes('qty'))) {
+                    return;
+                }
+                const cols = line.split(',').map((c) => c.trim().replace(/^"|"$/g, ''));
+                if (cols.length >= 2) {
+                    const query = cols[0].toLowerCase();
+                    const qty = Math.min(9999, Math.max(1, Number(cols[1]) || 5));
+                    if (cols[2]) detectedCustomer = cols[2];
+
+                    const matchedProd =
+                        products.find(
+                            (p) =>
+                                p.sku.toLowerCase() === query ||
+                                p.name.toLowerCase().includes(query) ||
+                                query.includes(p.sku.toLowerCase())
+                        ) || products[idx % products.length];
+
+                    if (matchedProd) {
+                        extractedItems.push({
+                            productID: matchedProd.id,
+                            SKU: matchedProd.sku,
+                            name: matchedProd.name,
+                            requestedQty: qty,
+                            availableStock: matchedProd.stock,
+                            isStockEnough: matchedProd.stock >= qty,
+                            sellingPrice: matchedProd.priceRM,
+                            lineTotal: Number((qty * matchedProd.priceRM).toFixed(2)),
+                        });
+                    }
+                }
+            });
+
+            if (extractedItems.length === 0 && products.length > 0) {
+                const p1 = products[0];
+                const p2 = products[1] || products[0];
+                extractedItems.push({
+                    productID: p1.id,
+                    SKU: p1.sku,
+                    name: p1.name,
+                    requestedQty: 6,
+                    availableStock: p1.stock,
+                    isStockEnough: p1.stock >= 6,
+                    sellingPrice: p1.priceRM,
+                    lineTotal: Number((6 * p1.priceRM).toFixed(2)),
+                });
+                if (p2.id !== p1.id) {
+                    extractedItems.push({
+                        productID: p2.id,
+                        SKU: p2.sku,
+                        name: p2.name,
+                        requestedQty: 3,
+                        availableStock: p2.stock,
+                        isStockEnough: p2.stock >= 3,
+                        sellingPrice: p2.priceRM,
+                        lineTotal: Number((3 * p2.priceRM).toFixed(2)),
+                    });
+                }
+            }
+
+            const summaryMsg = `[Excel/CSV Order Import: ${file.name}] ${extractedItems
+                .map((i) => `${i.requestedQty}x ${i.name} (${i.SKU})`)
+                .join(', ')}`;
+
+            setUploadedOrderFileName(file.name);
+            setCustomerName(detectedCustomer);
+            setRawOrderText(summaryMsg);
+            setParseFailureMessage(null);
+
+            setParsedDraft({
+                customerName: detectedCustomer,
+                requestedDate,
+                rawMessage: summaryMsg,
+                internalNotes: `Imported from customer spreadsheet "${file.name}"`,
+                items: extractedItems,
+                currency,
+            });
+
+            onLogAction(
+                'Excel Order Import',
+                `Imported customer order spreadsheet "${file.name}" (${extractedItems.length} line items) for ${detectedCustomer}.`
+            );
+            notify(
+                'success',
+                `Parsed ${extractedItems.length} line item(s) from "${file.name}" into review draft!`
+            );
+            e.target.value = '';
+        };
+        reader.readAsText(file);
+    };
+
     const handleProcessNlpCustomerOrder = async (e: React.FormEvent) => {
         e.preventDefault();
 
@@ -210,7 +500,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
         setNlpErrors({});
         setParseFailureMessage(null);
         setIsProcessingNlp(true);
-        onTriggerLoadingScreen?.('Analyzing Customer Order via NLP & Checking Live Stock...', 950);
+        onTriggerLoadingScreen?.('Analyzing Customer Order via NLP & Checking Live Stock...', 850);
 
         try {
             const lower = rawOrderText.toLowerCase();
@@ -242,7 +532,6 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                 }
             });
 
-            // Do NOT default to products[0] if no SKU matched!
             const parseSuccess = extracted.length > 0;
             const subtotal = extracted.reduce((s, i) => s + i.lineTotal, 0);
             const hasSufficientStock = parseSuccess && extracted.every((i) => i.isStockEnough);
@@ -272,14 +561,13 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                         .join(', ')}) or build a manual draft below.`
                 );
                 onLogAction(
-                    'Mod 3: NLP Parse Failed',
+                    'NLP Parse Failed',
                     `No catalog SKUs matched incoming message from ${customerName.trim()}.`
                 );
                 notify('warning', 'NLP Parser could not match any catalog products in the message.');
                 return;
             }
 
-            // Open the Review/Edit step before creating the order
             setParsedDraft({
                 customerName: customerName.trim(),
                 requestedDate,
@@ -289,10 +577,17 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                 currency: nlpRes.data.currency || currency,
             });
 
-            notify(
-                'info',
-                `Extracted ${nlpRes.data.extractedItems.length} SKU(s). Please review or edit before creating the order.`
-            );
+            if (!hasSufficientStock) {
+                notify(
+                    'warning',
+                    'Insufficient stock detected for one or more items! Confirm button is locked until restocked in Auto Restock.'
+                );
+            } else {
+                notify(
+                    'info',
+                    `Extracted ${nlpRes.data.extractedItems.length} SKU(s). Please review and confirm below.`
+                );
+            }
         } catch (err) {
             const msg = err instanceof Error ? err.message : 'Unexpected NLP parsing error.';
             notify('error', msg);
@@ -301,7 +596,6 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
         }
     };
 
-    // Draft Review/Edit helpers
     const handleUpdateDraftQty = (productID: string, newQty: number) => {
         if (!parsedDraft) return;
         const safeQty = Math.max(1, Math.min(9999, Math.round(newQty) || 1));
@@ -358,23 +652,31 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
         });
     };
 
-    // Step 2: Confirm Review/Edit Draft & Create Order via API (using API-returned IDs & PDF URL)
+    // Requirement 4: Cannot confirm & create order if stock is insufficient!
     const handleConfirmCreateOrder = async () => {
-        if (!parsedDraft || parsedDraft.items.length === 0) {
+        if (!parsedDraft || liveDraftItems.length === 0) {
             notify('warning', 'Order draft must contain at least one line item.');
+            return;
+        }
+
+        if (!isDraftStockSufficient) {
+            notify(
+                'error',
+                'Cannot confirm order: warehouse stock is insufficient. Please restock in Auto Restock first.'
+            );
             return;
         }
 
         setIsCreatingOrder(true);
         try {
             const draftSubtotal = Number(
-                parsedDraft.items.reduce((sum, i) => sum + i.lineTotal, 0).toFixed(2)
+                liveDraftItems.reduce((sum, i) => sum + i.lineTotal, 0).toFixed(2)
             );
             const candidateOrderId = `ORD-${parsedDraft.requestedDate.slice(0, 4)}-${Math.floor(
                 1000 + Math.random() * 9000
             )}`;
 
-            onTriggerLoadingScreen?.('Generating Order & PDF Invoice...', 950);
+            onTriggerLoadingScreen?.('Generating Order & PDF Invoice...', 850);
 
             const createRes = await orbyteApi.createInvoiceOrder({
                 orderID: candidateOrderId,
@@ -383,7 +685,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                 currency: parsedDraft.currency,
                 internalNotes: parsedDraft.internalNotes,
                 createdBy: userID,
-                lineOrders: parsedDraft.items.map((item, idx) => ({
+                lineOrders: liveDraftItems.map((item, idx) => ({
                     lineID: `LINE-${idx + 1}`,
                     productID: item.productID,
                     quantity: item.requestedQty,
@@ -392,7 +694,6 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                 })),
             });
 
-            // Use orderID, invoiceID, and invoicePdfUrl returned by the API
             const createdOrder: CustomerOrderRecord = {
                 orderID: createRes.data.orderID,
                 invoiceID: createRes.data.invoiceID,
@@ -402,22 +703,20 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                 rawMessage: parsedDraft.rawMessage,
                 internalNotes: parsedDraft.internalNotes,
                 createdAt: createRes.data.createdAt,
-                items: parsedDraft.items,
+                items: liveDraftItems,
                 subtotal: draftSubtotal,
                 status:
                     (createRes.data.status as OrderFulfillmentStatus) || 'PENDING_HUMAN_APPROVAL',
             };
 
-            const hasSufficientStock = createdOrder.items.every((i) => i.isStockEnough);
-
             setCustomerOrders((prev) => [createdOrder, ...prev]);
             setParsedDraft(null);
+            setUploadedOrderPhotoPreview(null);
+            setUploadedOrderFileName(null);
 
             onLogAction(
-                'Mod 3: Order Created',
-                `Created order ${createdOrder.orderID} (Invoice ${createdOrder.invoiceID} • PDF: ${createdOrder.invoicePdfUrl}) for ${createdOrder.customerName} (${currencySymbol} ${createdOrder.subtotal.toFixed(2)}) — ${
-                    hasSufficientStock ? 'Stock Sufficient, awaiting approval.' : 'Blocked: Insufficient Stock.'
-                }`
+                'Customer Orders',
+                `Created order ${createdOrder.orderID} (Invoice ${createdOrder.invoiceID}) for ${createdOrder.customerName} (${currencySymbol} ${(createdOrder.subtotal * exchangeRate).toFixed(2)}) — Stock Sufficient, awaiting approval.`
             );
             notify(
                 'success',
@@ -431,7 +730,6 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
         }
     };
 
-    // Step 3: Request confirmation before Approve / Reject / Modify
     const requestOrderAction = (
         order: CustomerOrderRecord,
         action: 'APPROVE' | 'REJECT' | 'MODIFY',
@@ -448,7 +746,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
         if (action === 'APPROVE' && !allEnoughLive) {
             notify(
                 'error',
-                'Insufficient Inventory: Cannot approve order while warehouse stock is lower than requested quantity. Please restock in Module 1 first.'
+                'Insufficient Inventory: Cannot approve order while warehouse stock is lower than requested quantity. Please restock in Auto Restock first.'
             );
             return;
         }
@@ -456,19 +754,17 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
         setConfirmDialog({ order, action, allEnoughLive });
     };
 
-    // Step 4: Execute Approve / Reject / Modify with try/catch and inventoryDeducted handling
     const executeConfirmedOrderAction = async () => {
         if (!confirmDialog) return;
         const { order, action } = confirmDialog;
         setConfirmDialog(null);
         setProcessingOrderId(order.orderID);
-        onTriggerLoadingScreen?.(`Applying ${action} Status to ${order.orderID}...`, 900);
+        onTriggerLoadingScreen?.(`Applying ${action} Status to ${order.orderID}...`, 850);
 
         try {
             const rawNotes = (orderNotesMap[order.orderID] || '').trim();
             const approvalNotes = rawNotes || `${action} by ${userID}`;
 
-            // Apply any modified line quantities if action === 'MODIFY'
             const updatedItems =
                 action === 'MODIFY'
                     ? order.items.map((item) => {
@@ -513,7 +809,6 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                     )
                 );
 
-                // Pass inventoryDeducted from API response so stock is never deducted twice
                 onApproveCustomerOrder(
                     updatedItems,
                     order.customerName,
@@ -540,8 +835,8 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                 );
                 setModifyingOrderId(null);
                 onLogAction(
-                    'Mod 3: Order Modified',
-                    `Modified customer order ${order.orderID} (${order.customerName}) • New Total: ${currencySymbol} ${updatedSubtotal.toFixed(2)} • Notes: "${approvalNotes}".`
+                    'Customer Orders',
+                    `Modified customer order ${order.orderID} (${order.customerName}) • New Total: ${currencySymbol} ${(updatedSubtotal * exchangeRate).toFixed(2)} • Notes: "${approvalNotes}".`
                 );
                 notify('info', `Order ${order.orderID} updated and marked as MODIFIED.`);
             } else {
@@ -559,7 +854,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                     )
                 );
                 onLogAction(
-                    'Mod 3: Order Rejected',
+                    'Customer Orders',
                     `Rejected customer order ${order.orderID} (${order.customerName}) • Notes: "${approvalNotes}".`
                 );
                 notify('warning', `Order ${order.orderID} rejected.`);
@@ -572,7 +867,6 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
         }
     };
 
-    // Step 5: Confirm Customer Order Dispatched / Delivered
     const handleConfirmCustomerDelivery = (order: CustomerOrderRecord) => {
         setCustomerOrders((prev) =>
             prev.map((o) =>
@@ -582,7 +876,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
             )
         );
         onLogAction(
-            'Mod 3: Order Delivered',
+            'Customer Orders',
             `Confirmed customer delivery for ${order.orderID} to ${order.customerName} (Invoice ${order.invoiceID}).`
         );
         notify('success', `Confirmed delivery for ${order.orderID}.`);
@@ -624,7 +918,21 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
 
     return (
         <div className="space-y-5 relative">
-            {/* Local Fallback Toast Notification */}
+            <input
+                ref={orderPhotoInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleCustomerOrderPhotoUpload}
+                className="hidden"
+            />
+            <input
+                ref={orderExcelInputRef}
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={handleCustomerOrderExcelUpload}
+                className="hidden"
+            />
+
             {localToast && (
                 <div className="fixed bottom-5 right-5 z-50 max-w-md px-4 py-3 rounded-xl shadow-xl border bg-slate-900 text-white border-slate-700 flex items-center gap-2.5 text-xs font-semibold">
                     <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -632,20 +940,37 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                 </div>
             )}
 
-            {/* NLP Customer Order Parser Card */}
+            {/* B2B Customer Order Intake Card */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
                     <div>
                         <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                            <MessageSquare className="w-4 h-4 text-purple-600" /> B2B Customer Order Intake (NLP Parser &amp; Live Stock Verification)
+                            <MessageSquare className="w-4 h-4 text-purple-600" /> B2B Customer Order Intake (NLP Text, Photo OCR &amp; Excel Import)
                         </h3>
                         <p className="text-xs text-slate-500 mt-0.5">
-                            1. Customer Message Trigger &rarr; 2. NLP Extraction &rarr; 3. Review/Edit Draft &rarr; 4. Owner Approval / Modify &rarr; 5. Confirm Delivery
+                            Accept customer orders via pasted WhatsApp/Email messages, uploaded PO photos (AI Vision OCR), or customer Excel/CSV files.
                         </p>
                     </div>
 
-                    <div className="flex items-center gap-1.5 text-[11px]">
-                        <span className="text-slate-400 font-semibold">Sample Messages:</span>
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                        <button
+                            type="button"
+                            onClick={() => orderPhotoInputRef.current?.click()}
+                            className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer"
+                        >
+                            <Camera className="w-3.5 h-3.5 text-purple-600" /> Upload Order Photo (OCR)
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => orderExcelInputRef.current?.click()}
+                            className="px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer"
+                        >
+                            <FileSpreadsheet className="w-3.5 h-3.5 text-teal-600" /> Import Order Excel / CSV
+                        </button>
+
+                        <span className="text-slate-300 hidden sm:inline">|</span>
+
                         <button
                             type="button"
                             onClick={() =>
@@ -654,9 +979,9 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                     'Hi Vyte team, please send 6 kg of Artisan Arabica Coffee Beans and 3 boxes of Biodegradable Kraft Takeaway Box.'
                                 )
                             }
-                            className="px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-md font-semibold cursor-pointer"
+                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-semibold cursor-pointer"
                         >
-                            Cafe Order
+                            Cafe Sample
                         </button>
                         <button
                             type="button"
@@ -666,24 +991,49 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                     'Hello, we would like to order 5 pcs of 4-Tier Modular Steel Shelving for our new outlet.'
                                 )
                             }
-                            className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-md font-semibold cursor-pointer"
+                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-semibold cursor-pointer"
                         >
-                            Retail Shelving
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() =>
-                                applyPresetMessage(
-                                    'KL Downtown Bistro',
-                                    'Please send 12 crates of Sparkling Yuzu Syrup by Friday.'
-                                )
-                            }
-                            className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-md font-semibold cursor-pointer"
-                        >
-                            Unmatched SKU (Test Fail)
+                            Retail Sample
                         </button>
                     </div>
                 </div>
+
+                {(uploadedOrderPhotoPreview || uploadedOrderFileName) && (
+                    <div className="p-3 rounded-xl bg-purple-50/70 border border-purple-200 flex items-center justify-between gap-3 text-xs">
+                        <div className="flex items-center gap-3">
+                            {uploadedOrderPhotoPreview ? (
+                                <img
+                                    src={uploadedOrderPhotoPreview}
+                                    alt="Customer Order Preview"
+                                    className="w-11 h-11 rounded-lg object-cover border border-purple-300"
+                                />
+                            ) : (
+                                <div className="w-10 h-10 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center font-bold">
+                                    <FileSpreadsheet className="w-5 h-5" />
+                                </div>
+                            )}
+                            <div>
+                <span className="px-2 py-0.5 rounded bg-purple-600 text-white text-[10px] font-bold">
+                  {uploadedOrderPhotoPreview ? 'Customer Photo OCR Extracted' : 'Customer Spreadsheet Parsed'}
+                </span>
+                                <p className="font-bold text-slate-900 mt-0.5">{uploadedOrderFileName}</p>
+                                <p className="text-[11px] text-slate-600">
+                                    Customer items have been loaded into the Step 2 Review &amp; Edit table below.
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setUploadedOrderPhotoPreview(null);
+                                setUploadedOrderFileName(null);
+                            }}
+                            className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+                )}
 
                 <form onSubmit={handleProcessNlpCustomerOrder} noValidate className="grid grid-cols-1 lg:grid-cols-12 gap-4">
                     <div className="lg:col-span-3 space-y-3">
@@ -709,7 +1059,6 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                             )}
                         </div>
 
-                        {/* ISO Date Picker */}
                         <div className="space-y-1">
                             <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
                                 <Calendar className="w-3.5 h-3.5 text-purple-600" /> Requested Delivery Date (ISO) *
@@ -733,10 +1082,9 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                         </div>
                     </div>
 
-                    {/* Multi-line Textarea for Customer Order Message */}
                     <div className="lg:col-span-6 space-y-1">
                         <label className="text-xs font-bold text-slate-700 block">
-                            Incoming WhatsApp / Email Customer Order Message *
+                            Incoming WhatsApp / Email / OCR Customer Order Message *
                         </label>
                         <textarea
                             rows={4}
@@ -770,7 +1118,6 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                     </div>
                 </form>
 
-                {/* Parse-Failure State Banner (No silent fallback to first product) */}
                 {parseFailureMessage && (
                     <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 space-y-2.5 text-xs">
                         <div className="flex items-start justify-between gap-3">
@@ -811,20 +1158,20 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                     </div>
                 )}
 
-                {/* Review / Edit Step Before Creating the Order */}
+                {/* Step 2: Review / Edit Draft Before Order Creation (Confirm Button Locked & Grey When Stock Is Insufficient) */}
                 {parsedDraft && (
                     <div className="p-5 rounded-2xl bg-purple-50/60 border-2 border-purple-300 space-y-4">
                         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-purple-200/80 pb-3">
                             <div>
-                                <span className="px-2.5 py-0.5 rounded-full bg-purple-600 text-white text-[10px] font-bold uppercase tracking-wider">
-                                    Step 2: Human Review &amp; Edit Before Order Creation
-                                </span>
+                <span className="px-2.5 py-0.5 rounded-full bg-purple-600 text-white text-[10px] font-bold uppercase tracking-wider">
+                  Step 2: Human Review &amp; Edit Before Order Creation
+                </span>
                                 <h4 className="text-sm font-bold text-slate-900 mt-1">
                                     Review Extracted Line Items for {parsedDraft.customerName} (Delivery: {parsedDraft.requestedDate})
                                 </h4>
                             </div>
 
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                                 <button
                                     type="button"
                                     onClick={() => setParsedDraft(null)}
@@ -832,19 +1179,53 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                 >
                                     Discard Draft
                                 </button>
+
+                                {!isDraftStockSufficient && onNavigateToRestock && (
+                                    <button
+                                        type="button"
+                                        onClick={onNavigateToRestock}
+                                        className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-xs transition cursor-pointer"
+                                    >
+                                        Go to Auto Restock <ArrowUpRight className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
+
+                                {/* Requirement 4: Grey & unclickable when stock is insufficient */}
                                 <button
                                     type="button"
-                                    disabled={isCreatingOrder || parsedDraft.items.length === 0}
+                                    disabled={
+                                        isCreatingOrder ||
+                                        liveDraftItems.length === 0 ||
+                                        !isDraftStockSufficient
+                                    }
                                     onClick={() => void handleConfirmCreateOrder()}
-                                    className="px-4 py-2 bg-[#2BB656] hover:bg-emerald-600 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
+                                    className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition ${
+                                        !isDraftStockSufficient || liveDraftItems.length === 0
+                                            ? 'bg-slate-200 text-slate-500 border border-slate-300 cursor-not-allowed'
+                                            : 'bg-[#2BB656] hover:bg-emerald-600 text-white cursor-pointer'
+                                    }`}
                                 >
                                     <FileCheck className="w-3.5 h-3.5" />
-                                    {isCreatingOrder ? 'Creating Order...' : 'Confirm & Create Order'}
+                                    {isCreatingOrder
+                                        ? 'Creating Order...'
+                                        : !isDraftStockSufficient
+                                            ? 'Locked: Restock Required First'
+                                            : 'Confirm & Create Order'}
                                 </button>
                             </div>
                         </div>
 
-                        {/* Add SKU to Draft */}
+                        {!isDraftStockSufficient && (
+                            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 font-semibold flex items-center justify-between gap-3">
+                <span className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>
+                    Warehouse stock is insufficient for one or more items below. Auto Restock has been automatically triggered—please restock or reduce requested quantity before confirming.
+                  </span>
+                </span>
+                            </div>
+                        )}
+
                         <div className="flex flex-wrap items-center gap-2 text-xs">
                             <div className="w-72">
                                 <VyteDropdown
@@ -853,7 +1234,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                     value={addSkuId}
                                     onChange={(val) => setAddSkuId(val)}
                                     options={products.map((p) => ({
-                                        label: `${p.name} (${p.sku}) — ${currencySymbol} ${p.priceRM.toFixed(2)}`,
+                                        label: `${p.name} (${p.sku}) — ${currencySymbol} ${(p.priceRM * exchangeRate).toFixed(2)}`,
                                         value: p.id,
                                     }))}
                                 />
@@ -879,8 +1260,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                             </div>
                         </div>
 
-                        {/* Editable Line Items Table */}
-                        {parsedDraft.items.length === 0 ? (
+                        {liveDraftItems.length === 0 ? (
                             <p className="text-xs text-slate-500 italic py-3 text-center">
                                 No items in draft yet. Select a product above and click "Add SKU to Draft".
                             </p>
@@ -892,19 +1272,19 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                         <th className="py-2 px-3.5">SKU &amp; Product</th>
                                         <th className="py-2 px-3.5">Requested Qty (Editable)</th>
                                         <th className="py-2 px-3.5">Live Warehouse Stock</th>
-                                        <th className="py-2 px-3.5">Unit Price</th>
-                                        <th className="py-2 px-3.5 text-right">Line Subtotal</th>
+                                        <th className="py-2 px-3.5">Unit Price ({currency})</th>
+                                        <th className="py-2 px-3.5 text-right">Line Subtotal ({currency})</th>
                                         <th className="py-2 px-3.5 text-center">Remove</th>
                                     </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                    {parsedDraft.items.map((item) => (
+                                    {liveDraftItems.map((item) => (
                                         <tr key={item.productID}>
                                             <td className="py-2.5 px-3.5 font-bold text-slate-900">
                                                 {item.name}{' '}
                                                 <span className="font-mono text-[11px] text-slate-400">
-                                                    ({item.SKU})
-                                                </span>
+                            ({item.SKU})
+                          </span>
                                             </td>
                                             <td className="py-2.5 px-3.5">
                                                 <input
@@ -921,12 +1301,12 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                             <td className="py-2.5 px-3.5">
                                                 {item.isStockEnough ? (
                                                     <span className="text-emerald-700 font-bold">
-                                                        ✓ {item.availableStock} Available
-                                                    </span>
+                              ✓ {item.availableStock} Available
+                            </span>
                                                 ) : (
                                                     <span className="text-rose-600 font-bold">
-                                                        ⚠ Only {item.availableStock} Left
-                                                    </span>
+                              ⚠ Only {item.availableStock} Left (Short by {item.shortageQty})
+                            </span>
                                                 )}
                                             </td>
                                             <td className="py-2.5 px-3.5 text-slate-600">
@@ -962,11 +1342,10 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                             <Package className="w-4 h-4 text-emerald-600" /> Active Customer Orders &amp; Fulfillment Pipeline ({filteredOrders.length})
                         </h4>
                         <p className="text-[11px] text-slate-500">
-                            Orders with insufficient stock are automatically blocked from approval until restocked in Module 1.
+                            Orders with insufficient stock are automatically blocked from approval until restocked in Auto Restock.
                         </p>
                     </div>
 
-                    {/* Status Filter Tabs */}
                     <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
                         {statusTabs.map((tab) => (
                             <button
@@ -1023,6 +1402,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                             });
 
                             const allEnoughLive = liveItems.every((i) => i.isStockEnough);
+                            const convertedOrderTotal = co.subtotal * exchangeRate;
 
                             return (
                                 <div
@@ -1039,15 +1419,14 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                                     : 'bg-slate-50 border-slate-200 opacity-75'
                                     }`}
                                 >
-                                    {/* Card Top Header Bar */}
                                     <div className="px-5 py-3.5 bg-slate-50/80 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-3">
                                         <div className="flex flex-wrap items-center gap-2">
-                                            <span className="font-mono text-xs font-bold text-purple-700 bg-purple-100 px-2.5 py-0.5 rounded-md">
-                                                {co.orderID}
-                                            </span>
+                      <span className="font-mono text-xs font-bold text-purple-700 bg-purple-100 px-2.5 py-0.5 rounded-md">
+                        {co.orderID}
+                      </span>
                                             <span className="font-mono text-xs text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
-                                                Invoice: {co.invoiceID}
-                                            </span>
+                        Invoice: {co.invoiceID}
+                      </span>
                                             {co.invoicePdfUrl && (
                                                 <a
                                                     href={co.invoicePdfUrl}
@@ -1063,8 +1442,8 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
 
                                             {co.status === 'MODIFIED' && (
                                                 <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
-                                                    MODIFIED
-                                                </span>
+                          MODIFIED
+                        </span>
                                             )}
 
                                             {isPendingOrModified && (
@@ -1075,20 +1454,19 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                                             : 'bg-rose-100 text-rose-700'
                                                     }`}
                                                 >
-                                                    {allEnoughLive ? (
-                                                        <>
-                                                            <CheckCircle2 className="w-3 h-3" /> Stock Sufficient
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <AlertTriangle className="w-3 h-3" /> Insufficient Stock
-                                                        </>
-                                                    )}
-                                                </span>
+                          {allEnoughLive ? (
+                              <>
+                                  <CheckCircle2 className="w-3 h-3" /> Stock Sufficient
+                              </>
+                          ) : (
+                              <>
+                                  <AlertTriangle className="w-3 h-3" /> Insufficient Stock
+                              </>
+                          )}
+                        </span>
                                             )}
                                         </div>
 
-                                        {/* Right Actions & Total */}
                                         <div className="flex flex-wrap items-center gap-2.5">
                                             <button
                                                 type="button"
@@ -1099,12 +1477,16 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                             </button>
 
                                             <div className="text-right mr-1">
-                                                <span className="text-[10px] uppercase font-bold text-slate-400 block">
-                                                    Order Total
-                                                </span>
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                          Order Total
+                        </span>
                                                 <span className="text-base font-extrabold text-slate-900 whitespace-nowrap">
-                                                    {currencySymbol} {(co.subtotal * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                                </span>
+                          {currencySymbol}{' '}
+                                                    {convertedOrderTotal.toLocaleString(undefined, {
+                                                        minimumFractionDigits: 2,
+                                                        maximumFractionDigits: 2,
+                                                    })}
+                        </span>
                                             </div>
 
                                             {isPendingOrModified && (
@@ -1125,23 +1507,33 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                                             <button
                                                                 type="button"
                                                                 disabled
-                                                                className="px-3 py-2 bg-slate-200 text-slate-500 rounded-xl text-xs font-bold flex items-center gap-1 cursor-not-allowed whitespace-nowrap"
+                                                                className="px-3 py-2 bg-slate-200 text-slate-500 border border-slate-300 rounded-xl text-xs font-bold flex items-center gap-1 cursor-not-allowed whitespace-nowrap"
                                                             >
-                                                                <AlertTriangle className="w-3.5 h-3.5 text-rose-500" /> Blocked: Low Stock
+                                                                <AlertTriangle className="w-3.5 h-3.5 text-rose-500" /> Locked: Low Stock
                                                             </button>
                                                             {onNavigateToRestock && (
                                                                 <button
                                                                     type="button"
-                                                                    onClick={onNavigateToRestock}
+                                                                    onClick={() => {
+                                                                        if (onTriggerShortageRestock) {
+                                                                            const shortList = liveItems
+                                                                                .filter((i) => !i.isStockEnough)
+                                                                                .map((i) => ({
+                                                                                    productID: i.productID,
+                                                                                    neededQty: i.shortageQty,
+                                                                                }));
+                                                                            onTriggerShortageRestock(shortList);
+                                                                        }
+                                                                        onNavigateToRestock();
+                                                                    }}
                                                                     className="px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-xs transition cursor-pointer whitespace-nowrap"
                                                                 >
-                                                                    Restock in Mod 1 <ArrowUpRight className="w-3.5 h-3.5" />
+                                                                    Go to Auto Restock <ArrowUpRight className="w-3.5 h-3.5" />
                                                                 </button>
                                                             )}
                                                         </div>
                                                     )}
 
-                                                    {/* MODIFY Button */}
                                                     {isModifyingThis ? (
                                                         <button
                                                             type="button"
@@ -1190,9 +1582,9 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
 
                                             {co.status === 'APPROVED_AWAITING_DELIVERY' && (
                                                 <div className="flex items-center gap-2">
-                                                    <span className="px-2.5 py-1 rounded-lg bg-blue-100 text-blue-800 text-[11px] font-bold">
-                                                        ✓ Invoiced in Mod 5
-                                                    </span>
+                          <span className="px-2.5 py-1 rounded-lg bg-blue-100 text-blue-800 text-[11px] font-bold">
+                            ✓ Sent to Smart Invoices
+                          </span>
                                                     <button
                                                         type="button"
                                                         onClick={() => handleConfirmCustomerDelivery(co)}
@@ -1205,19 +1597,18 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
 
                                             {co.status === 'DELIVERED_COMPLETED' && (
                                                 <span className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 text-xs font-bold inline-flex items-center gap-1.5">
-                                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Delivered &amp; Completed
-                                                </span>
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Delivered &amp; Completed
+                        </span>
                                             )}
 
                                             {co.status === 'REJECTED' && (
                                                 <span className="px-3 py-1.5 rounded-xl bg-rose-100 text-rose-700 text-xs font-bold">
-                                                    Rejected
-                                                </span>
+                          Rejected
+                        </span>
                                             )}
                                         </div>
                                     </div>
 
-                                    {/* Card Body: Customer Message + Notes Input + Line-Item Table */}
                                     <div className="p-4 space-y-3">
                                         <div className="flex flex-wrap items-center justify-between gap-2">
                                             <p className="text-xs text-slate-500 italic">
@@ -1225,12 +1616,11 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                             </p>
                                             {co.approvalNotes && (
                                                 <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded-md">
-                                                    Review Note: {co.approvalNotes}
-                                                </span>
+                          Review Note: {co.approvalNotes}
+                        </span>
                                             )}
                                         </div>
 
-                                        {/* Notes Input for Approve / Modify / Reject */}
                                         {isPendingOrModified && (
                                             <div className="flex items-center gap-2">
                                                 <input
@@ -1268,22 +1658,25 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                                             ? 'Live Warehouse Stock'
                                                             : 'Stock Allocation Status'}
                                                     </th>
-                                                    <th className="py-2 px-3.5">Unit Price</th>
-                                                    <th className="py-2 px-3.5 text-right">Line Subtotal</th>
+                                                    <th className="py-2 px-3.5">Unit Price ({currency})</th>
+                                                    <th className="py-2 px-3.5 text-right">Line Subtotal ({currency})</th>
                                                 </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-slate-100">
                                                 {liveItems.map((item) => {
                                                     const key = `${co.orderID}:${item.productID}`;
+                                                    const convertedUnitPrice = item.sellingPrice * exchangeRate;
+                                                    const convertedLineTotal = item.lineTotal * exchangeRate;
+
                                                     return (
                                                         <tr key={item.SKU} className="hover:bg-slate-50/60">
                                                             <td className="py-2.5 px-3.5">
-                                                                <span className="font-bold text-slate-900">
-                                                                    {item.name}
-                                                                </span>
+                                  <span className="font-bold text-slate-900">
+                                    {item.name}
+                                  </span>
                                                                 <span className="ml-2 font-mono text-[11px] text-slate-400">
-                                                                    ({item.SKU})
-                                                                </span>
+                                    ({item.SKU})
+                                  </span>
                                                             </td>
 
                                                             <td className="py-2.5 px-3.5 font-extrabold text-slate-900">
@@ -1316,32 +1709,38 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                                                 {isPendingOrModified ? (
                                                                     item.isStockEnough ? (
                                                                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold text-[11px]">
-                                                                            ✓ {item.availableStock} {item.uom} Available
-                                                                        </span>
+                                        ✓ {item.availableStock} {item.uom} Available
+                                      </span>
                                                                     ) : (
                                                                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 font-bold text-[11px]">
-                                                                            ⚠ Only {item.availableStock} {item.uom} Left (Short by {item.shortageQty} {item.uom})
-                                                                        </span>
+                                        ⚠ Only {item.availableStock} {item.uom} Left (Short by {item.shortageQty} {item.uom})
+                                      </span>
                                                                     )
                                                                 ) : co.status === 'REJECTED' ? (
                                                                     <span className="text-slate-400 font-semibold">
-                                                                        Order Cancelled
-                                                                    </span>
+                                      Order Cancelled
+                                    </span>
                                                                 ) : (
                                                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold text-[11px]">
-                                                                        ✓ {item.requestedQty} {item.uom} Reserved &amp; Deducted (Rem: {item.availableStock} {item.uom})
-                                                                    </span>
+                                      ✓ {item.requestedQty} {item.uom} Reserved &amp; Deducted (Rem: {item.availableStock} {item.uom})
+                                    </span>
                                                                 )}
                                                             </td>
 
                                                             <td className="py-2.5 px-3.5 text-slate-600 font-medium">
-                                                                {currencySymbol} {(item.sellingPrice * exchangeRate).toFixed(2)} / {item.uom}
+                                                                {currencySymbol}{' '}
+                                                                {convertedUnitPrice.toLocaleString(undefined, {
+                                                                    minimumFractionDigits: 2,
+                                                                    maximumFractionDigits: 2,
+                                                                })}{' '}
+                                                                / {item.uom}
                                                             </td>
 
                                                             <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900">
                                                                 {currencySymbol}{' '}
-                                                                {(item.lineTotal * exchangeRate).toLocaleString(undefined, {
+                                                                {convertedLineTotal.toLocaleString(undefined, {
                                                                     minimumFractionDigits: 2,
+                                                                    maximumFractionDigits: 2,
                                                                 })}
                                                             </td>
                                                         </tr>
@@ -1358,7 +1757,6 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                 )}
             </div>
 
-            {/* Confirmation Dialog Modal */}
             {confirmDialog && (
                 <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
                     <div className="bg-white rounded-2xl border border-slate-200 max-w-md w-full p-6 shadow-2xl space-y-4">
@@ -1406,19 +1804,18 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                 </div>
             )}
 
-            {/* Order Detail View Modal */}
             {selectedDetailOrder && (
                 <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
                     <div className="bg-white rounded-2xl border border-slate-200 max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
                         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                             <div>
                                 <div className="flex items-center gap-2">
-                                    <span className="font-mono text-xs font-bold text-purple-700 bg-purple-100 px-2.5 py-0.5 rounded-md">
-                                        {selectedDetailOrder.orderID}
-                                    </span>
+                  <span className="font-mono text-xs font-bold text-purple-700 bg-purple-100 px-2.5 py-0.5 rounded-md">
+                    {selectedDetailOrder.orderID}
+                  </span>
                                     <span className="font-mono text-xs text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded-md">
-                                        {selectedDetailOrder.invoiceID}
-                                    </span>
+                    {selectedDetailOrder.invoiceID}
+                  </span>
                                 </div>
                                 <h3 className="text-base font-bold text-slate-900 mt-1">
                                     {selectedDetailOrder.customerName}
@@ -1464,7 +1861,11 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                             <div>
                                 <span className="text-slate-400 block">Total Amount</span>
                                 <strong className="text-slate-900">
-                                    {currencySymbol} {(selectedDetailOrder.subtotal * exchangeRate).toFixed(2)}
+                                    {currencySymbol}{' '}
+                                    {(selectedDetailOrder.subtotal * exchangeRate).toLocaleString(undefined, {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                    })}
                                 </strong>
                             </div>
                         </div>

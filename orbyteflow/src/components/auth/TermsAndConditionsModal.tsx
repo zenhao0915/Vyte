@@ -20,7 +20,7 @@ export const TERMS_AND_CONDITIONS_TEXT: { heading: string; body: string }[] = [
     },
     {
         heading: '3. Orbyte HR Task Dispatch & Audit Trail Accountability',
-        body: 'Quality control and perishable expiry actions approved within Module 4 are dispatched directly to designated personnel via the Orbyte HR roster. Every trigger, AI recommendation, human decision, and staff completion event is recorded in an immutable timestamped activity log for operational governance.',
+        body: 'Quality control and perishable expiry actions approved within Quality & Expiry Guardian are dispatched directly to designated personnel via the Orbyte HR roster. Every trigger, AI recommendation, human decision, and staff completion event is recorded in an immutable timestamped activity log for operational governance.',
     },
     {
         heading: '4. Data Privacy & Malaysia PDPA 2010 Compliance',
