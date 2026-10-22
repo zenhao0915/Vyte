@@ -2,7 +2,7 @@
 
 export type UserRole = 'SME_OWNER' | 'MANAGER' | 'OPERATIONS_STAFF';
 export type IndustryProfile = 'FNB_PERISHABLE' | 'RETAIL_VARIANT' | 'B2B_RAW_MATERIAL';
-export type ActiveTab = 'mod1' | 'mod2' | 'mod3' | 'mod4' | 'mod5';
+export type ActiveTab = 'mod1' | 'mod2' | 'mod3' | 'mod4' | 'mod5' | 'logs';
 
 export interface UserSession {
     userID: string;
@@ -281,4 +281,158 @@ export interface AutoOrderSuggestion {
     urgency: 'CRITICAL' | 'HIGH' | 'MODERATE';
     humanStatus: 'AWAITING_HUMAN_PERMISSION' | 'APPROVED_SENT_TO_SUPPLIER' | 'HELD_BY_HUMAN' | 'REJECTED';
     updatedAt?: string;
+}
+
+
+// ============================================================================
+// AUTHENTICATION & SSO PAYLOAD TYPES (src/types/vyte.ts)
+// ============================================================================
+
+export interface RegisterAccountRequest {
+    firstName: string;
+    lastName: string;
+    email: string;
+    password: string;
+    companyName: string;
+    userType: 'CEO' | 'Manager' | 'Staff';
+    role: UserRole;
+    acceptedTermsAt: string;
+}
+
+export interface RegisterAccountResponse {
+    userID: string;
+    userName: string;
+    email: string;
+    companyName: string;
+    userType: 'CEO' | 'Manager' | 'Staff';
+    role: UserRole;
+    registeredAt: string;
+    message: string;
+}
+
+export interface LoginAccountRequest {
+    email: string;
+    password: string;
+    companyName?: string;
+    userType?: 'CEO' | 'Manager' | 'Staff';
+}
+
+export interface AuthSessionResponse {
+    authenticated: boolean;
+    accessToken: string;
+    authProvider: 'LOCAL' | 'GOOGLE' | 'ENTERPRISE_SSO';
+    session: UserSession;
+    issuedAt: string;
+}
+
+export interface GoogleAuthRequest {
+    idToken: string;
+    email: string;
+    fullName: string;
+    companyName: string;
+    userType: 'CEO' | 'Manager' | 'Staff';
+    role: UserRole;
+}
+
+export interface EnterpriseSsoAuthRequest {
+    ssoAssertionToken: string;
+    corporateDomain: string;
+    email: string;
+    companyName: string;
+    userType: 'CEO' | 'Manager' | 'Staff';
+    role: UserRole;
+}
+
+// ============================================================================
+// AUTHENTICATION, SESSION VALIDATION & PASSWORD RESET TYPES (src/types/vyte.ts)
+// ============================================================================
+
+export interface RegisterAccountRequest {
+    firstName: string;
+    lastName: string;
+    email: string;
+    password: string;
+    companyName: string;
+    userType: 'CEO' | 'Manager' | 'Staff';
+    role: UserRole;
+    acceptedTermsAt: string;
+}
+
+export interface RegisterAccountResponse {
+    userID: string;
+    userName: string;
+    email: string;
+    companyName: string;
+    userType: 'CEO' | 'Manager' | 'Staff';
+    role: UserRole;
+    registeredAt: string;
+    message: string;
+}
+
+export interface LoginAccountRequest {
+    email: string;
+    password: string;
+    companyName?: string;
+    userType?: 'CEO' | 'Manager' | 'Staff';
+}
+
+export interface AuthSessionResponse {
+    authenticated: boolean;
+    accessToken: string;
+    authProvider: 'LOCAL' | 'GOOGLE' | 'ENTERPRISE_SSO';
+    session: UserSession;
+    issuedAt: string;
+}
+
+export interface ValidateSessionRequest {
+    accessToken: string;
+    userID: string;
+    email: string;
+}
+
+export interface ValidateSessionResponse {
+    valid: boolean;
+    session: UserSession;
+    verifiedAt: string;
+}
+
+export interface ForgotPasswordRequest {
+    email: string;
+}
+
+export interface ForgotPasswordResponse {
+    resetToken: string;
+    email: string;
+    expiresAt: string;
+    message: string;
+}
+
+export interface ResetPasswordRequest {
+    email: string;
+    resetToken: string;
+    newPassword: string;
+}
+
+export interface ResetPasswordResponse {
+    success: boolean;
+    updatedAt: string;
+    message: string;
+}
+
+export interface GoogleAuthRequest {
+    idToken: string;
+    email: string;
+    fullName: string;
+    companyName: string;
+    userType: 'CEO' | 'Manager' | 'Staff';
+    role: UserRole;
+}
+
+export interface EnterpriseSsoAuthRequest {
+    ssoAssertionToken: string;
+    corporateDomain: string;
+    email: string;
+    companyName: string;
+    userType: 'CEO' | 'Manager' | 'Staff';
+    role: UserRole;
 }

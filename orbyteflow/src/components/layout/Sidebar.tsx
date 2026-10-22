@@ -3,9 +3,9 @@ import React, { useState } from 'react';
 import {
     Box,
     TrendingUp,
-    MessageSquare,
     AlertTriangle,
     FileText,
+    Clock,
     Search,
     ChevronLeft,
     ChevronRight,
@@ -14,12 +14,13 @@ import {
     X,
     ShieldCheck,
 } from 'lucide-react';
-import type { ActiveTab, UserSession } from '../../types/vyte.ts';
+import type { ActiveTab, UserRole, UserSession } from '../../types/vyte.ts';
 import { VyteLogo } from '../common/VyteLogo';
 
 interface SidebarProps {
     activeTab: ActiveTab;
     setActiveTab: (tab: ActiveTab) => void;
+    role: UserRole;
     industryFilter: string;
     setIndustryFilter: (filter: string) => void;
     searchQuery: string;
@@ -28,6 +29,7 @@ interface SidebarProps {
     pendingOrderCount: number;
     pendingQcCount: number;
     pendingInvoiceCount: number;
+    auditLogCount: number;
     totalProductCount: number;
     userSession: UserSession | null;
     onLogout: () => void;
@@ -37,6 +39,7 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({
                                                     activeTab,
                                                     setActiveTab,
+                                                    role,
                                                     industryFilter,
                                                     setIndustryFilter,
                                                     searchQuery,
@@ -45,6 +48,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                                     pendingOrderCount,
                                                     pendingQcCount,
                                                     pendingInvoiceCount,
+                                                    auditLogCount,
                                                     totalProductCount,
                                                     userSession,
                                                     onLogout,
@@ -54,13 +58,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const [whatsappAutoAlerts, setWhatsappAutoAlerts] = useState(true);
     const [strictRbacLock, setStrictRbacLock] = useState(true);
 
+    const roleBadgeConfig: Record<UserRole, { label: string; style: string }> = {
+        SME_OWNER: {
+            label: 'Owner (Full Approval Access)',
+            style: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+        },
+        MANAGER: {
+            label: 'Manager (Approval & Ops Access)',
+            style: 'bg-blue-50 text-blue-800 border-blue-200',
+        },
+        OPERATIONS_STAFF: {
+            label: 'Ops Staff (Read & Trigger Only)',
+            style: 'bg-amber-50 text-amber-800 border-amber-200',
+        },
+    };
+
+    const activeBadge = roleBadgeConfig[role];
+
     const coreModules = [
         {
             id: 'mod1' as ActiveTab,
-            label: 'Auto Restock',
+            label: 'Restock & Orders',
             icon: Box,
             iconColor: 'text-emerald-600',
-            badge: String(pendingRestockCount),
+            badge: String(pendingRestockCount + pendingOrderCount),
             badgeClass: 'bg-amber-100 text-amber-800',
         },
         {
@@ -70,14 +91,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             iconColor: 'text-blue-600',
             badge: 'AI',
             badgeClass: 'bg-blue-100 text-blue-700 rounded-md',
-        },
-        {
-            id: 'mod3' as ActiveTab,
-            label: 'Order Status',
-            icon: MessageSquare,
-            iconColor: 'text-purple-600',
-            badge: String(pendingOrderCount),
-            badgeClass: 'bg-purple-100 text-purple-700',
         },
         {
             id: 'mod4' as ActiveTab,
@@ -95,6 +108,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             badge: String(pendingInvoiceCount),
             badgeClass: 'bg-emerald-100 text-emerald-700',
         },
+        {
+            id: 'logs' as ActiveTab,
+            label: 'Audit Logs',
+            icon: Clock,
+            iconColor: 'text-slate-600',
+            badge: String(auditLogCount),
+            badgeClass: 'bg-slate-200 text-slate-800',
+        },
     ];
 
     return (
@@ -102,7 +123,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <aside
                 className={`${
                     isCollapsed ? 'w-20' : 'w-64'
-                } h-screen sticky top-0 left-0 bg-white border-r border-slate-200/90 flex flex-col justify-between shrink-0 transition-all duration-300 ease-in-out select-none z-30`}
+                } h-full bg-white border border-slate-200/90 rounded-2xl shadow-xs flex flex-col justify-between shrink-0 transition-all duration-300 ease-in-out select-none relative z-30`}
             >
                 {/* Collapse Toggle Button */}
                 <button
@@ -111,11 +132,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     title={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
                     className="w-6 h-6 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center text-slate-500 hover:text-emerald-600 hover:border-emerald-300 absolute -right-3 top-8 z-40 transition cursor-pointer"
                 >
-                    {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
+                    {isCollapsed ? (
+                        <ChevronRight className="w-3.5 h-3.5" />
+                    ) : (
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                    )}
                 </button>
 
                 <div className="flex flex-col flex-1 min-h-0 overflow-y-auto">
-                    {/* Official Vyte Brand Header (Scaled to Image 2 Margins) */}
+                    {/* Official Vyte Brand Header */}
                     <div className="px-5 py-4 flex items-center justify-center border-b border-slate-100 shrink-0">
                         {isCollapsed ? (
                             <VyteLogo iconOnly={true} className="h-9 w-auto" />
@@ -163,14 +188,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                         {coreModules.map((mod) => {
                             const Icon = mod.icon;
-                            const isActive = activeTab === mod.id;
+                            const isActive =
+                                activeTab === mod.id ||
+                                (mod.id === 'mod1' && activeTab === 'mod3');
                             return (
                                 <button
                                     key={mod.id}
                                     onClick={() => setActiveTab(mod.id)}
                                     title={isCollapsed ? mod.label : undefined}
                                     className={`w-full flex items-center ${
-                                        isCollapsed ? 'justify-center px-2 py-3' : 'justify-between px-3.5 py-2.5'
+                                        isCollapsed
+                                            ? 'justify-center px-2 py-3'
+                                            : 'justify-between px-3.5 py-2.5'
                                     } rounded-xl text-sm transition-all cursor-pointer border ${
                                         isActive
                                             ? 'bg-[#EBFDF2] border-[#A7F3D0] text-emerald-950 font-bold shadow-[0_1px_2px_rgba(16,185,129,0.06)]'
@@ -183,7 +212,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                     </span>
 
                                     {!isCollapsed && (
-                                        <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${mod.badgeClass}`}>
+                                        <span
+                                            className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${mod.badgeClass}`}
+                                        >
                                             {mod.badge}
                                         </span>
                                     )}
@@ -203,7 +234,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 onClick={() => setIndustryFilter('ALL')}
                                 title="All SME Templates"
                                 className={`w-full text-left ${
-                                    isCollapsed ? 'flex justify-center py-2' : 'px-3.5 py-2 flex items-center justify-between'
+                                    isCollapsed
+                                        ? 'flex justify-center py-2'
+                                        : 'px-3.5 py-2 flex items-center justify-between'
                                 } text-xs rounded-xl transition cursor-pointer ${
                                     industryFilter === 'ALL'
                                         ? 'font-bold text-slate-900 bg-slate-100/90'
@@ -228,7 +261,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 onClick={() => setIndustryFilter('FNB_PERISHABLE')}
                                 title="F&B / Perishable"
                                 className={`w-full text-left ${
-                                    isCollapsed ? 'flex justify-center py-2.5' : 'px-3.5 py-2 flex items-center gap-2.5'
+                                    isCollapsed
+                                        ? 'flex justify-center py-2.5'
+                                        : 'px-3.5 py-2 flex items-center gap-2.5'
                                 } text-xs rounded-xl transition cursor-pointer ${
                                     industryFilter === 'FNB_PERISHABLE'
                                         ? 'font-bold text-rose-700 bg-rose-50/90'
@@ -243,7 +278,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 onClick={() => setIndustryFilter('RETAIL_VARIANT')}
                                 title="Retail & Variants"
                                 className={`w-full text-left ${
-                                    isCollapsed ? 'flex justify-center py-2.5' : 'px-3.5 py-2 flex items-center gap-2.5'
+                                    isCollapsed
+                                        ? 'flex justify-center py-2.5'
+                                        : 'px-3.5 py-2 flex items-center gap-2.5'
                                 } text-xs rounded-xl transition cursor-pointer ${
                                     industryFilter === 'RETAIL_VARIANT'
                                         ? 'font-bold text-blue-700 bg-blue-50/90'
@@ -258,7 +295,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 onClick={() => setIndustryFilter('B2B_RAW_MATERIAL')}
                                 title="B2B & Packaging"
                                 className={`w-full text-left ${
-                                    isCollapsed ? 'flex justify-center py-2.5' : 'px-3.5 py-2 flex items-center gap-2.5'
+                                    isCollapsed
+                                        ? 'flex justify-center py-2.5'
+                                        : 'px-3.5 py-2 flex items-center gap-2.5'
                                 } text-xs rounded-xl transition cursor-pointer ${
                                     industryFilter === 'B2B_RAW_MATERIAL'
                                         ? 'font-bold text-emerald-800 bg-[#EBFDF2]'
@@ -272,8 +311,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </nav>
                 </div>
 
-                {/* Bottom Settings & Logout Controls (Replaced Redundant Connection Hub) */}
-                <div className="p-3 border-t border-slate-100 shrink-0">
+                {/* Bottom Role Badge + Settings & Logout Controls */}
+                <div className="p-3 border-t border-slate-100 space-y-2 shrink-0">
+                    {/* Role Badge moved from HeaderBar to bottom of Sidebar */}
+                    <div
+                        title={activeBadge.label}
+                        className={`w-full rounded-xl border text-[11px] font-bold flex items-center ${
+                            isCollapsed
+                                ? 'justify-center py-2 px-1'
+                                : 'justify-center gap-1.5 px-3 py-2'
+                        } ${activeBadge.style}`}
+                    >
+                        <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                        {!isCollapsed && <span className="truncate">{activeBadge.label}</span>}
+                    </div>
+
                     {isCollapsed ? (
                         <div className="flex flex-col items-center gap-2">
                             <button
@@ -298,7 +350,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             <button
                                 type="button"
                                 onClick={() => setShowSettingsModal(true)}
-                                className="py-2.5 px-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-200/90 text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer"
+                                className="py-2 px-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-200/90 text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer"
                             >
                                 <Settings className="w-3.5 h-3.5 text-slate-500" />
                                 <span>Settings</span>
@@ -306,7 +358,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             <button
                                 type="button"
                                 onClick={onLogout}
-                                className="py-2.5 px-3 rounded-xl bg-rose-50/70 hover:bg-rose-100 text-rose-600 border border-rose-200/80 text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer"
+                                className="py-2 px-3 rounded-xl bg-rose-50/70 hover:bg-rose-100 text-rose-600 border border-rose-200/80 text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer"
                             >
                                 <LogOut className="w-3.5 h-3.5" />
                                 <span>Log Out</span>
@@ -322,7 +374,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <div className="bg-white rounded-2xl border border-slate-200 max-w-md w-full p-6 shadow-2xl space-y-4">
                         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                             <div>
-                                <h3 className="text-base font-bold text-slate-900">Vyte Workspace Settings</h3>
+                                <h3 className="text-base font-bold text-slate-900">
+                                    Vyte Workspace Settings
+                                </h3>
                                 <p className="text-xs text-slate-500">
                                     Organization &amp; automation preferences
                                 </p>
@@ -338,19 +392,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                         <div className="space-y-3 text-xs">
                             <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
-                                <p className="text-[11px] font-bold uppercase text-slate-400">Authenticated Session</p>
+                                <p className="text-[11px] font-bold uppercase text-slate-400">
+                                    Authenticated Session
+                                </p>
                                 <p className="font-bold text-slate-900">
-                                    {userSession?.userName || 'Vyte Operator'} ({userSession?.userID || 'M067'})
+                                    {userSession?.userName || 'Vyte Operator'} (
+                                    {userSession?.userID || 'M067'})
                                 </p>
                                 <p className="text-slate-600">{userSession?.companyName}</p>
                                 <p className="text-emerald-700 font-semibold">
-                                    Assigned Login Role: {userSession?.userType} ({userSession?.role})
+                                    Assigned Login Role: {userSession?.userType} (
+                                    {userSession?.role})
                                 </p>
                             </div>
 
                             <label className="flex items-center justify-between p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50">
                                 <div>
-                                    <p className="font-bold text-slate-800">Automated WhatsApp PO Dispatch</p>
+                                    <p className="font-bold text-slate-800">
+                                        Automated WhatsApp PO Dispatch
+                                    </p>
                                     <p className="text-[11px] text-slate-500">
                                         Send supplier POs immediately upon approval
                                     </p>
@@ -365,7 +425,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                             <label className="flex items-center justify-between p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50">
                                 <div>
-                                    <p className="font-bold text-slate-800">Enforce Login RBAC Permissions</p>
+                                    <p className="font-bold text-slate-800">
+                                        Enforce Login RBAC Permissions
+                                    </p>
                                     <p className="text-[11px] text-slate-500">
                                         Lock approval actions to Owner &amp; Manager roles
                                     </p>
@@ -377,11 +439,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                     className="w-4 h-4 accent-[#2BB656] cursor-pointer"
                                 />
                             </label>
-
-                            <div className="flex items-center gap-2 text-[11px] text-slate-500 pt-1">
-                                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                                <span>Malaysia PDPA Compliant • Human-in-the-Loop Active</span>
-                            </div>
                         </div>
 
                         <div className="flex justify-end pt-2 border-t border-slate-100">

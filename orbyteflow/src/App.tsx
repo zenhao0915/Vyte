@@ -19,7 +19,6 @@ import {
 } from './data/mockData';
 import { Sidebar } from './components/layout/Sidebar';
 import { HeaderBar } from './components/layout/HeaderBar';
-import { KpiCards } from './components/common/KpiCards';
 import { AuditLogPanel } from './components/common/AuditLogPanel';
 import { RestockModule } from './modules/module1-restock/RestockModule';
 import { AddProductModal } from './modules/module1-restock/AddProductModal';
@@ -30,6 +29,14 @@ import { OrderStatusModule } from './modules/module2-order/OrderStatusModule';
 import { SplashScreen } from './components/SplashScreen';
 import { LoadingScreen } from './components/LoadingScreen';
 import { LoginPage } from './components/auth/LoginPage';
+import { orbyteApi } from './services/api';
+
+const SESSION_STORAGE_KEY = 'vyte_active_session_v1';
+
+interface StoredSessionPayload {
+  session: UserSession;
+  accessToken: string;
+}
 
 interface ToastItem {
   id: string;
@@ -42,64 +49,18 @@ export default function App() {
   const [userSession, setUserSession] = useState<UserSession | null>(null);
   const [splashDone, setSplashDone] = useState<boolean>(false);
 
-  // Separate Vyte Stick-Figure Cart Loading Screen state
-  const [isLoadingScreenOpen, setIsLoadingScreenOpen] = useState<boolean>(false);
-  const [loadingScreenMessage, setLoadingScreenMessage] = useState<string>(
-      'Syncing Vyte Inventory Engine...'
-  );
+  // Used ONLY when the web page is refreshed and an existing session is being validated
+  const [isValidatingRefreshSession, setIsValidatingRefreshSession] = useState<boolean>(() => {
+    return Boolean(localStorage.getItem(SESSION_STORAGE_KEY));
+  });
 
-  // Toast notifications
   const [toasts, setToasts] = useState<ToastItem[]>([]);
-
-  const pushToast = useCallback(
-      (type: 'success' | 'error' | 'warning' | 'info', message: string) => {
-        const id = `T-${Date.now()}-${Math.random()}`;
-        setToasts((prev) => [...prev, { id, type, message }]);
-        setTimeout(() => {
-          setToasts((prev) => prev.filter((t) => t.id !== id));
-        }, 4200);
-      },
-      []
-  );
-
-  const triggerLoadingScreen = useCallback(
-      (message = 'Syncing Vyte Inventory Engine...', durationMs = 950) => {
-        setLoadingScreenMessage(message);
-        setIsLoadingScreenOpen(true);
-        if (durationMs > 0) {
-          setTimeout(() => {
-            setIsLoadingScreenOpen(false);
-          }, durationMs);
-        }
-      },
-      []
-  );
-
-  // Keyboard shortcut (Alt + L) & custom window event to trigger LoadingScreen
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.altKey && e.key.toLowerCase() === 'l') {
-        e.preventDefault();
-        setIsLoadingScreenOpen((prev) => !prev);
-      }
-    };
-    const handleCustomTrigger = (e: Event) => {
-      const customEv = e as CustomEvent<{ message?: string; durationMs?: number }>;
-      triggerLoadingScreen(
-          customEv.detail?.message ?? 'Syncing Vyte Inventory Engine...',
-          customEv.detail?.durationMs ?? 950
-      );
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('vyte:show-loading', handleCustomTrigger);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('vyte:show-loading', handleCustomTrigger);
-    };
-  }, [triggerLoadingScreen]);
-
   const [role, setRole] = useState<UserRole>('SME_OWNER');
   const [activeTab, setActiveTab] = useState<ActiveTab>('mod1');
+
+  // Toggle bar state for the combined Module 1 (Auto Restock) & Module 3 (Customer Orders)
+  const [inventorySubTab, setInventorySubTab] = useState<'restock' | 'orders'>('restock');
+
   const [industryFilter, setIndustryFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
@@ -112,6 +73,17 @@ export default function App() {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(INITIAL_AUDIT_LOGS);
 
   const canApprove = role === 'SME_OWNER' || role === 'MANAGER';
+
+  const pushToast = useCallback(
+      (type: 'success' | 'error' | 'warning' | 'info', message: string) => {
+        const id = `T-${Date.now()}-${Math.random()}`;
+        setToasts((prev) => [...prev, { id, type, message }]);
+        setTimeout(() => {
+          setToasts((prev) => prev.filter((t) => t.id !== id));
+        }, 4200);
+      },
+      []
+  );
 
   const addAuditLog = useCallback(
       (module: string, detail: string, overrideRole?: UserRole) => {
@@ -130,7 +102,65 @@ export default function App() {
       [role]
   );
 
-  const handleAuthenticated = (session: UserSession) => {
+  // ON PAGE REFRESH: Validate stored session -> LoadingScreen -> Dashboard directly
+  useEffect(() => {
+    const rawStored = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!rawStored) {
+      setIsValidatingRefreshSession(false);
+      return;
+    }
+
+    let isMounted = true;
+
+    const verifyExistingSession = async () => {
+      try {
+        const parsed = JSON.parse(rawStored) as StoredSessionPayload;
+        if (!parsed?.session?.userID || !parsed?.accessToken) {
+          throw new Error('Invalid stored session');
+        }
+
+        const [validationRes] = await Promise.all([
+          orbyteApi.validateSession(
+              {
+                accessToken: parsed.accessToken,
+                userID: parsed.session.userID,
+                email: parsed.session.email,
+              },
+              parsed.session
+          ),
+          new Promise((resolve) => setTimeout(resolve, 650)),
+        ]);
+
+        if (!isMounted) return;
+
+        if (validationRes.data.valid) {
+          setUserSession(validationRes.data.session);
+          setRole(validationRes.data.session.role);
+          setSplashDone(true); // Skip splash screen on browser refresh
+        } else {
+          localStorage.removeItem(SESSION_STORAGE_KEY);
+        }
+      } catch {
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+      } finally {
+        if (isMounted) {
+          setIsValidatingRefreshSession(false);
+        }
+      }
+    };
+
+    void verifyExistingSession();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleAuthenticated = (
+      session: UserSession,
+      accessToken = `vyte-jwt-${Date.now()}`
+  ) => {
+    const payload: StoredSessionPayload = { session, accessToken };
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(payload));
     setUserSession(session);
     setRole(session.role);
     setSplashDone(false);
@@ -142,22 +172,53 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    localStorage.removeItem(SESSION_STORAGE_KEY);
     setUserSession(null);
     setSplashDone(false);
   };
 
-  const handleApproveAndContactSupplier = (productId: string, customReorderQty?: number) => {
+  const handleNavigateFromNotification = (
+      targetTab: ActiveTab,
+      subTab?: 'restock' | 'orders'
+  ) => {
+    if (targetTab === 'mod3') {
+      setActiveTab('mod1');
+      setInventorySubTab('orders');
+      return;
+    }
+    setActiveTab(targetTab);
+    if (subTab) {
+      setInventorySubTab(subTab);
+    }
+  };
+
+  const handleApproveAndContactSupplier = async (
+      productId: string,
+      customReorderQty?: number
+  ) => {
     if (!canApprove) {
-      pushToast('error', 'Vyte RBAC Restriction: Only Owner or Manager accounts can approve supplier purchase orders.');
+      pushToast(
+          'error',
+          'Vyte RBAC Restriction: Only Owner or Manager accounts can approve supplier purchase orders.'
+      );
       return;
     }
 
     const target = products.find((p) => p.id === productId);
     if (!target) return;
 
-    triggerLoadingScreen(`Dispatching Automated PO to ${target.supplierName}...`, 900);
+    const orderQty =
+        customReorderQty && customReorderQty > 0 ? customReorderQty : target.reorderQty;
+    const poNumber = `PO-2026-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    const orderQty = customReorderQty && customReorderQty > 0 ? customReorderQty : target.reorderQty;
+    await orbyteApi.contactSupplier({
+      poNumber,
+      supplierName: target.supplierName,
+      supplierPhoneNumber: target.supplierContact,
+      channel: 'WHATSAPP',
+      messageBody: `Automated Vyte PO ${poNumber}: Please supply ${orderQty} ${target.uom} of ${target.name} (${target.sku}).`,
+      userID: userSession?.userID || 'M067',
+    });
 
     setProducts((prev) =>
         prev.map((p) =>
@@ -169,14 +230,14 @@ export default function App() {
 
     const unitCost = target.unitCostRM ?? Number((target.priceRM * 0.62).toFixed(2));
     const poTotalRM = Number((unitCost * orderQty).toFixed(2));
-    const poInvoiceNo = `SUP-PO-${Math.floor(1000 + Math.random() * 9000)}`;
+    const poInvoiceNo = `SUP-${poNumber}`;
 
     const supplierBill: InvoiceItem = {
       id: `INV-${Date.now()}`,
       invNo: poInvoiceNo,
       type: 'SUPPLIER_PAYABLE',
       party: target.supplierName,
-      date: '21 Oct 2026',
+      date: '22 Oct 2026',
       amountRM: poTotalRM,
       aiCategory: `Inventory Procurement (${orderQty} ${target.uom} ${target.name})`,
       aiConfidence: 98,
@@ -190,13 +251,29 @@ export default function App() {
         'Mod 1: Auto Restock',
         `Approved PO (+${orderQty} ${target.uom} ${target.name}) to ${target.supplierName}. Created Supplier Bill ${poInvoiceNo} (RM ${poTotalRM.toLocaleString(undefined, { minimumFractionDigits: 2 })}) in Smart Invoices.`
     );
+    pushToast('success', `PO sent to ${target.supplierName} & logged in Smart Invoices.`);
   };
 
-  const handleConfirmSupplierDelivery = (productId: string) => {
+  const handleConfirmSupplierDelivery = async (productId: string) => {
     const target = products.find((p) => p.id === productId);
     if (!target) return;
 
-    triggerLoadingScreen(`Verifying Delivery & Updating Stock for ${target.sku}...`, 850);
+    await orbyteApi.confirmRestock({
+      poNumber: `PO-${target.sku}`,
+      productId: target.id,
+      SKU: target.sku,
+      quantity: target.reorderQty,
+      unitPrice: target.unitCostRM ?? target.priceRM * 0.62,
+      currency: 'MYR',
+      MOQ: target.moq ?? 10,
+      unitOfMeasure: target.uom,
+      supplierName: target.supplierName,
+      supplierPhoneNumber: target.supplierContact,
+      requestedDeliveryDate: new Date().toISOString().slice(0, 10),
+      deliveryLocation: 'Main Warehouse',
+      automationStatus: true,
+      userID: userSession?.userID || 'M067',
+    });
 
     const newStockTotal = target.stock + target.reorderQty;
 
@@ -206,7 +283,10 @@ export default function App() {
                 ? {
                   ...p,
                   stock: newStockTotal,
-                  restockStatus: newStockTotal <= p.minThreshold ? 'TRIGGERED_PENDING_APPROVAL' : 'CONFIRMED',
+                  restockStatus:
+                      newStockTotal <= p.minThreshold
+                          ? 'TRIGGERED_PENDING_APPROVAL'
+                          : 'CONFIRMED',
                 }
                 : p
         )
@@ -215,6 +295,10 @@ export default function App() {
     addAuditLog(
         'Mod 1: Delivery Confirmed',
         `Received +${target.reorderQty} ${target.uom} of ${target.name} from ${target.supplierName}. Stock updated to ${newStockTotal} ${target.uom}.`
+    );
+    pushToast(
+        'success',
+        `Confirmed delivery of +${target.reorderQty} ${target.uom} ${target.name}.`
     );
   };
 
@@ -249,7 +333,7 @@ export default function App() {
       invNo: posInvoiceNo,
       type: 'CUSTOMER_RECEIVABLE',
       party: `Direct Counter Sale (${target.sku})`,
-      date: '21 Oct 2026',
+      date: '22 Oct 2026',
       amountRM: saleAmountRM,
       aiCategory: `Direct Product Sales (${actualDeducted} ${target.uom} ${target.name})`,
       aiConfidence: 99,
@@ -268,7 +352,6 @@ export default function App() {
   };
 
   const handleSaveProduct = (newProd: NewProductForm) => {
-    triggerLoadingScreen(`Analyzing Thresholds & Indexing ${newProd.name}...`, 900);
     const isLow = Number(newProd.stock) <= Number(newProd.minThreshold);
 
     let parsedBatch: string | undefined = undefined;
@@ -311,10 +394,14 @@ export default function App() {
         }`
     );
     setShowAddModal(false);
+    pushToast('success', `Added ${created.name} (${created.sku}) to catalog.`);
   };
 
-  const handleQueueRestockToOrderModule = (product: Product, recommendedQty: number, aiReason: string) => {
-    triggerLoadingScreen(`Applying AI Restock Forecast for ${product.sku}...`, 850);
+  const handleQueueRestockToOrderModule = (
+      product: Product,
+      recommendedQty: number,
+      aiReason: string
+  ) => {
     setProducts((prev) =>
         prev.map((p) =>
             p.id === product.id
@@ -333,6 +420,7 @@ export default function App() {
     );
 
     setActiveTab('mod1');
+    setInventorySubTab('restock');
   };
 
   const handleApproveCustomerOrder = (
@@ -388,14 +476,15 @@ export default function App() {
 
   const handleApproveQC = (qcId: string) => {
     if (!canApprove) {
-      pushToast('error', 'Vyte RBAC Restriction: Only Owner or Manager accounts can approve QC write-offs or promotional markdowns.');
+      pushToast(
+          'error',
+          'Vyte RBAC Restriction: Only Owner or Manager accounts can approve QC write-offs or promotional markdowns.'
+      );
       return;
     }
 
     const targetQc = qcAlerts.find((q) => q.id === qcId);
     if (!targetQc) return;
-
-    triggerLoadingScreen(`Logging QC Recovery Claim for ${targetQc.batchNo}...`, 850);
 
     setQcAlerts((prev) =>
         prev.map((q) => (q.id === qcId ? { ...q, status: 'APPROVED_RESOLVED' } : q))
@@ -407,7 +496,7 @@ export default function App() {
       invNo: qcInvoiceNo,
       type: 'CUSTOMER_RECEIVABLE',
       party: `QC Claim / Promo Recovery (${targetQc.batchNo})`,
-      date: '21 Oct 2026',
+      date: '22 Oct 2026',
       amountRM: targetQc.savedRM,
       aiCategory: `Quality Claim & Waste Prevention (${targetQc.productName})`,
       aiConfidence: 95,
@@ -420,19 +509,19 @@ export default function App() {
         'Mod 4: Quality AI',
         `Approved "${targetQc.actionLabel}" for ${targetQc.productName}. Logged recovery note ${qcInvoiceNo} (RM ${targetQc.savedRM.toFixed(2)}) in Smart Invoices.`
     );
+    pushToast('success', `QC action approved & logged (${qcInvoiceNo}).`);
   };
 
   const handleAddCustomQCAlert = (newAlert: QCAlert) => {
-    triggerLoadingScreen('Generating AI Quality Control Solution...', 950);
     setQcAlerts((prev) => [newAlert, ...prev]);
     addAuditLog(
         'Mod 4: Batch Logged',
         `Reported quality/expiry issue for ${newAlert.productName} (${newAlert.batchNo}: ${newAlert.triggerReason}).`
     );
+    pushToast('info', `Logged QC batch alert for ${newAlert.productName}.`);
   };
 
   const handleTriggerQCScan = () => {
-    triggerLoadingScreen('Running AI Expiry & Batch Quality Scan...', 1050);
     const fnbProducts = products.filter((p) => p.industry === 'FNB_PERISHABLE');
     const existingSkus = new Set(qcAlerts.map((q) => q.sku));
     const newlyDetected: QCAlert[] = [];
@@ -443,14 +532,14 @@ export default function App() {
           id: `QC-${Date.now()}-${p.id}`,
           productName: p.name,
           sku: p.sku,
-          batchNo: p.batchNo || 'B-2026-10A',
+          batchNo: p.batchNo || 'B-2026-SCAN',
           expiryDate: p.expiryDate || '2026-10-26',
-          daysLeft: 5,
+          daysLeft: 4,
           qtyAffected: `${p.stock} ${p.uom}`,
-          triggerReason: 'Batch within 5-day freshness threshold',
-          aiSuggestion: `Bundle ${p.name} into weekend promo (15% off) & adjust next supplier PO.`,
-          actionLabel: 'Approve Bundle Promo',
-          savedRM: Number((Math.max(1, p.stock) * p.priceRM * 0.75).toFixed(2)),
+          triggerReason: 'AI Scan: High humidity shelf-life risk (< 5 days)',
+          aiSuggestion: `Bundle ${p.name} with morning combo deals (-20%) to clear ${p.stock} ${p.uom} before expiry.`,
+          actionLabel: 'Approve Combo Promo',
+          savedRM: Number((p.stock * p.priceRM * 0.75).toFixed(2)),
           status: 'PENDING_APPROVAL',
         });
       }
@@ -459,229 +548,256 @@ export default function App() {
     if (newlyDetected.length > 0) {
       setQcAlerts((prev) => [...newlyDetected, ...prev]);
       addAuditLog(
-          'Mod 4: AI Batch Scan',
-          `Detected ${newlyDetected.length} perishable batch(es) requiring expiry action.`
+          'Mod 4: AI Scan',
+          `AI Expiry Scan detected ${newlyDetected.length} new at-risk perishable batch(es).`
       );
+      pushToast('warning', `Detected ${newlyDetected.length} new at-risk batch(es).`);
     } else {
       addAuditLog(
-          'Mod 4: AI Batch Scan',
-          `Scanned ${products.length} catalog SKUs — all expiring batches are already displayed.`
+          'Mod 4: AI Scan',
+          'Completed batch scan — all active perishable batches are monitored.'
       );
+      pushToast('info', 'Batch scan complete. All perishable SKUs are up to date.');
     }
   };
 
   const handleVerifyInvoice = (invId: string, updatedCategory?: string) => {
     if (!canApprove) {
-      pushToast('error', 'Vyte RBAC Restriction: Only Owner or Manager accounts can verify accounting classifications.');
+      pushToast(
+          'error',
+          'Vyte RBAC Restriction: Only Owner or Manager accounts can verify accounting categories.'
+      );
       return;
     }
-    triggerLoadingScreen('Verifying AI Accounting Classification...', 800);
+    const target = invoices.find((i) => i.id === invId);
+    if (!target) return;
+
     setInvoices((prev) =>
-        prev.map((inv) => {
-          if (inv.id === invId) {
-            const finalCat = updatedCategory || inv.aiCategory;
-            addAuditLog(
-                'Mod 5: Smart Invoices',
-                `Verified Invoice ${inv.invNo} (${inv.party}) under accounting category "${finalCat}".`
-            );
-            return { ...inv, aiCategory: finalCat, status: 'VERIFIED' };
-          }
-          return inv;
-        })
+        prev.map((inv) =>
+            inv.id === invId
+                ? {
+                  ...inv,
+                  aiCategory: updatedCategory ?? inv.aiCategory,
+                  status: 'VERIFIED',
+                }
+                : inv
+        )
+    );
+    addAuditLog(
+        'Mod 5: Smart Invoices',
+        `Verified invoice ${target.invNo} (${target.party}) under category "${
+            updatedCategory ?? target.aiCategory
+        }".`
     );
   };
 
   const handleToggleInvoicePaid = (invId: string) => {
-    if (!canApprove) {
-      pushToast('error', 'Vyte RBAC Restriction: Only Owner or Manager accounts can update invoice payment settlement status.');
-      return;
-    }
+    const target = invoices.find((i) => i.id === invId);
+    if (!target) return;
+    const nextPaid = !target.paid;
+
     setInvoices((prev) =>
-        prev.map((inv) => {
-          if (inv.id === invId) {
-            const nextPaid = !inv.paid;
-            addAuditLog(
-                'Mod 5: Payment Status',
-                `Marked Invoice ${inv.invNo} (${inv.party} • RM ${inv.amountRM.toFixed(2)}) as ${
-                    nextPaid ? 'PAID' : 'UNPAID'
-                }.`
-            );
-            return { ...inv, paid: nextPaid };
-          }
-          return inv;
-        })
+        prev.map((inv) => (inv.id === invId ? { ...inv, paid: nextPaid } : inv))
+    );
+    addAuditLog(
+        'Mod 5: Payment Status',
+        `Marked invoice ${target.invNo} (${target.party}) as ${nextPaid ? 'PAID' : 'UNPAID'}.`
     );
   };
 
   const handleAddValidatedInvoice = (createdInv: InvoiceItem) => {
-    triggerLoadingScreen(`AI-Classifying Invoice ${createdInv.invNo}...`, 950);
     setInvoices((prev) => [createdInv, ...prev]);
     addAuditLog(
-        'Mod 5: AI Invoice Upload',
-        `Uploaded & AI-classified ${createdInv.invNo} (${createdInv.party} • RM ${createdInv.amountRM.toFixed(
-            2
-        )}) as "${createdInv.aiCategory}".`
+        'Mod 5: Invoice Uploaded',
+        `Uploaded & AI-classified ${createdInv.invNo} (${createdInv.party} • RM ${createdInv.amountRM.toFixed(2)}) -> ${createdInv.aiCategory}.`
     );
+    pushToast('success', `Uploaded & classified invoice ${createdInv.invNo}.`);
   };
 
-  const filteredProducts = products.filter((p) => {
-    const matchesInd = industryFilter === 'ALL' || p.industry === industryFilter;
-    const matchesSearch =
-        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.sku.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesInd && matchesSearch;
-  });
+  // Calculate real-time counts for notification bell and badges
+  const pendingRestockCount = products.filter(
+      (p) => p.restockStatus === 'TRIGGERED_PENDING_APPROVAL'
+  ).length;
+  const pendingQcCount = qcAlerts.filter((q) => q.status === 'PENDING_APPROVAL').length;
+  const pendingInvoiceCount = invoices.filter((i) => i.status === 'NEEDS_REVIEW').length;
 
+  // 1. If page refreshed with stored session -> Show LoadingScreen then enter Dashboard directly
+  if (isValidatingRefreshSession) {
+    return <LoadingScreen isOpen={true} message="Validating active Vyte session..." />;
+  }
+
+  // 2. If not logged in -> Show Login / Register Screen
   if (!userSession) {
     return <LoginPage onAuthenticated={handleAuthenticated} />;
   }
 
+  // 3. If fresh login -> Show Splash Screen then enter Dashboard
   if (!splashDone) {
     return <SplashScreen onComplete={() => setSplashDone(true)} />;
   }
 
+  const filteredProducts = products.filter((p) => {
+    const matchInd = industryFilter === 'ALL' || p.industry === industryFilter;
+    const q = searchQuery.trim().toLowerCase();
+    const matchSearch =
+        !q ||
+        p.name.toLowerCase().includes(q) ||
+        p.sku.toLowerCase().includes(q) ||
+        p.category.toLowerCase().includes(q);
+    return matchInd && matchSearch;
+  });
+
   return (
-      <div className="h-screen overflow-hidden bg-[#F5F7FA] flex font-sans text-slate-800">
-        {/* Separate Vyte Stick-Figure Cart Loading Screen */}
-        <LoadingScreen
-            isOpen={isLoadingScreenOpen}
-            message={loadingScreenMessage}
-            onClose={() => setIsLoadingScreenOpen(false)}
-        />
-
-        {/* Global Toast Stack */}
-        {toasts.length > 0 && (
-            <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-md">
-              {toasts.map((t) => (
-                  <div
-                      key={t.id}
-                      className={`px-4 py-3 rounded-xl shadow-xl border text-xs font-bold flex items-center justify-between gap-3 ${
-                          t.type === 'error'
-                              ? 'bg-rose-950 text-rose-100 border-rose-700'
-                              : t.type === 'warning'
-                                  ? 'bg-amber-950 text-amber-100 border-amber-700'
-                                  : 'bg-slate-900 text-white border-emerald-500/40'
-                      }`}
-                  >
-                    <span>{t.message}</span>
-                    <button
-                        type="button"
-                        onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}
-                        className="text-slate-400 hover:text-white cursor-pointer"
-                    >
-                      ✕
-                    </button>
-                  </div>
-              ))}
-            </div>
-        )}
-
+      <div className="h-screen overflow-hidden bg-[#F6F7F4] flex p-3 gap-3 text-slate-900 font-sans">
         <Sidebar
             activeTab={activeTab}
             setActiveTab={setActiveTab}
+            role={role}
             industryFilter={industryFilter}
             setIndustryFilter={setIndustryFilter}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
-            pendingRestockCount={
-              products.filter((p) => p.restockStatus === 'TRIGGERED_PENDING_APPROVAL').length
-            }
+            pendingRestockCount={pendingRestockCount}
             pendingOrderCount={pendingCustomerOrderCount}
-            pendingQcCount={qcAlerts.filter((q) => q.status === 'PENDING_APPROVAL').length}
-            pendingInvoiceCount={invoices.filter((i) => i.status === 'NEEDS_REVIEW').length}
+            pendingQcCount={pendingQcCount}
+            pendingInvoiceCount={pendingInvoiceCount}
+            auditLogCount={auditLogs.length}
             totalProductCount={products.length}
             userSession={userSession}
             onLogout={handleLogout}
         />
 
-        <main className="flex-1 h-screen flex flex-col overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden gap-3">
           <HeaderBar
               activeTab={activeTab}
-              role={role}
+              inventorySubTab={inventorySubTab}
               userSession={userSession}
+              totalSkus={products.length}
+              pendingRestocks={pendingRestockCount}
+              pendingOrders={pendingCustomerOrderCount}
+              pendingQcBatches={pendingQcCount}
+              totalInvoices={invoices.length}
+              pendingInvoices={pendingInvoiceCount}
+              onNavigateFromNotification={handleNavigateFromNotification}
           />
 
-          <div className="flex-1 overflow-y-auto">
-            <div className="p-4 lg:p-5 space-y-4 max-w-[1600px] mx-auto w-full">
-              <KpiCards
-                  totalSkus={products.length}
-                  pendingRestocks={
-                    products.filter((p) => p.restockStatus === 'TRIGGERED_PENDING_APPROVAL').length
-                  }
-                  pendingQcBatches={qcAlerts.filter((q) => q.status === 'PENDING_APPROVAL').length}
-                  totalInvoices={invoices.length}
-              />
+          <main className="flex-1 overflow-y-auto pr-1 space-y-4">
+            {/* COMBINED MODULE 1 & MODULE 3 SCREEN WITH COMPACT TOGGLE BAR */}
+            {(activeTab === 'mod1' || activeTab === 'mod3') && (
+                <div className="space-y-3.5">
+                  <div className="flex items-center justify-between">
+                    <div className="inline-flex items-center bg-slate-200/80 p-1 rounded-xl border border-slate-300/70 text-xs font-semibold">
+                      <button
+                          type="button"
+                          onClick={() => setInventorySubTab('restock')}
+                          className={`px-3.5 py-1.5 rounded-lg transition cursor-pointer ${
+                              inventorySubTab === 'restock'
+                                  ? 'bg-amber-100 text-amber-900 font-bold shadow-2xs'
+                                  : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                      >
+                        Auto Restock &amp; Catalog ({pendingRestockCount} Pending)
+                      </button>
+                      <button
+                          type="button"
+                          onClick={() => setInventorySubTab('orders')}
+                          className={`px-3.5 py-1.5 rounded-lg transition cursor-pointer ${
+                              inventorySubTab === 'orders'
+                                  ? 'bg-amber-100 text-amber-900 font-bold shadow-2xs'
+                                  : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                      >
+                        Customer Orders &amp; NLP ({pendingCustomerOrderCount})
+                      </button>
+                    </div>
+                  </div>
 
-              {activeTab === 'mod1' && (
-                  <RestockModule
-                      products={filteredProducts}
-                      role={role}
-                      onApproveAndContactSupplier={handleApproveAndContactSupplier}
-                      onConfirmSupplierDelivery={handleConfirmSupplierDelivery}
-                      onRecordStockUsage={handleRecordStockUsage}
-                      onOpenAddModal={() => setShowAddModal(true)}
-                  />
-              )}
+                  <div className={inventorySubTab === 'restock' ? 'block' : 'hidden'}>
+                    <RestockModule
+                        products={filteredProducts}
+                        role={role}
+                        onApproveAndContactSupplier={handleApproveAndContactSupplier}
+                        onConfirmSupplierDelivery={handleConfirmSupplierDelivery}
+                        onRecordStockUsage={handleRecordStockUsage}
+                        onOpenAddModal={() => setShowAddModal(true)}
+                    />
+                  </div>
 
-              {activeTab === 'mod2' && (
-                  <SalesAnalyticsModule
-                      products={filteredProducts}
-                      userID={userSession.userID}
-                      onQueueRestockToOrderModule={handleQueueRestockToOrderModule}
-                      onLogAction={addAuditLog}
-                      onTriggerLoadingScreen={triggerLoadingScreen}
-                  />
-              )}
+                  <div className={inventorySubTab === 'orders' ? 'block' : 'hidden'}>
+                    <OrderStatusModule
+                        products={products}
+                        role={role}
+                        userID={userSession.userID}
+                        onApproveCustomerOrder={handleApproveCustomerOrder}
+                        onPendingCountChange={setPendingCustomerOrderCount}
+                        onLogAction={addAuditLog}
+                        onNavigateToRestock={() => setInventorySubTab('restock')}
+                        onNotify={pushToast}
+                    />
+                  </div>
+                </div>
+            )}
 
-              {activeTab === 'mod3' && (
-                  <OrderStatusModule
-                      products={products}
-                      role={role}
-                      userID={userSession.userID}
-                      onApproveCustomerOrder={handleApproveCustomerOrder}
-                      onPendingCountChange={setPendingCustomerOrderCount}
-                      onLogAction={addAuditLog}
-                      onNavigateToRestock={() => setActiveTab('mod1')}
-                      onNotify={pushToast}
-                      onTriggerLoadingScreen={triggerLoadingScreen}
-                  />
-              )}
+            {activeTab === 'mod2' && (
+                <SalesAnalyticsModule
+                    products={products}
+                    userID={userSession.userID}
+                    onQueueRestockToOrderModule={handleQueueRestockToOrderModule}
+                    onLogAction={addAuditLog}
+                />
+            )}
 
-              {activeTab === 'mod4' && (
-                  <QualityControlModule
-                      qcAlerts={qcAlerts}
-                      products={products}
-                      role={role}
-                      onApproveQC={handleApproveQC}
-                      onTriggerScan={handleTriggerQCScan}
-                      onAddCustomQCAlert={handleAddCustomQCAlert}
-                  />
-              )}
+            {activeTab === 'mod4' && (
+                <QualityControlModule
+                    qcAlerts={qcAlerts}
+                    products={products}
+                    role={role}
+                    onApproveQC={handleApproveQC}
+                    onTriggerScan={handleTriggerQCScan}
+                    onAddCustomQCAlert={handleAddCustomQCAlert}
+                />
+            )}
 
-              {activeTab === 'mod5' && (
-                  <InvoiceModule
-                      invoices={invoices}
-                      role={role}
-                      onVerifyInvoice={handleVerifyInvoice}
-                      onToggleInvoicePaid={handleToggleInvoicePaid}
-                      onAddValidatedInvoice={handleAddValidatedInvoice}
-                  />
-              )}
+            {activeTab === 'mod5' && (
+                <InvoiceModule
+                    invoices={invoices}
+                    role={role}
+                    onVerifyInvoice={handleVerifyInvoice}
+                    onToggleInvoicePaid={handleToggleInvoicePaid}
+                    onAddValidatedInvoice={handleAddValidatedInvoice}
+                />
+            )}
 
-              <AuditLogPanel
-                  logs={auditLogs}
-                  role={role}
-                  onClearLogs={() => setAuditLogs([])}
-              />
-            </div>
-          </div>
-        </main>
+            {/* DEDICATED AUDIT LOGS SCREEN */}
+            {activeTab === 'logs' && (
+                <AuditLogPanel
+                    logs={auditLogs}
+                    role={role}
+                    onClearLogs={() => setAuditLogs([])}
+                />
+            )}
+          </main>
+        </div>
 
         <AddProductModal
             isOpen={showAddModal}
             onClose={() => setShowAddModal(false)}
             onSaveProduct={handleSaveProduct}
         />
+
+        {/* Toast Notifications */}
+        {toasts.length > 0 && (
+            <div className="fixed bottom-5 right-5 z-50 space-y-2 max-w-sm">
+              {toasts.map((t) => (
+                  <div
+                      key={t.id}
+                      className="px-4 py-3 rounded-xl shadow-xl border bg-slate-900 text-white border-slate-700 text-xs font-semibold flex items-center gap-2"
+                  >
+                    <span>{t.message}</span>
+                  </div>
+              ))}
+            </div>
+        )}
       </div>
   );
 }

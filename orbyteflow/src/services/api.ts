@@ -4,16 +4,29 @@ import type {
     AnalyzeProcurementResponse,
     ApproveCustomerOrderRequest,
     ApproveCustomerOrderResponse,
+    AuthSessionResponse,
     ConfirmRestockRequest,
     ConfirmRestockResponse,
     ContactSupplierRequest,
     ContactSupplierResponse,
     CreateInvoiceOrderRequest,
     CreateInvoiceOrderResponse,
+    EnterpriseSsoAuthRequest,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
     GetSalesReviewReportRequest,
     GetSalesReviewReportResponse,
+    GoogleAuthRequest,
+    LoginAccountRequest,
     ProcessNlpOrderRequest,
     ProcessNlpOrderResponse,
+    RegisterAccountRequest,
+    RegisterAccountResponse,
+    ResetPasswordRequest,
+    ResetPasswordResponse,
+    UserSession,
+    ValidateSessionRequest,
+    ValidateSessionResponse,
 } from '../types/vyte.ts';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8989/api';
@@ -226,4 +239,192 @@ export const orbyteApi = {
             onExchange
         );
     },
+
+// Add inside orbyteApi object in src/services/api.ts:
+// ========================================================================
+// 0. AUTHENTICATION, SESSION & PASSWORD RESET ENDPOINTS
+// ========================================================================
+
+// POST http://localhost:8989/api/auth/register
+async registerAccount(
+    payload: RegisterAccountRequest,
+    onExchange?: (log: ApiExchangeLog) => void
+) {
+    const assignedId =
+        payload.userType === 'CEO' ? 'M067' : payload.userType === 'Manager' ? 'M102' : 'S204';
+    const fullName = `${payload.firstName} ${payload.lastName}`.trim();
+
+    return requestWithFallback<RegisterAccountRequest, RegisterAccountResponse>(
+        'POST',
+        '/auth/register',
+        payload,
+        () => ({
+            userID: assignedId,
+            userName: fullName,
+            email: payload.email,
+            companyName: payload.companyName,
+            userType: payload.userType,
+            role: payload.role,
+            registeredAt: new Date().toISOString(),
+            message: `Account registered for ${fullName}. Please log in to continue.`,
+        }),
+        onExchange
+    );
+},
+
+// POST http://localhost:8989/api/auth/login
+async loginAccount(
+    payload: LoginAccountRequest,
+    onExchange?: (log: ApiExchangeLog) => void
+) {
+    const userType = payload.userType ?? 'CEO';
+    const role =
+        userType === 'CEO'
+            ? 'SME_OWNER'
+            : userType === 'Manager'
+                ? 'MANAGER'
+                : 'OPERATIONS_STAFF';
+    const userID =
+        userType === 'CEO' ? 'M067' : userType === 'Manager' ? 'M102' : 'S204';
+
+    return requestWithFallback<LoginAccountRequest, AuthSessionResponse>(
+        'POST',
+        '/auth/login',
+        payload,
+        () => ({
+            authenticated: true,
+            accessToken: `vyte-jwt-${Date.now()}`,
+            authProvider: 'LOCAL',
+            issuedAt: new Date().toISOString(),
+            session: {
+                userID,
+                userName: payload.email.split('@')[0] || 'Vyte Operator',
+                email: payload.email,
+                userType,
+                role,
+                companyName: payload.companyName || 'Vyte Smart Logistics Sdn Bhd',
+                companyOwnerName: payload.email.split('@')[0] || 'Vyte Operator',
+            },
+        }),
+        onExchange
+    );
+},
+
+// POST http://localhost:8989/api/auth/session/validate
+async validateSession(
+    payload: ValidateSessionRequest,
+    cachedSession: UserSession,
+    onExchange?: (log: ApiExchangeLog) => void
+) {
+    return requestWithFallback<ValidateSessionRequest, ValidateSessionResponse>(
+        'POST',
+        '/auth/session/validate',
+        payload,
+        () => ({
+            valid: Boolean(payload.accessToken && cachedSession.userID),
+            session: cachedSession,
+            verifiedAt: new Date().toISOString(),
+        }),
+        onExchange
+    );
+},
+
+// POST http://localhost:8989/api/auth/forgot-password
+async requestPasswordReset(
+    payload: ForgotPasswordRequest,
+    onExchange?: (log: ApiExchangeLog) => void
+) {
+    return requestWithFallback<ForgotPasswordRequest, ForgotPasswordResponse>(
+        'POST',
+        '/auth/forgot-password',
+        payload,
+        () => ({
+            resetToken: `RST-${Math.floor(100000 + Math.random() * 900000)}`,
+            email: payload.email,
+            expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+            message: `Verification code generated for ${payload.email}.`,
+        }),
+        onExchange
+    );
+},
+
+// POST http://localhost:8989/api/auth/reset-password
+async confirmPasswordReset(
+    payload: ResetPasswordRequest,
+    onExchange?: (log: ApiExchangeLog) => void
+) {
+    return requestWithFallback<ResetPasswordRequest, ResetPasswordResponse>(
+        'POST',
+        '/auth/reset-password',
+        payload,
+        () => ({
+            success: true,
+            updatedAt: new Date().toISOString(),
+            message: `Password for ${payload.email} has been updated. You can now log in.`,
+        }),
+        onExchange
+    );
+},
+
+// POST http://localhost:8989/api/auth/google
+async loginWithGoogle(
+    payload: GoogleAuthRequest,
+    onExchange?: (log: ApiExchangeLog) => void
+) {
+    const userID =
+        payload.userType === 'CEO' ? 'M067' : payload.userType === 'Manager' ? 'M102' : 'S204';
+
+    return requestWithFallback<GoogleAuthRequest, AuthSessionResponse>(
+        'POST',
+        '/auth/google',
+        payload,
+        () => ({
+            authenticated: true,
+            accessToken: `vyte-google-jwt-${Date.now()}`,
+            authProvider: 'GOOGLE',
+            issuedAt: new Date().toISOString(),
+            session: {
+                userID,
+                userName: `${payload.fullName} (Google)`,
+                email: payload.email,
+                userType: payload.userType,
+                role: payload.role,
+                companyName: payload.companyName,
+                companyOwnerName: payload.fullName,
+            },
+        }),
+        onExchange
+    );
+},
+
+// POST http://localhost:8989/api/auth/sso/verify
+async loginWithEnterpriseSso(
+    payload: EnterpriseSsoAuthRequest,
+    onExchange?: (log: ApiExchangeLog) => void
+) {
+    const userID =
+        payload.userType === 'CEO' ? 'M067' : payload.userType === 'Manager' ? 'M102' : 'S204';
+
+    return requestWithFallback<EnterpriseSsoAuthRequest, AuthSessionResponse>(
+        'POST',
+        '/auth/sso/verify',
+        payload,
+        () => ({
+            authenticated: true,
+            accessToken: `vyte-sso-jwt-${Date.now()}`,
+            authProvider: 'ENTERPRISE_SSO',
+            issuedAt: new Date().toISOString(),
+            session: {
+                userID,
+                userName: `Jayden Lai (SSO • ${payload.corporateDomain})`,
+                email: payload.email,
+                userType: payload.userType,
+                role: payload.role,
+                companyName: payload.companyName,
+                companyOwnerName: 'Jayden Lai',
+            },
+        }),
+        onExchange
+    );
+},
 };
