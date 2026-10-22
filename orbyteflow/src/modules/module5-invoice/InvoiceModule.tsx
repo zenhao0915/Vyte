@@ -11,12 +11,13 @@ import {
     ArrowDownLeft,
     X,
 } from 'lucide-react';
-import type { InvoiceItem, UserRole } from '../../types/vyte.ts';
+import { type InvoiceItem, type UserRole, type CurrencyCode, CURRENCY_SYMBOLS } from '../../types/vyte.ts';
 import { VyteDropdown } from '../../components/common/VyteDropdown';
 
 interface InvoiceModuleProps {
     invoices: InvoiceItem[];
     role: UserRole;
+    currency?: CurrencyCode;
     onVerifyInvoice: (invId: string, updatedCategory?: string) => void;
     onToggleInvoicePaid: (invId: string) => void;
     onAddValidatedInvoice: (createdInv: InvoiceItem) => void;
@@ -43,10 +44,14 @@ const sanitizeBoundedDecimal = (raw: string): string => {
 export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                                                                 invoices,
                                                                 role,
+                                                                currency = 'MYR',
                                                                 onVerifyInvoice,
                                                                 onToggleInvoicePaid,
                                                                 onAddValidatedInvoice,
                                                             }) => {
+    const currencySymbol = CURRENCY_SYMBOLS[currency] || 'RM';
+    const currencyCode = currency;
+
     const [directionFilter, setDirectionFilter] = useState<'ALL' | 'SUPPLIER_PAYABLE' | 'CUSTOMER_RECEIVABLE'>('ALL');
     const [statusFilter, setStatusFilter] = useState<'ALL' | 'NEEDS_REVIEW' | 'VERIFIED'>('ALL');
     const [selectedCategories, setSelectedCategories] = useState<Record<string, string>>({});
@@ -103,7 +108,7 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
         }
         const amt = Number(amountInput);
         if (!amountInput || isNaN(amt) || amt <= 0 || amt > 1000000) {
-            errs.amountInput = 'Enter a valid amount between RM 0.01 and RM 1,000,000.';
+            errs.amountInput = `Enter a valid amount between ${currencySymbol} 0.01 and ${currencySymbol} 1,000,000.`;
         }
         if (!rawLineDescription.trim() || rawLineDescription.trim().length < 6) {
             errs.rawLineDescription = 'Describe invoice items (min 6 chars) for AI classification.';
@@ -165,12 +170,12 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                 <div className="flex items-center gap-3">
                     <div className="hidden sm:flex items-center gap-3 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 text-xs">
                         <span className="flex items-center gap-1 text-amber-700 font-bold">
-                            <ArrowUpRight className="w-3.5 h-3.5" /> Payables: RM{' '}
+                            <ArrowUpRight className="w-3.5 h-3.5" /> Payables: {currencySymbol}{' '}
                             {totalPayablesRM.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </span>
                         <span className="text-slate-300">|</span>
                         <span className="flex items-center gap-1 text-blue-700 font-bold">
-                            <ArrowDownLeft className="w-3.5 h-3.5" /> Receivables: RM{' '}
+                            <ArrowDownLeft className="w-3.5 h-3.5" /> Receivables: {currencySymbol}{' '}
                             {totalReceivablesRM.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </span>
                     </div>
@@ -251,7 +256,7 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                     </div>
 
                     <div>
-                        <label className="font-bold text-slate-700 block mb-1">Total Amount (MYR) *</label>
+                        <label className="font-bold text-slate-700 block mb-1">Total Amount ({currencyCode}) *</label>
                         <input
                             type="text"
                             inputMode="decimal"
@@ -365,7 +370,7 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                         <th className="py-3 px-3">Counterparty Name</th>
                         <th className="py-3 px-3">AI Categorization &amp; Confidence</th>
                         <th className="py-3 px-3">E-Invoice</th>
-                        <th className="py-3 px-3">Total (MYR)</th>
+                        <th className="py-3 px-3">Total ({currencyCode})</th>
                         <th className="py-3 px-3">Payment (Click to Toggle)</th>
                         <th className="py-3 px-4">Human Verification</th>
                     </tr>
@@ -434,7 +439,7 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                                 </td>
 
                                 <td className="py-3 px-3 font-bold text-slate-900 whitespace-nowrap">
-                                    RM{' '}
+                                    {currencySymbol}{' '}
                                     {inv.amountRM.toLocaleString(undefined, {
                                         minimumFractionDigits: 2,
                                         maximumFractionDigits: 2,

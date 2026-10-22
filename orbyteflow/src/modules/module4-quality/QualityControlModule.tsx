@@ -9,13 +9,15 @@ import {
     Plus,
     AlertCircle,
 } from 'lucide-react';
-import type { Product, QCAlert, UserRole } from '../../types/vyte.ts';
+import type { CurrencyCode, Product, QCAlert, UserRole } from '../../types/vyte.ts';
+import { CURRENCY_SYMBOLS } from '../../types/vyte.ts';
 import { VyteDropdown } from '../../components/common/VyteDropdown';
 
 export interface QualityControlModuleProps {
     qcAlerts: QCAlert[];
     products: Product[];
     role: UserRole;
+    currency?: CurrencyCode;
     onApproveQC: (qcId: string) => void;
     onTriggerScan: () => void;
     onAddCustomQCAlert: (newAlert: QCAlert) => void;
@@ -25,15 +27,16 @@ const sanitizePositiveInt = (raw: string): string => {
     return raw.replace(/[^0-9]/g, '').replace(/^0+/, '');
 };
 
-/** @Composable */
 export const QualityControlModule: React.FC<QualityControlModuleProps> = ({
                                                                               qcAlerts,
                                                                               products,
                                                                               role,
+                                                                              currency = 'MYR',
                                                                               onApproveQC,
                                                                               onTriggerScan,
                                                                               onAddCustomQCAlert,
                                                                           }) => {
+    const currencySymbol = CURRENCY_SYMBOLS[currency] || 'RM';
     const [isScanning, setIsScanning] = useState(false);
     const [showLogForm, setShowLogForm] = useState(false);
 
@@ -115,9 +118,6 @@ export const QualityControlModule: React.FC<QualityControlModuleProps> = ({
                     <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                         <Sparkles className="w-5 h-5 text-purple-600" /> AI Quality Control &amp; Expiry Prevention Guardian
                     </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                        Monitors perishable expiry dates and batch defect logs, recommending high-margin actions that auto-log recovery claims in Smart Invoices.
-                    </p>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -138,7 +138,6 @@ export const QualityControlModule: React.FC<QualityControlModuleProps> = ({
                 </div>
             </div>
 
-            {/* Manual Quality / Expiry Logger Form */}
             {showLogForm && (
                 <form
                     onSubmit={handleCreateCustomAlert}
@@ -147,10 +146,10 @@ export const QualityControlModule: React.FC<QualityControlModuleProps> = ({
                 >
                     <div>
                         <label className="font-bold text-slate-700 block mb-1">Select Product SKU *</label>
-                        <VyteDropdown
+                        <VyteDropdown<string>
                             variant="light"
                             value={selectedProductId}
-                            onChange={(val) => setSelectedProductId(val)}
+                            onChange={(val: string) => setSelectedProductId(val)}
                             options={products.map((p) => ({
                                 label: `${p.name} (${p.sku})`,
                                 value: p.id,
@@ -255,7 +254,6 @@ export const QualityControlModule: React.FC<QualityControlModuleProps> = ({
                 </form>
             )}
 
-            {/* QC Alert Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {qcAlerts.map((qc) => {
                     const isUrgent = qc.daysLeft <= 3;
@@ -308,9 +306,8 @@ export const QualityControlModule: React.FC<QualityControlModuleProps> = ({
                                     <p className="text-xs text-slate-700 leading-relaxed">{qc.aiSuggestion}</p>
                                     <div className="pt-1 flex items-center justify-between text-[11px]">
                                         <span className="font-semibold text-emerald-600">
-                                            Est. Waste Prevented: RM {qc.savedRM.toFixed(2)}
+                                            Est. Waste Prevented: {currencySymbol} {qc.savedRM.toFixed(2)}
                                         </span>
-                                        <span className="text-slate-400">Auto-logs Claim in Smart Invoices</span>
                                     </div>
                                 </div>
                             </div>

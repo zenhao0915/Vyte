@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type {
   ActiveTab,
   AuditLog,
+  CurrencyCode,
   ExtractedNlpOrderItem,
   InvoiceItem,
   NewProductForm,
@@ -11,6 +12,7 @@ import type {
   UserRole,
   UserSession,
 } from './types/vyte.ts';
+import { CURRENCY_SYMBOLS } from './types/vyte.ts';
 import {
   INITIAL_AUDIT_LOGS,
   INITIAL_INVOICES,
@@ -32,6 +34,7 @@ import { LoginPage } from './components/auth/LoginPage';
 import { orbyteApi } from './services/api';
 
 const SESSION_STORAGE_KEY = 'vyte_active_session_v1';
+const CURRENCY_STORAGE_KEY = 'vyte_currency';
 
 interface StoredSessionPayload {
   session: UserSession;
@@ -57,6 +60,15 @@ export default function App() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [role, setRole] = useState<UserRole>('SME_OWNER');
   const [activeTab, setActiveTab] = useState<ActiveTab>('mod1');
+
+  // Operating currency (persisted in localStorage)
+  const [currency, setCurrency] = useState<CurrencyCode>(() => {
+    const stored = localStorage.getItem(CURRENCY_STORAGE_KEY);
+    return stored && stored in CURRENCY_SYMBOLS ? (stored as CurrencyCode) : 'MYR';
+  });
+
+  // Global loading overlay triggered by modules via onTriggerLoadingScreen
+  const [loadingOverlayMessage, setLoadingOverlayMessage] = useState<string | null>(null);
 
   // Toggle bar state for the combined Module 1 (Auto Restock) & Module 3 (Customer Orders)
   const [inventorySubTab, setInventorySubTab] = useState<'restock' | 'orders'>('restock');
@@ -84,6 +96,20 @@ export default function App() {
       },
       []
   );
+
+  const handleCurrencyChange = (newCurrency: CurrencyCode) => {
+    setCurrency(newCurrency);
+    localStorage.setItem(CURRENCY_STORAGE_KEY, newCurrency);
+    pushToast(
+        'success',
+        `Operating currency changed to ${newCurrency} (${CURRENCY_SYMBOLS[newCurrency]}).`
+    );
+  };
+
+  const handleTriggerLoadingScreen = useCallback((message: string, durationMs = 900) => {
+    setLoadingOverlayMessage(message);
+    setTimeout(() => setLoadingOverlayMessage(null), durationMs);
+  }, []);
 
   const addAuditLog = useCallback(
       (module: string, detail: string, overrideRole?: UserRole) => {
@@ -653,6 +679,8 @@ export default function App() {
             activeTab={activeTab}
             setActiveTab={setActiveTab}
             role={role}
+            operatingCurrency={currency}
+            onCurrencyChange={handleCurrencyChange}
             industryFilter={industryFilter}
             setIndustryFilter={setIndustryFilter}
             searchQuery={searchQuery}
@@ -716,6 +744,7 @@ export default function App() {
                     <RestockModule
                         products={filteredProducts}
                         role={role}
+                        currency={currency}
                         onApproveAndContactSupplier={handleApproveAndContactSupplier}
                         onConfirmSupplierDelivery={handleConfirmSupplierDelivery}
                         onRecordStockUsage={handleRecordStockUsage}
@@ -728,11 +757,13 @@ export default function App() {
                         products={products}
                         role={role}
                         userID={userSession.userID}
+                        currency={currency}
                         onApproveCustomerOrder={handleApproveCustomerOrder}
                         onPendingCountChange={setPendingCustomerOrderCount}
                         onLogAction={addAuditLog}
                         onNavigateToRestock={() => setInventorySubTab('restock')}
                         onNotify={pushToast}
+                        onTriggerLoadingScreen={handleTriggerLoadingScreen}
                     />
                   </div>
                 </div>
@@ -742,8 +773,10 @@ export default function App() {
                 <SalesAnalyticsModule
                     products={products}
                     userID={userSession.userID}
+                    currency={currency}
                     onQueueRestockToOrderModule={handleQueueRestockToOrderModule}
                     onLogAction={addAuditLog}
+                    onTriggerLoadingScreen={handleTriggerLoadingScreen}
                 />
             )}
 
@@ -752,6 +785,7 @@ export default function App() {
                     qcAlerts={qcAlerts}
                     products={products}
                     role={role}
+                    currency={currency}
                     onApproveQC={handleApproveQC}
                     onTriggerScan={handleTriggerQCScan}
                     onAddCustomQCAlert={handleAddCustomQCAlert}
@@ -762,6 +796,7 @@ export default function App() {
                 <InvoiceModule
                     invoices={invoices}
                     role={role}
+                    currency={currency}
                     onVerifyInvoice={handleVerifyInvoice}
                     onToggleInvoicePaid={handleToggleInvoicePaid}
                     onAddValidatedInvoice={handleAddValidatedInvoice}
@@ -781,8 +816,15 @@ export default function App() {
 
         <AddProductModal
             isOpen={showAddModal}
+            currency={currency}
             onClose={() => setShowAddModal(false)}
             onSaveProduct={handleSaveProduct}
+        />
+
+        {/* Global loading overlay triggered by modules */}
+        <LoadingScreen
+            isOpen={loadingOverlayMessage !== null}
+            message={loadingOverlayMessage ?? ''}
         />
 
         {/* Toast Notifications */}

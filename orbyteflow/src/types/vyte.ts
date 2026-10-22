@@ -1,8 +1,16 @@
 // src/types/orbyte.ts
-
+// src/types/vyte.ts
 export type UserRole = 'SME_OWNER' | 'MANAGER' | 'OPERATIONS_STAFF';
 export type IndustryProfile = 'FNB_PERISHABLE' | 'RETAIL_VARIANT' | 'B2B_RAW_MATERIAL';
 export type ActiveTab = 'mod1' | 'mod2' | 'mod3' | 'mod4' | 'mod5' | 'logs';
+
+export type CurrencyCode = 'MYR' | 'SGD' | 'USD';
+
+export const CURRENCY_SYMBOLS: Record<CurrencyCode, string> = {
+    MYR: 'RM',
+    SGD: 'S$',
+    USD: '$',
+};
 
 export interface UserSession {
     userID: string;

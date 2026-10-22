@@ -20,14 +20,17 @@ import {
     X,
     Calendar,
 } from 'lucide-react';
-import type { ExtractedNlpOrderItem, Product, UserRole } from '../../types/vyte.ts';
+import type { CurrencyCode, ExtractedNlpOrderItem, Product, UserRole } from '../../types/vyte.ts';
+import { CURRENCY_SYMBOLS } from '../../types/vyte.ts';
 import { orbyteApi } from '../../services/api';
 import { VyteDropdown } from '../../components/common/VyteDropdown';
+
 
 interface OrderStatusModuleProps {
     products: Product[];
     role: UserRole;
     userID: string;
+    currency?: CurrencyCode;
     onApproveCustomerOrder: (
         items: ExtractedNlpOrderItem[],
         customerName: string,
@@ -85,6 +88,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                                                         products,
                                                                         role,
                                                                         userID,
+                                                                        currency = 'MYR',
                                                                         onApproveCustomerOrder,
                                                                         onPendingCountChange,
                                                                         onLogAction,
@@ -92,6 +96,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                                                         onNotify,
                                                                         onTriggerLoadingScreen,
                                                                     }) => {
+    const currencySymbol = CURRENCY_SYMBOLS[currency] || 'RM';
     const todayIso = new Date().toISOString().slice(0, 10);
 
     const [customerName, setCustomerName] = useState('Bangsar Artisan Cafe');
@@ -252,7 +257,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                     hasSufficientStock,
                     extractedItems: extracted,
                     calculatedSubtotal: subtotal,
-                    currency: 'MYR',
+                    currency,
                 }
             );
 
@@ -279,7 +284,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                 rawMessage: rawOrderText.trim(),
                 internalNotes: `NLP parsed order from ${customerName.trim()}`,
                 items: nlpRes.data.extractedItems,
-                currency: nlpRes.data.currency || 'MYR',
+                currency: nlpRes.data.currency || currency,
             });
 
             notify(
@@ -367,7 +372,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                 1000 + Math.random() * 9000
             )}`;
 
-        onTriggerLoadingScreen?.('Generating Order & PDF Invoice...', 950);
+            onTriggerLoadingScreen?.('Generating Order & PDF Invoice...', 950);
 
             const createRes = await orbyteApi.createInvoiceOrder({
                 orderID: candidateOrderId,
@@ -408,7 +413,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
 
             onLogAction(
                 'Mod 3: Order Created',
-                `Created order ${createdOrder.orderID} (Invoice ${createdOrder.invoiceID} • PDF: ${createdOrder.invoicePdfUrl}) for ${createdOrder.customerName} (RM ${createdOrder.subtotal.toFixed(2)}) — ${
+                `Created order ${createdOrder.orderID} (Invoice ${createdOrder.invoiceID} • PDF: ${createdOrder.invoicePdfUrl}) for ${createdOrder.customerName} (${currencySymbol} ${createdOrder.subtotal.toFixed(2)}) — ${
                     hasSufficientStock ? 'Stock Sufficient, awaiting approval.' : 'Blocked: Insufficient Stock.'
                 }`
             );
@@ -534,7 +539,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                 setModifyingOrderId(null);
                 onLogAction(
                     'Mod 3: Order Modified',
-                    `Modified customer order ${order.orderID} (${order.customerName}) • New Total: RM ${updatedSubtotal.toFixed(2)} • Notes: "${approvalNotes}".`
+                    `Modified customer order ${order.orderID} (${order.customerName}) • New Total: ${currencySymbol} ${updatedSubtotal.toFixed(2)} • Notes: "${approvalNotes}".`
                 );
                 notify('info', `Order ${order.orderID} updated and marked as MODIFIED.`);
             } else {
@@ -793,7 +798,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                         rawMessage: rawOrderText.trim(),
                                         internalNotes: 'Manually assembled after NLP parse failure',
                                         items: [],
-                                        currency: 'MYR',
+                                        currency,
                                     });
                                 }}
                                 className="px-3 py-1.5 bg-white hover:bg-rose-100 text-rose-800 border border-rose-300 rounded-lg font-bold transition cursor-pointer"
@@ -846,7 +851,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                     value={addSkuId}
                                     onChange={(val) => setAddSkuId(val)}
                                     options={products.map((p) => ({
-                                        label: `${p.name} (${p.sku}) — RM ${p.priceRM.toFixed(2)}`,
+                                        label: `${p.name} (${p.sku}) — ${currencySymbol} ${p.priceRM.toFixed(2)}`,
                                         value: p.id,
                                     }))}
                                 />
@@ -923,10 +928,10 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                                 )}
                                             </td>
                                             <td className="py-2.5 px-3.5 text-slate-600">
-                                                RM {item.sellingPrice.toFixed(2)}
+                                                {currencySymbol} {item.sellingPrice.toFixed(2)}
                                             </td>
                                             <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900">
-                                                RM {item.lineTotal.toFixed(2)}
+                                                {currencySymbol} {item.lineTotal.toFixed(2)}
                                             </td>
                                             <td className="py-2.5 px-3.5 text-center">
                                                 <button
@@ -1096,7 +1101,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                                     Order Total
                                                 </span>
                                                 <span className="text-base font-extrabold text-slate-900 whitespace-nowrap">
-                                                    RM {co.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                    {currencySymbol} {co.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                                 </span>
                                             </div>
 
@@ -1328,11 +1333,11 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                                             </td>
 
                                                             <td className="py-2.5 px-3.5 text-slate-600 font-medium">
-                                                                RM {item.sellingPrice.toFixed(2)} / {item.uom}
+                                                                {currencySymbol} {item.sellingPrice.toFixed(2)} / {item.uom}
                                                             </td>
 
                                                             <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900">
-                                                                RM{' '}
+                                                                {currencySymbol}{' '}
                                                                 {item.lineTotal.toLocaleString(undefined, {
                                                                     minimumFractionDigits: 2,
                                                                 })}
@@ -1457,7 +1462,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                             <div>
                                 <span className="text-slate-400 block">Total Amount</span>
                                 <strong className="text-slate-900">
-                                    RM {selectedDetailOrder.subtotal.toFixed(2)}
+                                    {currencySymbol} {selectedDetailOrder.subtotal.toFixed(2)}
                                 </strong>
                             </div>
                         </div>
@@ -1495,9 +1500,9 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                         <td className="py-2 px-3 font-mono">{i.SKU}</td>
                                         <td className="py-2 px-3 font-bold">{i.name}</td>
                                         <td className="py-2 px-3">{i.requestedQty}</td>
-                                        <td className="py-2 px-3">RM {i.sellingPrice.toFixed(2)}</td>
+                                        <td className="py-2 px-3">{currencySymbol} {i.sellingPrice.toFixed(2)}</td>
                                         <td className="py-2 px-3 text-right font-bold">
-                                            RM {i.lineTotal.toFixed(2)}
+                                            {currencySymbol} {i.lineTotal.toFixed(2)}
                                         </td>
                                     </tr>
                                 ))}
@@ -1520,4 +1525,3 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
         </div>
     );
 };
-

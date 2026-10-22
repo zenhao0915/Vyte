@@ -11,11 +11,13 @@ import {
     AlertCircle,
     Loader2,
 } from 'lucide-react';
-import type { Product, UserRole } from '../../types/vyte.ts';
+import type { CurrencyCode, Product, UserRole } from '../../types/vyte.ts';
+import { CURRENCY_SYMBOLS } from '../../types/vyte.ts';
 
 interface RestockModuleProps {
     products: Product[];
     role: UserRole;
+    currency?: CurrencyCode;
     onApproveAndContactSupplier: (
         productId: string,
         customReorderQty?: number
@@ -32,17 +34,19 @@ const sanitizeBoundedInt = (raw: string, maxDigits = 5): string => {
 export const RestockModule: React.FC<RestockModuleProps> = ({
                                                                 products,
                                                                 role,
+                                                                currency = 'MYR',
                                                                 onApproveAndContactSupplier,
                                                                 onConfirmSupplierDelivery,
                                                                 onRecordStockUsage,
                                                                 onOpenAddModal,
                                                             }) => {
+    const currencySymbol = CURRENCY_SYMBOLS[currency] || 'RM';
+
     const [usageInputs, setUsageInputs] = useState<Record<string, string>>({});
     const [usageErrors, setUsageErrors] = useState<Record<string, string>>({});
     const [reorderInputs, setReorderInputs] = useState<Record<string, string>>({});
     const [reorderErrors, setReorderErrors] = useState<Record<string, string>>({});
 
-    // Per-row button loading states (does not block the rest of the page)
     const [approvingIds, setApprovingIds] = useState<Record<string, boolean>>({});
     const [confirmingIds, setConfirmingIds] = useState<Record<string, boolean>>({});
 
@@ -109,17 +113,9 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
         <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
             <div className="px-5 py-3.5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <div className="flex items-center gap-2">
-                        <h3 className="text-base font-bold text-slate-900">
-                            Universal Catalog &amp; Automated Supplier Restock
-                        </h3>
-                        <span className="hidden sm:inline-block px-2 py-0.5 text-[10px] font-bold bg-emerald-50 text-emerald-700 rounded-md border border-emerald-200">
-                            5-Step Journey Live
-                        </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                        Record custom sales/usage to test low-stock triggers &rarr; Approve PO (auto-creates Supplier Bill in Smart Invoices) &rarr; Confirm Delivery.
-                    </p>
+                    <h3 className="text-base font-bold text-slate-900">
+                        Universal Catalog &amp; Automated Supplier Restock
+                    </h3>
                 </div>
                 <button
                     onClick={onOpenAddModal}
@@ -133,13 +129,13 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                 <table className="w-full text-left border-collapse">
                     <thead>
                     <tr className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
-                        <th className="py-2.5 px-4">Product &amp; Industry Spec</th>
+                        <th className="py-2.5 px-4">Product &amp; Spec</th>
                         <th className="py-2.5 px-3 whitespace-nowrap">SKU &amp; Profile</th>
                         <th className="py-2.5 px-3 whitespace-nowrap">Live Stock vs Min</th>
                         <th className="py-2.5 px-3 whitespace-nowrap">Record Sale / Usage</th>
-                        <th className="py-2.5 px-3">Connected Supplier</th>
-                        <th className="py-2.5 px-3 whitespace-nowrap">Unit Price</th>
-                        <th className="py-2.5 px-4 w-72">Automated Supplier Restock (5-Step)</th>
+                        <th className="py-2.5 px-3">Supplier</th>
+                        <th className="py-2.5 px-3 whitespace-nowrap">Unit Price ({currency})</th>
+                        <th className="py-2.5 px-4 w-72">Restock Action</th>
                     </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-xs">
@@ -155,10 +151,7 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                         return (
                             <tr key={item.id} className="hover:bg-slate-50/70 transition">
                                 <td className="py-2.5 px-4 max-w-[210px]">
-                                    <p
-                                        className="font-bold text-slate-900 truncate"
-                                        title={item.name}
-                                    >
+                                    <p className="font-bold text-slate-900 truncate" title={item.name}>
                                         {item.name}
                                     </p>
                                     <p className="text-[11px] text-slate-500 truncate">
@@ -179,17 +172,10 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
 
                                 <td className="py-2.5 px-3 whitespace-nowrap">
                                     <div>
-                                            <span
-                                                className={`text-sm font-extrabold ${
-                                                    isLow ? 'text-rose-600' : 'text-slate-900'
-                                                }`}
-                                            >
+                                            <span className={`text-sm font-extrabold ${isLow ? 'text-rose-600' : 'text-slate-900'}`}>
                                                 {item.stock.toLocaleString()} {item.uom}
                                             </span>
-                                        <span className="text-[11px] text-slate-400">
-                                                {' '}
-                                            / Min {item.minThreshold}
-                                            </span>
+                                        <span className="text-[11px] text-slate-400"> / Min {item.minThreshold}</span>
                                     </div>
                                     {isOutOfStock ? (
                                         <span className="inline-flex items-center gap-1 mt-0.5 text-[10px] text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded font-bold">
@@ -197,7 +183,7 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                                             </span>
                                     ) : isLow ? (
                                         <span className="inline-flex items-center gap-1 mt-0.5 text-[10px] text-rose-600 font-bold">
-                                                <AlertTriangle className="w-3 h-3" /> Step 1: Low Stock Triggered
+                                                <AlertTriangle className="w-3 h-3" /> Low Stock Alert
                                             </span>
                                     ) : null}
                                 </td>
@@ -205,7 +191,7 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                                 <td className="py-2.5 px-3 whitespace-nowrap">
                                     {isOutOfStock ? (
                                         <span className="text-[11px] text-slate-400 italic">
-                                                Restock required before sale
+                                                Restock required
                                             </span>
                                     ) : (
                                         <div className="space-y-1">
@@ -215,18 +201,9 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                                                     inputMode="numeric"
                                                     value={currentUsageVal}
                                                     onChange={(e) => {
-                                                        const cleaned = sanitizeBoundedInt(
-                                                            e.target.value,
-                                                            4
-                                                        );
-                                                        setUsageInputs((prev) => ({
-                                                            ...prev,
-                                                            [item.id]: cleaned,
-                                                        }));
-                                                        setUsageErrors((prev) => ({
-                                                            ...prev,
-                                                            [item.id]: '',
-                                                        }));
+                                                        const cleaned = sanitizeBoundedInt(e.target.value, 4);
+                                                        setUsageInputs((prev) => ({ ...prev, [item.id]: cleaned }));
+                                                        setUsageErrors((prev) => ({ ...prev, [item.id]: '' }));
                                                     }}
                                                     placeholder="Qty"
                                                     className="w-14 px-2 py-1 rounded-lg bg-white border border-slate-300 text-xs font-bold text-slate-900 focus:outline-none focus:border-emerald-500"
@@ -241,8 +218,7 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                                             </div>
                                             {usageErrors[item.id] && (
                                                 <p className="text-[10px] text-rose-600 font-semibold flex items-center gap-0.5">
-                                                    <AlertCircle className="w-2.5 h-2.5" />{' '}
-                                                    {usageErrors[item.id]}
+                                                    <AlertCircle className="w-2.5 h-2.5" /> {usageErrors[item.id]}
                                                 </p>
                                             )}
                                         </div>
@@ -259,7 +235,7 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                                 </td>
 
                                 <td className="py-2.5 px-3 whitespace-nowrap font-bold text-slate-800">
-                                    RM{' '}
+                                    {currencySymbol}{' '}
                                     {item.priceRM.toLocaleString(undefined, {
                                         minimumFractionDigits: 2,
                                         maximumFractionDigits: 2,
@@ -270,32 +246,19 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                                     {item.restockStatus === 'TRIGGERED_PENDING_APPROVAL' && (
                                         <div className="space-y-1.5">
                                             <div className="flex items-center gap-1.5">
-                                                    <span className="text-[10px] font-semibold text-slate-500">
-                                                        PO Qty:
-                                                    </span>
+                                                <span className="text-[10px] font-semibold text-slate-500">PO Qty:</span>
                                                 <input
                                                     type="text"
                                                     inputMode="numeric"
                                                     value={currentReorderVal}
                                                     onChange={(e) => {
-                                                        const cleaned = sanitizeBoundedInt(
-                                                            e.target.value,
-                                                            5
-                                                        );
-                                                        setReorderInputs((prev) => ({
-                                                            ...prev,
-                                                            [item.id]: cleaned,
-                                                        }));
-                                                        setReorderErrors((prev) => ({
-                                                            ...prev,
-                                                            [item.id]: '',
-                                                        }));
+                                                        const cleaned = sanitizeBoundedInt(e.target.value, 5);
+                                                        setReorderInputs((prev) => ({ ...prev, [item.id]: cleaned }));
+                                                        setReorderErrors((prev) => ({ ...prev, [item.id]: '' }));
                                                     }}
                                                     className="w-16 px-2 py-0.5 rounded bg-white border border-amber-300 text-xs font-extrabold text-slate-900 focus:outline-none"
                                                 />
-                                                <span className="text-[10px] text-slate-500">
-                                                        {item.uom}
-                                                    </span>
+                                                <span className="text-[10px] text-slate-500">{item.uom}</span>
                                             </div>
 
                                             {reorderErrors[item.id] && (
@@ -321,11 +284,7 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                                                         ) : (
                                                             <Send className="w-3 h-3 shrink-0" />
                                                         )}
-                                                        {isApproving
-                                                            ? 'Dispatching PO...'
-                                                            : `Approve & Contact (+${
-                                                                currentReorderVal || 0
-                                                            } ${item.uom})`}
+                                                        {isApproving ? 'Dispatching PO...' : `Approve & Contact (+${currentReorderVal || 0} ${item.uom})`}
                                                     </>
                                                 ) : (
                                                     <>
@@ -340,14 +299,12 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                                     {item.restockStatus === 'SUPPLIER_CONTACTED' && (
                                         <div className="space-y-1.5">
                                             <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                                                <Clock className="w-2.5 h-2.5" /> PO Sent • Bill Logged in Invoices
+                                                <Clock className="w-2.5 h-2.5" /> PO Sent
                                             </div>
                                             <button
                                                 type="button"
                                                 disabled={isConfirming}
-                                                onClick={() =>
-                                                    void handleConfirmDeliveryClick(item)
-                                                }
+                                                onClick={() => void handleConfirmDeliveryClick(item)}
                                                 className="w-full px-3 py-1.5 bg-[#2BB656] hover:bg-emerald-600 disabled:opacity-60 text-white rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer whitespace-nowrap"
                                             >
                                                 {isConfirming ? (
@@ -355,17 +312,14 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                                                 ) : (
                                                     <CheckCircle2 className="w-3 h-3" />
                                                 )}
-                                                {isConfirming
-                                                    ? 'Confirming...'
-                                                    : `Confirm Delivery (+${item.reorderQty} ${item.uom})`}
+                                                {isConfirming ? 'Confirming...' : `Confirm Delivery (+${item.reorderQty} ${item.uom})`}
                                             </button>
                                         </div>
                                     )}
 
                                     {item.restockStatus === 'CONFIRMED' && (
                                         <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 whitespace-nowrap">
-                                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />{' '}
-                                            Delivered &amp; Restocked
+                                                <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Delivered &amp; Restocked
                                             </span>
                                     )}
 

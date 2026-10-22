@@ -1,5 +1,6 @@
 // src/components/common/VyteDropdown.tsx
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, Check } from 'lucide-react';
 
 export interface VyteDropdownOption<T extends string | number = string> {
@@ -20,11 +21,6 @@ export interface VyteDropdownProps<T extends string | number = string> {
     disabled?: boolean;
 }
 
-/**
- * @Composable
- * Seamless dropdown component that visually continuates the main display box
- * into the expanded options list as a single unified container.
- */
 export function VyteDropdown<T extends string | number = string>({
                                                                      value,
                                                                      options,
@@ -38,15 +34,62 @@ export function VyteDropdown<T extends string | number = string>({
                                                                  }: VyteDropdownProps<T>) {
     const [isOpen, setIsOpen] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
+    const [menuPosition, setMenuPosition] = useState<React.CSSProperties>({});
+    const [openUpward, setOpenUpward] = useState(false);
 
     const selectedOption = options.find((opt) => opt.value === value) || options[0];
 
+    // Compute dynamic coordinates so the menu overlays over tables and scroll containers
+    const updatePosition = () => {
+        if (!containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        const estimatedMenuHeight = 224; // max-h-56
+
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const shouldOpenUp = spaceBelow < estimatedMenuHeight && rect.top > estimatedMenuHeight;
+
+        setOpenUpward(shouldOpenUp);
+        setMenuPosition({
+            position: 'fixed',
+            left: `${rect.left}px`,
+            width: `${rect.width}px`,
+            top: shouldOpenUp ? undefined : `${rect.bottom - 1}px`,
+            bottom: shouldOpenUp ? `${window.innerHeight - rect.top - 1}px` : undefined,
+            zIndex: 99999,
+        });
+    };
+
+    useEffect(() => {
+        if (!isOpen) return;
+
+        updatePosition();
+
+        const handleScrollOrResize = () => {
+            updatePosition();
+        };
+
+        window.addEventListener('resize', handleScrollOrResize);
+        window.addEventListener('scroll', handleScrollOrResize, true);
+
+        return () => {
+            window.removeEventListener('resize', handleScrollOrResize);
+            window.removeEventListener('scroll', handleScrollOrResize, true);
+        };
+    }, [isOpen]);
+
+    // Close on click outside (checking both trigger button and portaled menu)
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
-            if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+            const target = e.target as Node;
+            const clickedInsideTrigger = containerRef.current?.contains(target);
+            const clickedInsideMenu = menuRef.current?.contains(target);
+
+            if (!clickedInsideTrigger && !clickedInsideMenu) {
                 setIsOpen(false);
             }
         };
+
         const handleEscape = (e: KeyboardEvent) => {
             if (e.key === 'Escape') setIsOpen(false);
         };
@@ -64,8 +107,10 @@ export function VyteDropdown<T extends string | number = string>({
             ? 'px-2.5 py-1.5 text-xs rounded-lg'
             : 'px-3.5 py-2 text-xs rounded-xl';
 
-    const openTopRadius = size === 'sm' ? 'rounded-t-lg rounded-b-none' : 'rounded-t-xl rounded-b-none';
-    const openBottomRadius = size === 'sm' ? 'rounded-b-lg rounded-t-none' : 'rounded-b-xl rounded-t-none';
+    const openTopRadius =
+        size === 'sm' ? 'rounded-t-lg rounded-b-none' : 'rounded-t-xl rounded-b-none';
+    const openBottomRadius =
+        size === 'sm' ? 'rounded-b-lg rounded-t-none' : 'rounded-b-xl rounded-t-none';
 
     const getTriggerTheme = () => {
         if (variant === 'dark') {
@@ -93,9 +138,9 @@ export function VyteDropdown<T extends string | number = string>({
             return 'bg-[#1E242B] border-[#2BB656] text-slate-200 divide-slate-800/80 shadow-2xl';
         }
         if (variant === 'purple') {
-            return 'bg-white border-purple-400 text-slate-800 divide-purple-100 shadow-xl';
+            return 'bg-white border-purple-400 text-slate-800 divide-purple-100 shadow-2xl';
         }
-        return 'bg-white border-[#2BB656] text-slate-800 divide-slate-100 shadow-xl';
+        return 'bg-white border-[#2BB656] text-slate-800 divide-slate-100 shadow-2xl';
     };
 
     const getOptionTheme = (isSelected: boolean) => {
@@ -115,16 +160,16 @@ export function VyteDropdown<T extends string | number = string>({
     };
 
     return (
-        <div
-            ref={containerRef}
-            className={`relative select-none ${isOpen ? 'z-50' : 'z-10'} ${className}`}
-        >
+        <div ref={containerRef} className={`relative select-none ${className}`}>
             <button
                 type="button"
                 disabled={disabled}
-                onClick={() => setIsOpen((prev) => !prev)}
+                onClick={() => {
+                    if (!isOpen) updatePosition();
+                    setIsOpen((prev) => !prev);
+                }}
                 className={`w-full flex items-center justify-between gap-2 border font-semibold transition-colors cursor-pointer focus:outline-none ${sizeStyles} ${
-                    isOpen ? openTopRadius : ''
+                    isOpen ? (openUpward ? openBottomRadius : openTopRadius) : ''
                 } ${getTriggerTheme()} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
                 <span className="flex items-center gap-1.5 min-w-0 truncate">
@@ -153,52 +198,63 @@ export function VyteDropdown<T extends string | number = string>({
                 />
             </button>
 
-            {isOpen && (
-                <div
-                    className={`absolute left-0 right-0 top-full -mt-[1px] border border-t-0 overflow-hidden ${openBottomRadius} ${getMenuTheme()}`}
-                >
+            {/* Render options menu in document.body to break free from table overflow boundaries */}
+            {isOpen &&
+                createPortal(
                     <div
-                        className={`border-t ${
-                            variant === 'dark'
-                                ? 'border-slate-700/70'
-                                : variant === 'purple'
-                                    ? 'border-purple-100'
-                                    : 'border-slate-100'
-                        }`}
-                    />
-                    <div className="max-h-56 overflow-y-auto py-1">
-                        {options.map((opt) => {
-                            const isSelected = opt.value === value;
-                            return (
-                                <button
-                                    key={String(opt.value)}
-                                    type="button"
-                                    onClick={() => {
-                                        onChange(opt.value);
-                                        setIsOpen(false);
-                                    }}
-                                    className={`w-full px-3.5 py-2 text-left text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer ${getOptionTheme(
-                                        isSelected
-                                    )}`}
-                                >
-                                    <span className="truncate">{opt.label}</span>
-                                    {isSelected && (
-                                        <Check
-                                            className={`w-3.5 h-3.5 shrink-0 ${
-                                                variant === 'dark'
-                                                    ? 'text-emerald-400'
-                                                    : variant === 'purple'
-                                                        ? 'text-purple-600'
-                                                        : 'text-[#2BB656]'
-                                            }`}
-                                        />
-                                    )}
-                                </button>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
+                        ref={menuRef}
+                        style={menuPosition}
+                        className={`border overflow-hidden ${
+                            openUpward
+                                ? size === 'sm'
+                                    ? 'rounded-t-lg border-b-0'
+                                    : 'rounded-t-xl border-b-0'
+                                : openBottomRadius
+                        } ${getMenuTheme()}`}
+                    >
+                        <div
+                            className={`border-t ${
+                                variant === 'dark'
+                                    ? 'border-slate-700/70'
+                                    : variant === 'purple'
+                                        ? 'border-purple-100'
+                                        : 'border-slate-100'
+                            }`}
+                        />
+                        <div className="max-h-56 overflow-y-auto py-1">
+                            {options.map((opt) => {
+                                const isSelected = opt.value === value;
+                                return (
+                                    <button
+                                        key={String(opt.value)}
+                                        type="button"
+                                        onClick={() => {
+                                            onChange(opt.value);
+                                            setIsOpen(false);
+                                        }}
+                                        className={`w-full px-3.5 py-2 text-left text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer ${getOptionTheme(
+                                            isSelected
+                                        )}`}
+                                    >
+                                        <span className="truncate">{opt.label}</span>
+                                        {isSelected && (
+                                            <Check
+                                                className={`w-3.5 h-3.5 shrink-0 ${
+                                                    variant === 'dark'
+                                                        ? 'text-emerald-400'
+                                                        : variant === 'purple'
+                                                            ? 'text-purple-600'
+                                                            : 'text-[#2BB656]'
+                                                }`}
+                                            />
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>,
+                    document.body
+                )}
         </div>
     );
 }

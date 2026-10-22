@@ -61,42 +61,37 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
         };
     }, []);
 
+    // Inside src/components/layout/HeaderBar.tsx
     const titles: Record<ActiveTab, { title: string; subtitle: string }> = {
         mod1:
             inventorySubTab === 'orders'
                 ? {
                     title: 'Order Status & AI Depletion Auto-Ordering',
-                    subtitle:
-                        'Depletion-driven supplier order queue & NLP customer order verification awaiting human intervention.',
+                    subtitle: 'Order queues & NLP customer order verification',
                 }
                 : {
                     title: 'Auto Restock & Universal Inventory',
-                    subtitle:
-                        'Real-time threshold monitoring, supplier PO drafting & approval.',
+                    subtitle: 'Threshold monitoring and supplier PO approval',
                 },
         mod2: {
             title: 'Sales Analytics & AI Procurement Review',
-            subtitle:
-                'Quarterly revenue reports, holding cost optimization & AI restock forecasting.',
+            subtitle: 'Holding cost optimization & AI restock forecasting',
         },
         mod3: {
             title: 'Order Status & AI Depletion Auto-Ordering',
-            subtitle:
-                'Depletion-driven supplier order queue & NLP customer order verification awaiting human intervention.',
+            subtitle: 'Order queues & NLP customer order verification',
         },
         mod4: {
             title: 'Quality & Expiry Guardian',
-            subtitle:
-                'Proactive perishable shelf-life tracking, batch quarantine & promotional loss mitigation.',
+            subtitle: 'Batch quarantine & promotional loss mitigation',
         },
         mod5: {
             title: 'Smart Invoices & AI Categorization',
-            subtitle:
-                'Automated supplier payable & customer receivable classification with human verification.',
+            subtitle: 'Supplier payable & customer receivable classification',
         },
         logs: {
             title: 'History Log',
-            subtitle: 'Centralized system-wide audit trail across all modules and role permissions.',
+            subtitle: 'Centralized audit trail across all modules and role permissions',
         },
     };
 

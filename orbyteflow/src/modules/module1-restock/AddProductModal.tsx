@@ -1,11 +1,13 @@
 // src/modules/module1-restock/AddProductModal.tsx
 import React, { useState } from 'react';
 import { AlertCircle } from 'lucide-react';
-import type { IndustryProfile, NewProductForm } from '../../types/vyte.ts';
+import type { CurrencyCode, IndustryProfile, NewProductForm } from '../../types/vyte.ts';
+import { CURRENCY_SYMBOLS } from '../../types/vyte.ts';
 import { VyteDropdown } from '../../components/common/VyteDropdown';
 
 interface AddProductModalProps {
     isOpen: boolean;
+    currency?: CurrencyCode;
     onClose: () => void;
     onSaveProduct: (form: NewProductForm) => void;
 }
@@ -20,34 +22,33 @@ interface FormDraft {
     minThreshold: string;
     reorderQty: string;
     priceRM: string;
+    unitCostRM: string;
     supplierName: string;
     supplierContact: string;
     batchNo: string;
     expiryDate: string;
-    retailVariant: string;
+    storageCondition: 'Ambient' | 'Chilled' | 'Frozen';
+    variantSpec: string;
     b2bMoq: string;
+    serialOrWarranty: string;
 }
 
 type ValidationErrors = Partial<Record<keyof FormDraft, string>>;
 
-const sanitizeNumericInput = (raw: string, allowDecimal = false): string => {
-    const cleaned = allowDecimal ? raw.replace(/[^0-9.]/g, '') : raw.replace(/[^0-9]/g, '');
-    if (!allowDecimal) {
-        return cleaned.replace(/^0+(?=\d)/, '');
-    }
-    const parts = cleaned.split('.');
-    const integerPart = parts[0].replace(/^0+(?=\d)/, '');
-    return parts.length > 1 ? `${integerPart || '0'}.${parts[1].slice(0, 2)}` : integerPart;
-};
-
 const isValidWhatsAppNumber = (phone: string): boolean => {
     const trimmed = phone.trim();
-    const myPhoneRegex = /^(?:\+?60|0)1[0-9]-?[0-9]{7,8}$/;
+    const myPhoneRegex = /^(\+?60|0)1[0-9]-?[0-9]{7,8}$/;
     return myPhoneRegex.test(trimmed);
 };
 
-/** @Composable */
-export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClose, onSaveProduct }) => {
+export const AddProductModal: React.FC<AddProductModalProps> = ({
+                                                                    isOpen,
+                                                                    currency = 'MYR',
+                                                                    onClose,
+                                                                    onSaveProduct,
+                                                                }) => {
+    const currencySymbol = CURRENCY_SYMBOLS[currency] || 'RM';
+
     const [draft, setDraft] = useState<FormDraft>({
         name: '',
         sku: '',
@@ -58,12 +59,15 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
         minThreshold: '',
         reorderQty: '',
         priceRM: '',
+        unitCostRM: '',
         supplierName: '',
         supplierContact: '',
         batchNo: '',
         expiryDate: '',
-        retailVariant: '',
+        storageCondition: 'Chilled',
+        variantSpec: '',
         b2bMoq: '',
+        serialOrWarranty: '',
     });
 
     const [errors, setErrors] = useState<ValidationErrors>({});
@@ -84,38 +88,41 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
                 return '';
 
             case 'priceRM': {
-                if (value.trim() === '') return 'Selling price is required.';
-                const num = Number(value);
-                if (isNaN(num) || num <= 0) return 'Selling price must be greater than RM 0.00.';
-                if (num > 1000000) return 'Selling price cannot exceed RM 1,000,000.';
+                const trimmed = value.trim();
+                if (!trimmed) return 'Selling price is required.';
+                if (trimmed.startsWith('0')) return 'Selling price cannot start with 0.';
+                if (!/^[1-9]\d*(\.\d{1,2})?$/.test(trimmed)) {
+                    return 'Enter a valid price greater than 0 (e.g., 45.00).';
+                }
+                const num = Number(trimmed);
+                if (num > 1000000) return `Selling price cannot exceed ${currencySymbol} 1,000,000.`;
                 return '';
             }
 
             case 'stock': {
-                if (value.trim() === '') return 'Initial current stock is required.';
-                const num = Number(value);
-                if (isNaN(num) || num < 0 || !Number.isInteger(num)) {
-                    return 'Initial stock must be a whole number (0 or greater).';
-                }
+                const trimmed = value.trim();
+                if (!trimmed) return 'Initial current stock is required.';
+                if (!/^\d+$/.test(trimmed)) return 'Initial stock must be whole numbers (0-9).';
+                const num = Number(trimmed);
                 if (num > 999999) return 'Initial stock cannot exceed 999,999.';
                 return '';
             }
 
             case 'minThreshold': {
-                if (value.trim() === '') return 'Alert threshold (min stock) is required.';
-                const num = Number(value);
-                if (isNaN(num) || num < 1 || !Number.isInteger(num)) {
-                    return 'Alert threshold must be a whole number of at least 1.';
+                const trimmed = value.trim();
+                if (!trimmed) return 'Alert threshold (min stock) is required.';
+                if (trimmed.startsWith('0') || !/^[1-9]\d*$/.test(trimmed)) {
+                    return 'Alert threshold cannot start with 0 and must be at least 1.';
                 }
-                if (num > 99999) return 'Alert threshold cannot exceed 99,999.';
+                if (Number(trimmed) > 99999) return 'Alert threshold cannot exceed 99,999.';
                 return '';
             }
 
             case 'reorderQty': {
-                if (value.trim() === '') return 'Default auto-reorder quantity is required.';
-                const num = Number(value);
-                if (isNaN(num) || num < 1 || !Number.isInteger(num)) {
-                    return 'Reorder quantity must be a whole number of at least 1.';
+                const trimmed = value.trim();
+                if (!trimmed) return 'Default reorder quantity is required.';
+                if (trimmed.startsWith('0') || !/^[1-9]\d*$/.test(trimmed)) {
+                    return 'Reorder quantity cannot start with 0 and must be at least 1.';
                 }
                 return '';
             }
@@ -128,7 +135,7 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
             case 'supplierContact':
                 if (!value.trim()) return 'Supplier WhatsApp number is required.';
                 if (!isValidWhatsAppNumber(value)) {
-                    return 'Invalid format. Use MY WhatsApp format (e.g., +6012-3456789 or 0123456789).';
+                    return 'Invalid WhatsApp number. Use MY format (e.g., +6012-3456789 or 0123456789).';
                 }
                 return '';
 
@@ -139,20 +146,20 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
                 return '';
 
             case 'expiryDate':
-                if (currentDraft.industry === 'FNB_PERISHABLE') {
-                    if (!value.trim()) return 'Expiry date is required for F&B items.';
+                if (currentDraft.industry === 'FNB_PERISHABLE' && !value.trim()) {
+                    return 'Expiry date is required for F&B items.';
                 }
                 return '';
 
-            case 'retailVariant':
+            case 'variantSpec':
                 if (currentDraft.industry === 'RETAIL_VARIANT' && !value.trim()) {
-                    return 'Size/Color variant specification is required.';
+                    return 'Variant specification is required.';
                 }
                 return '';
 
             case 'b2bMoq':
                 if (currentDraft.industry === 'B2B_RAW_MATERIAL' && !value.trim()) {
-                    return 'B2B MOQ & lead time constraint is required.';
+                    return 'B2B MOQ and lead time constraint is required.';
                 }
                 return '';
 
@@ -161,12 +168,11 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
         }
     };
 
-    const handleChange = (field: keyof FormDraft, rawValue: string, isNumeric = false, allowDecimal = false) => {
-        const processedValue = isNumeric ? sanitizeNumericInput(rawValue, allowDecimal) : rawValue;
-        const updated = { ...draft, [field]: processedValue };
+    const handleChange = (field: keyof FormDraft, rawValue: string) => {
+        const updated = { ...draft, [field]: rawValue };
         setDraft(updated);
 
-        const fieldError = validateField(field, processedValue, updated);
+        const fieldError = validateField(field, rawValue, updated);
         setErrors((prev) => ({ ...prev, [field]: fieldError }));
     };
 
@@ -182,7 +188,7 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
             'supplierContact',
             'batchNo',
             'expiryDate',
-            'retailVariant',
+            'variantSpec',
             'b2bMoq',
         ];
 
@@ -207,9 +213,9 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
 
         let extraAttributeString = '';
         if (draft.industry === 'FNB_PERISHABLE') {
-            extraAttributeString = `Batch: ${draft.batchNo.trim()} • Exp: ${draft.expiryDate.trim()}`;
+            extraAttributeString = `Batch: ${draft.batchNo.trim()} • Exp: ${draft.expiryDate.trim()} • Storage: ${draft.storageCondition}`;
         } else if (draft.industry === 'RETAIL_VARIANT') {
-            extraAttributeString = draft.retailVariant.trim();
+            extraAttributeString = draft.variantSpec.trim();
         } else {
             extraAttributeString = draft.b2bMoq.trim();
         }
@@ -254,20 +260,16 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
                 className="bg-white text-slate-900 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-slate-200 my-8"
             >
                 <div className="border-b border-slate-100 pb-3">
-                    <h3 className="text-lg font-bold text-slate-900">Add Universal SME Product</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                        All fields include strict format &amp; boundary validation across F&amp;B, Retail, and B2B profiles.
-                    </p>
+                    <h3 className="text-lg font-bold text-slate-900">Add Universal Product</h3>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 text-xs">
-                    {/* Industry Selector */}
                     <div className="col-span-2">
                         <label className="font-semibold text-slate-700 block mb-1">Target SME Industry Profile</label>
-                        <VyteDropdown
+                        <VyteDropdown<IndustryProfile>
                             variant="light"
                             value={draft.industry}
-                            onChange={(ind) => {
+                            onChange={(ind: IndustryProfile) => {
                                 setDraft({
                                     ...draft,
                                     industry: ind,
@@ -282,23 +284,13 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
                                 setErrors({});
                             }}
                             options={[
-                                {
-                                    label: 'F&B / Cafe / Grocery (Tracks Batch & Expiry Date)',
-                                    value: 'FNB_PERISHABLE',
-                                },
-                                {
-                                    label: 'Retail & Boutique (Tracks Sizes, Colors & Variants)',
-                                    value: 'RETAIL_VARIANT',
-                                },
-                                {
-                                    label: 'B2B Manufacturing (Tracks MOQ & Lead Time)',
-                                    value: 'B2B_RAW_MATERIAL',
-                                },
+                                { label: 'F&B / Cafe / Grocery (Batch & Expiry)', value: 'FNB_PERISHABLE' },
+                                { label: 'Retail & Boutique (Sizes & Colors)', value: 'RETAIL_VARIANT' },
+                                { label: 'B2B Manufacturing (MOQ & Lead Time)', value: 'B2B_RAW_MATERIAL' },
                             ]}
                         />
                     </div>
 
-                    {/* Product Name */}
                     <div className="col-span-2 sm:col-span-1">
                         <label className="font-semibold text-slate-700 block mb-1">Product Name *</label>
                         <input
@@ -311,12 +303,11 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
                         {renderError('name')}
                     </div>
 
-                    {/* SKU */}
                     <div className="col-span-2 sm:col-span-1">
-                        <label className="font-semibold text-slate-700 block mb-1">SKU / Barcode (Optional)</label>
+                        <label className="font-semibold text-slate-700 block mb-1">SKU / Barcode</label>
                         <input
                             type="text"
-                            placeholder="e.g., FNB-4886 (Auto if blank)"
+                            placeholder="e.g., FNB-4886"
                             value={draft.sku}
                             onChange={(e) => handleChange('sku', e.target.value)}
                             className={getInputClass('sku')}
@@ -324,13 +315,12 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
                         {renderError('sku')}
                     </div>
 
-                    {/* Unit of Measure */}
                     <div>
                         <label className="font-semibold text-slate-700 block mb-1">Unit of Measure (UOM)</label>
-                        <VyteDropdown
+                        <VyteDropdown<string>
                             variant="light"
                             value={draft.uom}
-                            onChange={(val) => handleChange('uom', val)}
+                            onChange={(val: string) => handleChange('uom', val)}
                             options={[
                                 { label: 'Pieces (pcs)', value: 'pcs' },
                                 { label: 'Kilograms (kg)', value: 'kg' },
@@ -341,63 +331,56 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
                         />
                     </div>
 
-                    {/* Selling Price (MYR) */}
                     <div>
-                        <label className="font-semibold text-slate-700 block mb-1">Selling Price (MYR) *</label>
+                        <label className="font-semibold text-slate-700 block mb-1">
+                            Selling Price ({currency}) *
+                        </label>
                         <input
                             type="text"
-                            inputMode="decimal"
                             placeholder="e.g., 45.00"
                             value={draft.priceRM}
-                            onChange={(e) => handleChange('priceRM', e.target.value, true, true)}
+                            onChange={(e) => handleChange('priceRM', e.target.value)}
                             className={getInputClass('priceRM')}
                         />
                         {renderError('priceRM')}
                     </div>
 
-                    {/* Initial Current Stock */}
                     <div>
                         <label className="font-semibold text-slate-700 block mb-1">Initial Current Stock *</label>
                         <input
                             type="text"
-                            inputMode="numeric"
-                            placeholder="e.g., 5"
+                            placeholder="e.g., 10"
                             value={draft.stock}
-                            onChange={(e) => handleChange('stock', e.target.value, true, false)}
+                            onChange={(e) => handleChange('stock', e.target.value)}
                             className={getInputClass('stock')}
                         />
                         {renderError('stock')}
                     </div>
 
-                    {/* Alert Threshold (Min Stock) */}
                     <div>
                         <label className="font-semibold text-slate-700 block mb-1">Alert Threshold (Min Stock) *</label>
                         <input
                             type="text"
-                            inputMode="numeric"
                             placeholder="e.g., 15"
                             value={draft.minThreshold}
-                            onChange={(e) => handleChange('minThreshold', e.target.value, true, false)}
+                            onChange={(e) => handleChange('minThreshold', e.target.value)}
                             className={getInputClass('minThreshold')}
                         />
                         {renderError('minThreshold')}
                     </div>
 
-                    {/* Default Auto-Reorder Qty */}
                     <div className="col-span-2">
-                        <label className="font-semibold text-slate-700 block mb-1">Default Auto-Reorder Quantity *</label>
+                        <label className="font-semibold text-slate-700 block mb-1">Default Reorder Quantity *</label>
                         <input
                             type="text"
-                            inputMode="numeric"
                             placeholder="e.g., 30"
                             value={draft.reorderQty}
-                            onChange={(e) => handleChange('reorderQty', e.target.value, true, false)}
+                            onChange={(e) => handleChange('reorderQty', e.target.value)}
                             className={getInputClass('reorderQty')}
                         />
                         {renderError('reorderQty')}
                     </div>
 
-                    {/* Supplier Business Name */}
                     <div>
                         <label className="font-semibold text-slate-700 block mb-1">Supplier Business Name *</label>
                         <input
@@ -410,7 +393,6 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
                         {renderError('supplierName')}
                     </div>
 
-                    {/* Supplier WhatsApp Number */}
                     <div>
                         <label className="font-semibold text-slate-700 block mb-1">Supplier WhatsApp Number *</label>
                         <input
@@ -423,11 +405,10 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
                         {renderError('supplierContact')}
                     </div>
 
-                    {/* Dynamic Industry Attributes */}
                     {draft.industry === 'FNB_PERISHABLE' && (
                         <>
                             <div>
-                                <label className="font-semibold text-purple-700 block mb-1">Batch Number (F&amp;B) *</label>
+                                <label className="font-semibold text-slate-700 block mb-1">Batch Number *</label>
                                 <input
                                     type="text"
                                     placeholder="e.g., B-2026-10"
@@ -438,7 +419,7 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
                                 {renderError('batchNo')}
                             </div>
                             <div>
-                                <label className="font-semibold text-purple-700 block mb-1">Expiry Date (F&amp;B) *</label>
+                                <label className="font-semibold text-slate-700 block mb-1">Expiry Date *</label>
                                 <input
                                     type="date"
                                     value={draft.expiryDate}
@@ -447,26 +428,53 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
                                 />
                                 {renderError('expiryDate')}
                             </div>
+                            <div className="col-span-2">
+                                <label className="font-semibold text-slate-700 block mb-1">Storage Condition</label>
+                                <VyteDropdown<'Ambient' | 'Chilled' | 'Frozen'>
+                                    variant="light"
+                                    value={draft.storageCondition}
+                                    onChange={(val: 'Ambient' | 'Chilled' | 'Frozen') =>
+                                        setDraft({ ...draft, storageCondition: val })
+                                    }
+                                    options={[
+                                        { label: 'Ambient / Room Temperature', value: 'Ambient' },
+                                        { label: 'Chilled (2°C - 4°C)', value: 'Chilled' },
+                                        { label: 'Frozen (-18°C)', value: 'Frozen' },
+                                    ]}
+                                />
+                            </div>
                         </>
                     )}
 
                     {draft.industry === 'RETAIL_VARIANT' && (
-                        <div className="col-span-2">
-                            <label className="font-semibold text-blue-700 block mb-1">Size / Color Variant Spec *</label>
-                            <input
-                                type="text"
-                                placeholder="e.g., Size: L • Color: Matte Black"
-                                value={draft.retailVariant}
-                                onChange={(e) => handleChange('retailVariant', e.target.value)}
-                                className={getInputClass('retailVariant')}
-                            />
-                            {renderError('retailVariant')}
-                        </div>
+                        <>
+                            <div className="col-span-2">
+                                <label className="font-semibold text-slate-700 block mb-1">Variant Specification *</label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g., Size: L • Color: Matte Black"
+                                    value={draft.variantSpec}
+                                    onChange={(e) => handleChange('variantSpec', e.target.value)}
+                                    className={getInputClass('variantSpec')}
+                                />
+                                {renderError('variantSpec')}
+                            </div>
+                            <div className="col-span-2">
+                                <label className="font-semibold text-slate-700 block mb-1">Serial / Warranty Info</label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g., 1-Year Local Manufacturer Warranty"
+                                    value={draft.serialOrWarranty}
+                                    onChange={(e) => setDraft({ ...draft, serialOrWarranty: e.target.value })}
+                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-medium focus:outline-none focus:border-[#2BB656]"
+                                />
+                            </div>
+                        </>
                     )}
 
                     {draft.industry === 'B2B_RAW_MATERIAL' && (
                         <div className="col-span-2">
-                            <label className="font-semibold text-emerald-700 block mb-1">B2B Order Constraints *</label>
+                            <label className="font-semibold text-slate-700 block mb-1">B2B Order Constraints *</label>
                             <input
                                 type="text"
                                 placeholder="e.g., MOQ: 20 Boxes • Lead Time: 3 Days"
@@ -489,9 +497,9 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
                     </button>
                     <button
                         type="submit"
-                        className="px-4 py-2 text-xs font-bold text-white bg-[#2BB656] hover:bg-emerald-600 rounded-xl shadow-sm transition cursor-pointer"
+                        className="px-4 py-2 text-xs font-bold text-white bg-[#2BB656] hover:bg-emerald-600 rounded-xl shadow-xs transition cursor-pointer"
                     >
-                        Save Product &amp; Check Threshold
+                        Save Product
                     </button>
                 </div>
             </form>

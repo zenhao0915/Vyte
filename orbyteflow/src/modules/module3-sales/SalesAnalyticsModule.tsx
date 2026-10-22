@@ -21,24 +21,27 @@ import {
 import type {
     AnalyzeProcurementRequest,
     AnalyzeProcurementResponse,
+    CurrencyCode,
     GetSalesReviewReportRequest,
     GetSalesReviewReportResponse,
     Product,
 } from '../../types/vyte.ts';
+import { CURRENCY_SYMBOLS } from '../../types/vyte.ts';
 import { orbyteApi } from '../../services/api.ts';
 import { VyteDropdown } from '../../components/common/VyteDropdown.tsx';
 
 interface SalesAnalyticsModuleProps {
     products: Product[];
     userID: string;
+    currency?: CurrencyCode;
     onQueueRestockToOrderModule: (
         product: Product,
         recommendedQty: number,
         aiReason: string
     ) => void;
     onLogAction: (module: string, detail: string) => void;
+    onTriggerLoadingScreen?: (message: string, durationMs?: number) => void;
 }
-
 const MONTH_NAMES = [
     'Jan',
     'Feb',
@@ -67,9 +70,11 @@ type ProcureSortField =
 export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
                                                                               products,
                                                                               userID,
+                                                                              currency = 'MYR',
                                                                               onQueueRestockToOrderModule,
                                                                               onLogAction,
                                                                           }) => {
+    const currencySymbol = CURRENCY_SYMBOLS[currency] || 'RM';
     const currentYear = new Date().getFullYear();
 
     // Toggle bar state for switching between Product Sales Breakdown & AI Recommendations
@@ -194,7 +199,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
             period: periodLabel,
             totalRevenue: Number(totalRevenue.toFixed(2)),
             totalUnitsSold,
-            currency: 'MYR',
+            currency,
             productBreakdown: breakdown,
         };
     }, [
@@ -204,6 +209,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
         filterQuarter,
         filterMonth,
         periodMultiplier,
+        currency,
     ]);
 
     const fallbackProcurementAnalysis: AnalyzeProcurementResponse = useMemo(() => {
@@ -252,7 +258,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
 
         return {
             generatedAt: new Date().toISOString(),
-            aiSummary: `For ${fallbackSalesReport.period}, portfolio revenue reached RM ${fallbackSalesReport.totalRevenue.toLocaleString()} across ${fallbackSalesReport.totalUnitsSold.toLocaleString()} units. At a ${holdingCostPercentage}% holding cost rate and ${targetTurnoverDays}-day turnover target, Vyte AI identified ${highPriorityCount} high-priority SKUs requiring immediate restock to prevent stockout revenue loss while keeping carrying costs optimal.`,
+            aiSummary: `For ${fallbackSalesReport.period}, portfolio revenue reached ${currencySymbol} ${fallbackSalesReport.totalRevenue.toLocaleString()} across ${fallbackSalesReport.totalUnitsSold.toLocaleString()} units. At a ${holdingCostPercentage}% holding cost rate and ${targetTurnoverDays}-day turnover target, Vyte AI identified ${highPriorityCount} high-priority SKUs requiring immediate restock to prevent stockout revenue loss while keeping carrying costs optimal.`,
             procurementRecommendations: recommendations,
         };
     }, [
@@ -264,6 +270,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
         holdingCostPercentage,
         targetTurnoverDays,
         fallbackSalesReport,
+        currencySymbol,
     ]);
 
     const fetchSalesAndProcurement = useCallback(
@@ -314,7 +321,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
                 if (logType === 'manual-report') {
                     onLogAction(
                         'Sales Analytics',
-                        `Synced ${reportRes.data.period} sales report (Total Revenue: RM ${reportRes.data.totalRevenue.toLocaleString()}).`
+                        `Synced ${reportRes.data.period} sales report (Total Revenue: ${currencySymbol} ${reportRes.data.totalRevenue.toLocaleString()}).`
                     );
                 } else if (logType === 'manual-ai') {
                     onLogAction(
@@ -345,6 +352,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
             inputErrors.holdingCost,
             inputErrors.turnoverDays,
             onLogAction,
+            currencySymbol,
         ]
     );
 
@@ -374,7 +382,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
             `Revenue (${reportData.currency})`,
             'Revenue Share (%)',
             'Remaining Stock',
-            'Holding Cost (MYR)',
+            `Holding Cost (${currency})`,
             'Time To Sell Off (Days)',
             `Optimal Stock (${targetTurnoverDays}d)`,
             'Recommended Procure Qty',
@@ -1032,7 +1040,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
                                                     {rec.currentStock}
                                                 </td>
                                                 <td className="py-3.5 px-4 text-slate-700 font-medium">
-                                                    RM {rec.costOfHoldingStock.toFixed(2)}
+                                                    {currencySymbol} {rec.costOfHoldingStock.toFixed(2)}
                                                 </td>
                                                 <td className="py-3.5 px-4">
                                                         <span
@@ -1240,7 +1248,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
                                 Est. Holding Cost
                             </p>
                             <p className="text-base font-extrabold text-amber-600 leading-tight mt-0.5">
-                                RM {totalHoldingCostRM}
+                                {currencySymbol} {totalHoldingCostRM}
                             </p>
                             <span className="text-[10px] text-slate-500 block truncate mt-0.5">
                                 At {holdingCostPercentage}% annual rate
