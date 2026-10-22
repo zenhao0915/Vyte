@@ -19,6 +19,34 @@ export interface OrbyteHrStaff {
     shiftStatus: 'ON_DUTY' | 'BUSY';
 }
 
+// Payload sent to Orbyte HR System when an assigned staff member misses the due date
+export interface OrbyteHrOverdueEscalationPayload {
+    event: 'ORBYTE_HR_TASK_OVERDUE_ESCALATION';
+    escalationId: string;
+    hrTaskId: string;
+    qcAlertId: string;
+    staff: {
+        staffId: string;
+        name: string;
+        department: string;
+        position: string;
+    };
+    taskDetails: {
+        sku: string;
+        productName: string;
+        batchNo: string;
+        actionRequired: string;
+        priority: 'URGENT' | 'HIGH' | 'NORMAL';
+        assignedDueDate: string;
+        currentDate: string;
+        daysOverdue: number;
+        taskStatus: 'UNDONE_PAST_DUE';
+        atRiskValueRM: number;
+    };
+    hrSystemDirective: 'LOG_KPI_BREACH_AND_ESCALATE_SUPERVISOR';
+    dispatchedAt: string;
+}
+
 export interface UserSession {
     userID: string;
     userName: string;
@@ -109,14 +137,21 @@ export interface QCAlert {
     actionLabel: string;
     savedRM: number;
     status: 'PENDING_APPROVAL' | 'ASSIGNED_TO_STAFF' | 'APPROVED_RESOLVED';
-    // Orbyte HR System Integration Fields
+    // Orbyte HR System Integration & Due-Date Tracking Fields
     hrTaskId?: string;
     assignedStaffId?: string;
     assignedStaffName?: string;
+    assignedStaffDepartment?: string;
+    assignedStaffPosition?: string;
     assignedStaffRole?: string;
     assignedPriority?: 'URGENT' | 'HIGH' | 'NORMAL';
+    assignedDueDate?: string; // ISO YYYY-MM-DD
+    completedAtDate?: string; // ISO YYYY-MM-DD
+    completedLate?: boolean;
     hrNotes?: string;
     assignedAt?: string;
+    hrEscalated?: boolean;
+    hrEscalationPayload?: OrbyteHrOverdueEscalationPayload;
 }
 
 export interface InvoiceItem {

@@ -7,6 +7,7 @@ import type {
   ExtractedNlpOrderItem,
   InvoiceItem,
   NewProductForm,
+  OrbyteHrOverdueEscalationPayload,
   OrbyteHrStaff,
   Product,
   QCAlert,
@@ -730,6 +731,7 @@ export default function App() {
       qcId: string,
       staff: OrbyteHrStaff,
       priority: 'URGENT' | 'HIGH' | 'NORMAL',
+      dueDate: string,
       hrNotes: string
   ) => {
     if (!canApprove) {
@@ -755,10 +757,15 @@ export default function App() {
                   hrTaskId,
                   assignedStaffId: staff.staffId,
                   assignedStaffName: staff.name,
+                  assignedStaffDepartment: staff.department,
+                  assignedStaffPosition: staff.position,
                   assignedStaffRole: `${staff.position} (${staff.department})`,
                   assignedPriority: priority,
+                  assignedDueDate: dueDate,
                   hrNotes: hrNotes || q.aiSuggestion,
                   assignedAt: nowTime,
+                  hrEscalated: false,
+                  hrEscalationPayload: undefined,
                 }
                 : q
         )
@@ -766,27 +773,86 @@ export default function App() {
 
     addAuditLog(
         'Orbyte HR Hub',
-        `Dispatched QC Task ${hrTaskId} ("${targetQc.actionLabel}" for ${targetQc.productName} • Batch ${targetQc.batchNo}) to Orbyte HR Staff: ${staff.name} (${staff.staffId} • ${staff.position}) [Priority: ${priority}].`
+        `Dispatched QC Task ${hrTaskId} ("${targetQc.actionLabel}" for ${targetQc.productName} • Batch ${targetQc.batchNo}) to Orbyte HR Staff: ${staff.name} (${staff.staffId}) [Due: ${dueDate} • Priority: ${priority}].`
     );
     pushToast(
         'success',
-        `Task ${hrTaskId} dispatched to ${staff.name} via Orbyte HR System.`
+        `Task ${hrTaskId} assigned to ${staff.name} (Due: ${dueDate}).`
     );
   };
+
+  const handleEscalateOverdueToHr = useCallback(
+      (
+          qcId: string,
+          payload: OrbyteHrOverdueEscalationPayload,
+          simulatedPastDate?: string
+      ) => {
+        setQcAlerts((prev) =>
+            prev.map((q) =>
+                q.id === qcId
+                    ? {
+                      ...q,
+                      assignedDueDate: simulatedPastDate ?? q.assignedDueDate,
+                      hrEscalated: true,
+                      hrEscalationPayload: payload,
+                    }
+                    : q
+            )
+        );
+
+        addAuditLog(
+            'Orbyte HR Escalation',
+            `OVERDUE SLA BREACH: Task ${payload.hrTaskId} assigned to ${payload.staff.name} (${payload.staff.staffId}) passed due date (${payload.taskDetails.assignedDueDate}) while undone. Sent escalation payload ${payload.escalationId} to Orbyte HR System.`
+        );
+        pushToast(
+            'warning',
+            `Overdue task ${payload.hrTaskId} escalated to Orbyte HR System (${payload.staff.name}).`
+        );
+      },
+      [addAuditLog, pushToast]
+  );
 
   const handleCompleteHrQcTask = (qcId: string) => {
     const targetQc = qcAlerts.find((q) => q.id === qcId);
     if (!targetQc) return;
 
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const isCompletedLate = Boolean(
+        targetQc.hrEscalated ||
+        (targetQc.assignedDueDate && targetQc.assignedDueDate < todayIso)
+    );
+
     setQcAlerts((prev) =>
-        prev.map((q) => (q.id === qcId ? { ...q, status: 'APPROVED_RESOLVED' } : q))
+        prev.map((q) =>
+            q.id === qcId
+                ? {
+                  ...q,
+                  status: 'APPROVED_RESOLVED',
+                  completedAtDate: todayIso,
+                  completedLate: isCompletedLate,
+                }
+                : q
+        )
     );
 
     addAuditLog(
         'Orbyte HR Completed',
-        `Orbyte HR Staff ${targetQc.assignedStaffName || 'Operator'} (${targetQc.hrTaskId || 'QC-TASK'}) completed execution for ${targetQc.productName} (${targetQc.batchNo}). Prevented loss: ${currencySymbol} ${(targetQc.savedRM * activeExchangeRate).toFixed(2)}.`
+        `Orbyte HR Staff ${targetQc.assignedStaffName || 'Operator'} (${
+            targetQc.hrTaskId || 'QC-TASK'
+        }) completed task for ${targetQc.productName} (${targetQc.batchNo}) [${
+            isCompletedLate
+                ? `COMPLETED LATE — Past Due Date ${targetQc.assignedDueDate}`
+                : 'Completed On Time'
+        }]. Prevented loss: ${currencySymbol} ${(
+            targetQc.savedRM * activeExchangeRate
+        ).toFixed(2)}.`
     );
-    pushToast('success', `Marked ${targetQc.hrTaskId || targetQc.batchNo} as completed by HR staff.`);
+    pushToast(
+        isCompletedLate ? 'warning' : 'success',
+        isCompletedLate
+            ? `Task ${targetQc.hrTaskId || targetQc.batchNo} marked done (Completed Late — Past Due).`
+            : `Task ${targetQc.hrTaskId || targetQc.batchNo} completed on time by HR staff.`
+    );
   };
 
   const handleAddCustomQCAlert = (newAlert: QCAlert) => {
@@ -1124,6 +1190,7 @@ export default function App() {
                     currency={currency}
                     exchangeRate={activeExchangeRate}
                     onDispatchToHrStaff={handleDispatchQCToHrStaff}
+                    onEscalateOverdueToHr={handleEscalateOverdueToHr}
                     onCompleteHrTask={handleCompleteHrQcTask}
                     onTriggerScan={handleTriggerQCScan}
                     onAddCustomQCAlert={handleAddCustomQCAlert}

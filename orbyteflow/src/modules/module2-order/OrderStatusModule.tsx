@@ -1018,7 +1018,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                 </span>
                                 <p className="font-bold text-slate-900 mt-0.5">{uploadedOrderFileName}</p>
                                 <p className="text-[11px] text-slate-600">
-                                    Customer items have been loaded into the Step 2 Review &amp; Edit table below.
+                                    Customer items have been loaded into the Review & Edit table below.
                                 </p>
                             </div>
                         </div>
@@ -1164,7 +1164,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-purple-200/80 pb-3">
                             <div>
                 <span className="px-2.5 py-0.5 rounded-full bg-purple-600 text-white text-[10px] font-bold uppercase tracking-wider">
-                  Step 2: Human Review &amp; Edit Before Order Creation
+                  Human Review & Edit Before Order Creation
                 </span>
                                 <h4 className="text-sm font-bold text-slate-900 mt-1">
                                     Review Extracted Line Items for {parsedDraft.customerName} (Delivery: {parsedDraft.requestedDate})

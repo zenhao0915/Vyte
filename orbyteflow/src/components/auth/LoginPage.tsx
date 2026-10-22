@@ -1012,8 +1012,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                                     </h3>
                                     <p className="text-[11px] text-emerald-300/80">
                                         {forgotStep === 'REQUEST'
-                                            ? 'Step 1: Verify your work email'
-                                            : 'Step 2: Enter code & new password'}
+                                            ? 'Verify your work email'
+                                            : 'Enter code & new password'}
                                     </p>
                                 </div>
                             </div>
