@@ -31,6 +31,7 @@ interface OrderStatusModuleProps {
     role: UserRole;
     userID: string;
     currency?: CurrencyCode;
+    exchangeRate?: number;
     onApproveCustomerOrder: (
         items: ExtractedNlpOrderItem[],
         customerName: string,
@@ -89,6 +90,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                                                         role,
                                                                         userID,
                                                                         currency = 'MYR',
+                                                                        exchangeRate = 1,
                                                                         onApproveCustomerOrder,
                                                                         onPendingCountChange,
                                                                         onLogAction,
@@ -928,10 +930,10 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                                 )}
                                             </td>
                                             <td className="py-2.5 px-3.5 text-slate-600">
-                                                {currencySymbol} {item.sellingPrice.toFixed(2)}
+                                                {currencySymbol} {(item.sellingPrice * exchangeRate).toFixed(2)}
                                             </td>
                                             <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900">
-                                                {currencySymbol} {item.lineTotal.toFixed(2)}
+                                                {currencySymbol} {(item.lineTotal * exchangeRate).toFixed(2)}
                                             </td>
                                             <td className="py-2.5 px-3.5 text-center">
                                                 <button
@@ -1101,7 +1103,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                                     Order Total
                                                 </span>
                                                 <span className="text-base font-extrabold text-slate-900 whitespace-nowrap">
-                                                    {currencySymbol} {co.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                    {currencySymbol} {(co.subtotal * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                                 </span>
                                             </div>
 
@@ -1333,12 +1335,12 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                                             </td>
 
                                                             <td className="py-2.5 px-3.5 text-slate-600 font-medium">
-                                                                {currencySymbol} {item.sellingPrice.toFixed(2)} / {item.uom}
+                                                                {currencySymbol} {(item.sellingPrice * exchangeRate).toFixed(2)} / {item.uom}
                                                             </td>
 
                                                             <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900">
                                                                 {currencySymbol}{' '}
-                                                                {item.lineTotal.toLocaleString(undefined, {
+                                                                {(item.lineTotal * exchangeRate).toLocaleString(undefined, {
                                                                     minimumFractionDigits: 2,
                                                                 })}
                                                             </td>
@@ -1462,7 +1464,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                             <div>
                                 <span className="text-slate-400 block">Total Amount</span>
                                 <strong className="text-slate-900">
-                                    {currencySymbol} {selectedDetailOrder.subtotal.toFixed(2)}
+                                    {currencySymbol} {(selectedDetailOrder.subtotal * exchangeRate).toFixed(2)}
                                 </strong>
                             </div>
                         </div>
@@ -1500,9 +1502,11 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                         <td className="py-2 px-3 font-mono">{i.SKU}</td>
                                         <td className="py-2 px-3 font-bold">{i.name}</td>
                                         <td className="py-2 px-3">{i.requestedQty}</td>
-                                        <td className="py-2 px-3">{currencySymbol} {i.sellingPrice.toFixed(2)}</td>
+                                        <td className="py-2 px-3">
+                                            {currencySymbol} {(i.sellingPrice * exchangeRate).toFixed(2)}
+                                        </td>
                                         <td className="py-2 px-3 text-right font-bold">
-                                            {currencySymbol} {i.lineTotal.toFixed(2)}
+                                            {currencySymbol} {(i.lineTotal * exchangeRate).toFixed(2)}
                                         </td>
                                     </tr>
                                 ))}

@@ -34,6 +34,7 @@ interface SalesAnalyticsModuleProps {
     products: Product[];
     userID: string;
     currency?: CurrencyCode;
+    exchangeRate?: number;
     onQueueRestockToOrderModule: (
         product: Product,
         recommendedQty: number,
@@ -71,6 +72,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
                                                                               products,
                                                                               userID,
                                                                               currency = 'MYR',
+                                                                              exchangeRate = 1,
                                                                               onQueueRestockToOrderModule,
                                                                               onLogAction,
                                                                           }) => {
@@ -173,7 +175,8 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
         const breakdown = filtered.map((p) => {
             const dailyRate = p.dailyDepletionRate ?? 2.5;
             const unitsSold = Math.round(dailyRate * daysInPeriod * periodMultiplier);
-            const totalSalesAmount = Number((unitsSold * p.priceRM).toFixed(2));
+            const effectivePrice = p.priceRM * exchangeRate;
+            const totalSalesAmount = Number((unitsSold * effectivePrice).toFixed(2));
             return {
                 productID: p.id,
                 SKU: p.sku,
@@ -210,6 +213,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
         filterMonth,
         periodMultiplier,
         currency,
+        exchangeRate,
     ]);
 
     const fallbackProcurementAnalysis: AnalyzeProcurementResponse = useMemo(() => {
@@ -220,7 +224,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
 
         const recommendations = filtered.map((p) => {
             const dailyVelocity = (p.dailyDepletionRate ?? 2.5) * periodMultiplier;
-            const unitCost = p.unitCostRM ?? p.priceRM * 0.62;
+            const unitCost = (p.unitCostRM ?? p.priceRM * 0.62) * exchangeRate;
             const annualHoldingCostPerUnit = unitCost * (holdingCostPercentage / 100);
             const costOfHoldingStock = Number(
                 ((p.stock * annualHoldingCostPerUnit) / periodDivisor).toFixed(2)
@@ -271,6 +275,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
         targetTurnoverDays,
         fallbackSalesReport,
         currencySymbol,
+        exchangeRate,
     ]);
 
     const fetchSalesAndProcurement = useCallback(
@@ -358,7 +363,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
 
     useEffect(() => {
         void fetchSalesAndProcurement('auto');
-    }, [filterYear, filterQuarter, filterMonth, selectedCategory, products]);
+    }, [filterYear, filterQuarter, filterMonth, selectedCategory, products, exchangeRate]);
 
     const handleRefreshSalesReport = async () => {
         await fetchSalesAndProcurement('manual-report');
