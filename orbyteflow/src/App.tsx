@@ -3,7 +3,9 @@ import { useState, useEffect, useCallback } from 'react';
 import type {
   ActiveTab,
   AuditLog,
+  BusinessComplianceProfile,
   CurrencyCode,
+  DocumentVaultItem,
   ExtractedNlpOrderItem,
   InvoiceItem,
   NewProductForm,
@@ -11,15 +13,19 @@ import type {
   OrbyteHrStaff,
   Product,
   QCAlert,
+  RenewalTask,
   UserRole,
   UserSession,
 } from './types/vyte.ts';
 import { CURRENCY_SYMBOLS } from './types/vyte.ts';
 import {
   INITIAL_AUDIT_LOGS,
+  INITIAL_COMPLIANCE_PROFILES,
   INITIAL_INVOICES,
   INITIAL_PRODUCTS,
   INITIAL_QC_ALERTS,
+  INITIAL_RENEWAL_TASKS,
+  INITIAL_VAULT_DOCS,
 } from './data/mockData';
 import { Sidebar } from './components/layout/Sidebar';
 import { HeaderBar } from './components/layout/HeaderBar';
@@ -28,6 +34,7 @@ import { RestockModule } from './modules/module1-restock/RestockModule';
 import { AddProductModal } from './modules/module1-restock/AddProductModal';
 import { QualityControlModule } from './modules/module4-quality/QualityControlModule';
 import { InvoiceModule } from './modules/module5-invoice/InvoiceModule';
+import { ComplianceRenewalModule } from './modules/module6-compliance/ComplianceRenewalModule';
 import { SalesAnalyticsModule } from './modules/module3-sales/SalesAnalyticsModule.tsx';
 import { OrderStatusModule } from './modules/module2-order/OrderStatusModule';
 import { SplashScreen } from './components/SplashScreen';
@@ -42,6 +49,9 @@ const STATE_PRODUCTS_KEY = 'vyte_state_products_v2';
 const STATE_QC_KEY = 'vyte_state_qc_v2';
 const STATE_INVOICES_KEY = 'vyte_state_invoices_v2';
 const STATE_LOGS_KEY = 'vyte_state_logs_v2';
+const STATE_COMPLIANCE_PROFILES_KEY = 'vyte_state_compliance_profiles_v1';
+const STATE_VAULT_DOCS_KEY = 'vyte_state_vault_docs_v1';
+const STATE_RENEWAL_TASKS_KEY = 'vyte_state_renewal_tasks_v1';
 const STATE_TAB_KEY = 'vyte_state_active_tab_v2';
 const STATE_SUBTAB_KEY = 'vyte_state_subtab_v2';
 const STATE_SEARCH_KEY = 'vyte_state_global_search_v2';
@@ -144,6 +154,19 @@ export default function App() {
     }));
   });
 
+  const [complianceProfiles, setComplianceProfiles] = useState<BusinessComplianceProfile[]>(() =>
+      loadPersistedState<BusinessComplianceProfile[]>(
+          STATE_COMPLIANCE_PROFILES_KEY,
+          INITIAL_COMPLIANCE_PROFILES
+      )
+  );
+  const [vaultDocs, setVaultDocs] = useState<DocumentVaultItem[]>(() =>
+      loadPersistedState<DocumentVaultItem[]>(STATE_VAULT_DOCS_KEY, INITIAL_VAULT_DOCS)
+  );
+  const [renewalTasks, setRenewalTasks] = useState<RenewalTask[]>(() =>
+      loadPersistedState<RenewalTask[]>(STATE_RENEWAL_TASKS_KEY, INITIAL_RENEWAL_TASKS)
+  );
+
   const canApprove = role === 'SME_OWNER' || role === 'MANAGER';
   const activeExchangeRate = exchangeRates[currency] ?? 1.0;
   const currencySymbol = CURRENCY_SYMBOLS[currency] || 'RM';
@@ -163,6 +186,18 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(STATE_LOGS_KEY, JSON.stringify(auditLogs));
   }, [auditLogs]);
+
+  useEffect(() => {
+    localStorage.setItem(STATE_COMPLIANCE_PROFILES_KEY, JSON.stringify(complianceProfiles));
+  }, [complianceProfiles]);
+
+  useEffect(() => {
+    localStorage.setItem(STATE_VAULT_DOCS_KEY, JSON.stringify(vaultDocs));
+  }, [vaultDocs]);
+
+  useEffect(() => {
+    localStorage.setItem(STATE_RENEWAL_TASKS_KEY, JSON.stringify(renewalTasks));
+  }, [renewalTasks]);
 
   useEffect(() => {
     localStorage.setItem(STATE_TAB_KEY, JSON.stringify(activeTab));
@@ -206,7 +241,7 @@ export default function App() {
               setExchangeRates(nextRates);
               localStorage.setItem(FX_RATES_STORAGE_KEY, JSON.stringify(nextRates));
               setRateSourceLabel(
-                  `ExchangeRate-API Live • 1 RM = ${nextRates.SGD.toFixed(3)} SGD | ${nextRates.USD.toFixed(3)} USD`
+                  `ExchangeRate-API Live â€¢ 1 RM = ${nextRates.SGD.toFixed(3)} SGD | ${nextRates.USD.toFixed(3)} USD`
               );
               if (notifyUser) {
                 pushToast(
@@ -234,7 +269,7 @@ export default function App() {
               setExchangeRates(nextRates);
               localStorage.setItem(FX_RATES_STORAGE_KEY, JSON.stringify(nextRates));
               setRateSourceLabel(
-                  `ECB Frankfurter Live • 1 RM = ${nextRates.SGD.toFixed(3)} SGD | ${nextRates.USD.toFixed(3)} USD`
+                  `ECB Frankfurter Live â€¢ 1 RM = ${nextRates.SGD.toFixed(3)} SGD | ${nextRates.USD.toFixed(3)} USD`
               );
               if (notifyUser) {
                 pushToast(
@@ -264,7 +299,7 @@ export default function App() {
               setExchangeRates(nextRates);
               localStorage.setItem(FX_RATES_STORAGE_KEY, JSON.stringify(nextRates));
               setRateSourceLabel(
-                  `CDN Forex Live • 1 RM = ${nextRates.SGD.toFixed(3)} SGD | ${nextRates.USD.toFixed(3)} USD`
+                  `CDN Forex Live â€¢ 1 RM = ${nextRates.SGD.toFixed(3)} SGD | ${nextRates.USD.toFixed(3)} USD`
               );
               return;
             }
@@ -286,7 +321,7 @@ export default function App() {
     const rate = exchangeRates[newCurrency] ?? 1.0;
     pushToast(
         'success',
-        `Operating currency set to ${newCurrency} (${CURRENCY_SYMBOLS[newCurrency]}) • 1 MYR = ${rate.toFixed(3)} ${newCurrency}`
+        `Operating currency set to ${newCurrency} (${CURRENCY_SYMBOLS[newCurrency]}) â€¢ 1 MYR = ${rate.toFixed(3)} ${newCurrency}`
     );
   };
 
@@ -375,7 +410,7 @@ export default function App() {
     setSplashDone(false);
     addAuditLog(
         'Auth Hub',
-        `Signed in as ${session.userName} (${session.userID}) • Role: ${session.userType} • Organization: ${session.companyName}.`,
+        `Signed in as ${session.userName} (${session.userID}) â€¢ Role: ${session.userType} â€¢ Organization: ${session.companyName}.`,
         session.role
     );
   };
@@ -571,7 +606,7 @@ export default function App() {
     let parsedBatch: string | undefined = undefined;
     let parsedExpiry: string | undefined = undefined;
     if (newProd.industry === 'FNB_PERISHABLE' && newProd.extraAttr) {
-      const parts = newProd.extraAttr.split('•');
+      const parts = newProd.extraAttr.split('â€¢');
       parsedBatch = parts[0]?.replace('Batch:', '').trim() || 'B-2026-NEW';
       parsedExpiry = parts[1]?.replace('Exp:', '').trim() || '2026-11-15';
     }
@@ -773,7 +808,7 @@ export default function App() {
 
     addAuditLog(
         'Orbyte HR Hub',
-        `Dispatched QC Task ${hrTaskId} ("${targetQc.actionLabel}" for ${targetQc.productName} • Batch ${targetQc.batchNo}) to Orbyte HR Staff: ${staff.name} (${staff.staffId}) [Due: ${dueDate} • Priority: ${priority}].`
+        `Dispatched QC Task ${hrTaskId} ("${targetQc.actionLabel}" for ${targetQc.productName} â€¢ Batch ${targetQc.batchNo}) to Orbyte HR Staff: ${staff.name} (${staff.staffId}) [Due: ${dueDate} â€¢ Priority: ${priority}].`
     );
     pushToast(
         'success',
@@ -841,7 +876,7 @@ export default function App() {
             targetQc.hrTaskId || 'QC-TASK'
         }) completed task for ${targetQc.productName} (${targetQc.batchNo}) [${
             isCompletedLate
-                ? `COMPLETED LATE — Past Due Date ${targetQc.assignedDueDate}`
+                ? `COMPLETED LATE â€” Past Due Date ${targetQc.assignedDueDate}`
                 : 'Completed On Time'
         }]. Prevented loss: ${currencySymbol} ${(
             targetQc.savedRM * activeExchangeRate
@@ -850,7 +885,7 @@ export default function App() {
     pushToast(
         isCompletedLate ? 'warning' : 'success',
         isCompletedLate
-            ? `Task ${targetQc.hrTaskId || targetQc.batchNo} marked done (Completed Late — Past Due).`
+            ? `Task ${targetQc.hrTaskId || targetQc.batchNo} marked done (Completed Late â€” Past Due).`
             : `Task ${targetQc.hrTaskId || targetQc.batchNo} completed on time by HR staff.`
     );
   };
@@ -898,7 +933,7 @@ export default function App() {
     } else {
       addAuditLog(
           'Quality AI Scan',
-          'Completed batch scan — all active perishable batches are monitored.'
+          'Completed batch scan â€” all active perishable batches are monitored.'
       );
       pushToast('info', 'Batch scan complete. All perishable SKUs are up to date.');
     }
@@ -952,7 +987,7 @@ export default function App() {
     setInvoices((prev) => [createdInv, ...prev]);
     addAuditLog(
         'Invoice Uploaded',
-        `Uploaded & AI-classified ${createdInv.invNo} (${createdInv.party} • ${currencySymbol} ${(createdInv.amountRM * activeExchangeRate).toFixed(2)}) -> ${createdInv.aiCategory}.`
+        `Uploaded & AI-classified ${createdInv.invNo} (${createdInv.party} â€¢ ${currencySymbol} ${(createdInv.amountRM * activeExchangeRate).toFixed(2)}) -> ${createdInv.aiCategory}.`
     );
     pushToast('success', `Uploaded & classified invoice ${createdInv.invNo}.`);
   };
@@ -972,6 +1007,9 @@ export default function App() {
   ).length;
   const pendingQcCount = qcAlerts.filter((q) => q.status !== 'APPROVED_RESOLVED').length;
   const pendingInvoiceCount = invoices.filter((i) => i.status === 'NEEDS_REVIEW').length;
+  const pendingComplianceCount = complianceProfiles.filter(
+      (p) => p.complianceStatus === 'EXPIRING_SOON' || p.complianceStatus === 'EXPIRED'
+  ).length;
 
   if (isValidatingRefreshSession) {
     return <LoadingScreen isOpen={true} message="Validating active Vyte session..." />;
@@ -1012,6 +1050,7 @@ export default function App() {
             pendingOrderCount={pendingCustomerOrderCount}
             pendingQcCount={pendingQcCount}
             pendingInvoiceCount={pendingInvoiceCount}
+            pendingComplianceCount={pendingComplianceCount}
             auditLogCount={auditLogs.length}
             totalProductCount={products.length}
             userSession={userSession}
@@ -1207,6 +1246,23 @@ export default function App() {
                     onToggleInvoicePaid={handleToggleInvoicePaid}
                     onAddValidatedInvoice={handleAddValidatedInvoice}
                     onBatchImportInvoices={handleBatchImportInvoices}
+                />
+            )}
+
+            {activeTab === 'mod6' && (
+                <ComplianceRenewalModule
+                    profiles={complianceProfiles}
+                    setProfiles={setComplianceProfiles}
+                    vaultDocs={vaultDocs}
+                    setVaultDocs={setVaultDocs}
+                    renewalTasks={renewalTasks}
+                    setRenewalTasks={setRenewalTasks}
+                    role={role}
+                    userID={userSession.userID}
+                    currency={currency}
+                    exchangeRate={activeExchangeRate}
+                    onLogAction={addAuditLog}
+                    onTriggerLoadingScreen={handleTriggerLoadingScreen}
                 />
             )}
 

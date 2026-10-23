@@ -102,6 +102,10 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             title: 'Smart Invoices & AI Categorization',
             subtitle: 'Photo OCR / Excel upload, supplier bills & customer receivable verification',
         },
+        mod6: {
+            title: 'Business License & Compliance Renewal',
+            subtitle: 'Real-time SSM lookup, centralized document vault & concierge/RPA PBT renewal filing',
+        },
         logs: {
             title: 'History Log',
             subtitle: 'Centralized immutable audit trail across all modules and role permissions',

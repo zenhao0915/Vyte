@@ -1,5 +1,14 @@
 // src/data/mockData.ts
-import type { Product, QCAlert, InvoiceItem, AuditLog, AutoOrderSuggestion } from '../types/vyte.ts';
+import type {
+    Product,
+    QCAlert,
+    InvoiceItem,
+    AuditLog,
+    AutoOrderSuggestion,
+    BusinessComplianceProfile,
+    DocumentVaultItem,
+    RenewalTask,
+} from '../types/vyte.ts';
 
 export const INITIAL_PRODUCTS: Product[] = [
     {
@@ -268,5 +277,129 @@ export const INITIAL_AUDIT_LOGS: AuditLog[] = [
         module: 'Auto Restock',
         role: 'OPERATIONS_STAFF',
         detail: 'Stock drop trigger detected for FNB-4886 (8 kg left vs 15 kg min threshold).',
+    },
+];
+
+// ============================================================================
+// MODULE 6: BUSINESS LICENSE & COMPLIANCE RENEWAL INITIAL MOCK DATA
+// ============================================================================
+
+export const INITIAL_COMPLIANCE_PROFILES: BusinessComplianceProfile[] = [
+    {
+        registrationNo: '202401048291',
+        companyName: 'ACME TECH SDN. BHD.',
+        companyType: 'SDN_BHD',
+        ssmExpiryDate: '2027-02-15',
+        councilName: 'MBPJ',
+        licenseType: 'PREMISE_LICENSE',
+        licenseExpiryDate: '2026-11-30',
+        complianceStatus: 'EXPIRING_SOON',
+        autoAlertEnabled: true,
+    },
+    {
+        registrationNo: '202301019482',
+        companyName: 'KLANG VALLEY ROASTERS SDN. BHD.',
+        companyType: 'SDN_BHD',
+        ssmExpiryDate: '2026-12-10',
+        councilName: 'DBKL',
+        licenseType: 'FOOD_ESTABLISHMENT',
+        licenseExpiryDate: '2026-11-14',
+        complianceStatus: 'EXPIRING_SOON',
+        autoAlertEnabled: true,
+    },
+    {
+        registrationNo: '202503088120',
+        companyName: 'ECOPACK MALAYSIA ENTERPRISE',
+        companyType: 'ENTERPRISE',
+        ssmExpiryDate: '2026-10-18',
+        councilName: 'MBSA',
+        licenseType: 'SIGNBOARD_LICENSE',
+        licenseExpiryDate: '2026-10-15',
+        complianceStatus: 'EXPIRED',
+        autoAlertEnabled: true,
+    },
+    {
+        registrationNo: '202204005119',
+        companyName: 'COOLCHAIN LOGISTICS PLT',
+        companyType: 'LLP',
+        ssmExpiryDate: '2027-06-30',
+        councilName: 'MBPJ',
+        licenseType: 'PREMISE_LICENSE',
+        licenseExpiryDate: '2027-05-20',
+        complianceStatus: 'ACTIVE',
+        autoAlertEnabled: true,
+    },
+];
+
+export const INITIAL_VAULT_DOCS: DocumentVaultItem[] = [
+    {
+        docID: 'DOC-99401',
+        registrationNo: '202401048291',
+        docType: 'TENANCY_AGREEMENT',
+        fileUrl: 'https://storage.local/compliance/tenancy_2026.pdf',
+        fileSizeKb: 1420,
+        effectiveDate: '2026-01-01',
+        expiryDate: '2028-12-31',
+        uploadedAt: '2026-10-22T19:57:00Z',
+        uploadedBy: 'M067',
+    },
+    {
+        docID: 'DOC-99388',
+        registrationNo: '202401048291',
+        docType: 'SSM_CERT_FORM_9',
+        fileUrl: 'https://storage.local/compliance/ssm_form9_202401048291.pdf',
+        fileSizeKb: 640,
+        effectiveDate: '2026-02-15',
+        expiryDate: '2027-02-15',
+        uploadedAt: '2026-10-20T11:20:00Z',
+        uploadedBy: 'M067',
+    },
+    {
+        docID: 'DOC-99350',
+        registrationNo: '202401048291',
+        docType: 'FLOOR_PLAN',
+        fileUrl: 'https://storage.local/compliance/premise_floorplan_renovated.pdf',
+        fileSizeKb: 2180,
+        effectiveDate: '2026-06-01',
+        expiryDate: '2029-06-01',
+        uploadedAt: '2026-10-18T09:15:00Z',
+        uploadedBy: 'M067',
+    },
+    {
+        docID: 'DOC-99312',
+        registrationNo: '202401048291',
+        docType: 'FIRE_SAFETY_CERT',
+        fileUrl: 'https://storage.local/compliance/bomba_endorsement_2026.pdf',
+        fileSizeKb: 890,
+        effectiveDate: '2026-03-10',
+        expiryDate: '2027-03-10',
+        uploadedAt: '2026-10-15T14:40:00Z',
+        uploadedBy: 'M067',
+    },
+];
+
+export const INITIAL_RENEWAL_TASKS: RenewalTask[] = [
+    {
+        renewalID: 'REN-2026-0041',
+        registrationNo: '202401048291',
+        companyName: 'ACME TECH SDN. BHD.',
+        councilName: 'MBPJ',
+        licenseType: 'PREMISE_LICENSE',
+        filingMode: 'CONCIERGE_MANUAL_SUBMISSION',
+        status: 'ASSIGNED_TO_AGENT',
+        assignedAgentID: 'AGENT_DESK_03',
+        pbtPortalUrl: 'https://e-lesen.mbpj.gov.my',
+        submissionReferenceNo: null,
+        compiledSubmissionPdfUrl: 'https://storage.local/packets/MBPJ_REN_2026_0041.pdf',
+        generatedChecklist: [
+            { step: 1, name: 'SSM Form 9 Validated', isCompleted: true },
+            { step: 2, name: 'Tenancy Agreement Stamp Duty Attached', isCompleted: true },
+            { step: 3, name: 'BOMBA Fire Safety Endorsement', isCompleted: false },
+        ],
+        targetDeadline: '2026-11-20',
+        renewalFee: 450.0,
+        currency: 'MYR',
+        internalNotes: 'Premise renovation completed; updated floor plan attached.',
+        createdAt: '2026-10-22T19:57:00Z',
     },
 ];

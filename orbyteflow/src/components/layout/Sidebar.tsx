@@ -35,6 +35,7 @@ interface SidebarProps {
     pendingOrderCount: number;
     pendingQcCount: number;
     pendingInvoiceCount: number;
+    pendingComplianceCount: number;
     auditLogCount: number;
     totalProductCount: number;
     userSession: UserSession | null;
@@ -53,6 +54,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                                     pendingOrderCount,
                                                     pendingQcCount,
                                                     pendingInvoiceCount,
+                                                    pendingComplianceCount,
                                                     auditLogCount,
                                                     userSession,
                                                     onLogout,
@@ -126,6 +128,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             iconColor: 'text-emerald-600',
             badge: String(pendingInvoiceCount),
             badgeClass: 'bg-emerald-100 text-emerald-700',
+        },
+        {
+            id: 'mod6' as ActiveTab,
+            label: 'License & Compliance',
+            icon: ShieldCheck,
+            iconColor: 'text-teal-600',
+            badge: String(pendingComplianceCount),
+            badgeClass: 'bg-teal-100 text-teal-800',
         },
         {
             id: 'logs' as ActiveTab,
