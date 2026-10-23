@@ -222,6 +222,7 @@ object ProductService {
         attr.error?.let { return ProductResult.Fail(HttpStatusCode.BadRequest, it) }
 
         val id = newId()
+        val expiry = form.expiryDate?.ifBlank { null } ?: attr.expiryDate
         val entity = ProductEntity(
             id = id,
             sku = sku,
@@ -231,18 +232,19 @@ object ProductService {
             safeThreshold = minThreshold,
             costPrice = form.unitCostRM ?: round2(priceRM * 0.6),
             sellingPrice = priceRM,
-            expiryDate = attr.expiryDate.orEmpty()
+            expiryDate = expiry.orEmpty()
         )
         val ext = ProductExtras(
             industry = industry,
             uom = form.uom!!.trim(),
             reorderQty = form.reorderQty!!,
-            leadTimeDays = attr.leadTimeDays,
-            moq = attr.moq,
+            leadTimeDays = form.leadTimeDays ?: attr.leadTimeDays ?: 2,
+            moq = form.moq ?: attr.moq ?: 10,
             supplierName = form.supplierName.orEmpty(),
             supplierContact = form.supplierContact.orEmpty(),
-            batchNo = attr.batchNo,
-            variantSpec = attr.variantSpec,
+            batchNo = form.batchNo?.ifBlank { null } ?: attr.batchNo,
+            variantSpec = form.variantSpec?.ifBlank { null } ?: attr.variantSpec,
+            photoUrl = form.photoUrl?.ifBlank { null },
             restockStatus = if (stock <= minThreshold) "TRIGGERED_PENDING_APPROVAL" else "HEALTHY"
         )
         val opening = newMovement(id, "OPENING", stock, stock, "Opening stock", "system")

@@ -3,6 +3,7 @@ package com.hazendust.vyte.manager
 import com.hazendust.vyte.route.audit.AuditController
 import com.hazendust.vyte.route.invoice.InvoiceController
 import com.hazendust.vyte.route.jobs.JobsController
+import com.hazendust.vyte.route.migration.MigrationController
 import com.hazendust.vyte.route.order.OrderController
 import com.hazendust.vyte.route.product.ProductController
 import com.hazendust.vyte.route.qc.QCController
@@ -24,7 +25,8 @@ object RouteManager {
         InvoiceController,
         AuditController,
         JobsController,
-        RestockController
+        RestockController,
+        MigrationController
     )
 
     fun registerAll(route: Route) {

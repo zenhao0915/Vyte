@@ -27,6 +27,8 @@ class TenantWorkspace(val tenantId: String) {
     val invoiceExtras = ConcurrentHashMap<String, InvoiceExtras>()
     val auditLogs = CopyOnWriteArrayList<AuditLogEntity>()
     val ownAuditIds = ConcurrentHashMap.newKeySet<String>()
+    val complianceProfiles = CopyOnWriteArrayList<com.hazendust.vyte.route.migration.ComplianceProfileDto>()
+    var transitionMode: String = "COPILOT"
 
     val qcAlerts = CopyOnWriteArrayList<QCAlert>()
     val qcAlertProductIds = ConcurrentHashMap<String, String>()

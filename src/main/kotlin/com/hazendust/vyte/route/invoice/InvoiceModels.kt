@@ -76,7 +76,8 @@ data class UpdateInvoiceRequest(
 @Serializable
 data class VerifyInvoiceRequest(
     val userID: String = "",
-    val role: String = ""
+    val role: String = "",
+    val aiCategory: String? = null
 )
 
 /**

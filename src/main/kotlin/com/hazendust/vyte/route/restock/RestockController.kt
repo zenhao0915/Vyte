@@ -29,7 +29,6 @@ object RestockController : BaseRouteController {
             call.respond(HttpStatusCode.OK, mapOf("status" to "RESET_OK", "workspaceId" to WorkspaceContext.currentId()))
         }
 
-        // 1.1 & 1.2 Restock Endpoints
         route.post("/api/restock/contact-supplier") {
             val req = call.receiveOrNull<ContactSupplierRequest>()
                 ?: return@post call.respondError(HttpStatusCode.BadRequest, "Invalid JSON body")
@@ -37,9 +36,18 @@ object RestockController : BaseRouteController {
                 return@post call.respondError(HttpStatusCode.BadRequest, "poNumber and supplierName are required")
             }
 
-            val prod = DataStore.products.values.firstOrNull { req.messageBody.contains(it.sku) || req.messageBody.contains(it.name) }
-            if (prod != null) ProductService.approveRestock(prod.id)
-            AuditService.log(AuditService.PRODUCTS, AuditService.SME_OWNER, "Contacted ${req.supplierName} via ${req.channel} for ${req.poNumber}.")
+            val prod = if (req.productId.isNotBlank()) {
+                DataStore.products[req.productId]
+            } else {
+                DataStore.products.values.firstOrNull { req.messageBody.contains(it.sku) || req.messageBody.contains(it.name) }
+            }
+            if (prod != null) {
+                if (req.reorderQty != null && req.reorderQty > 0) {
+                    ProductService.update(prod.id, com.hazendust.vyte.route.product.UpdateProductRequest(reorderQty = req.reorderQty))
+                }
+                ProductService.approveRestock(prod.id)
+            }
+            AuditService.log(AuditService.PRODUCTS, req.role.ifBlank { AuditService.SME_OWNER }, "Contacted ${req.supplierName} via ${req.channel} for ${req.poNumber}.")
             call.respond(ContactSupplierResponse(req.poNumber, "SENT", OffsetDateTime.now().toString(), 200, "Dispatched via ${req.channel}"))
         }
 
@@ -51,8 +59,19 @@ object RestockController : BaseRouteController {
             }
             val pid = req.productId.ifBlank { req.productid }
             val res = ProductService.confirmDelivery(pid, req.quantity, req.userID)
-            val ok = res is ProductResult.Ok
-            call.respond(ConfirmRestockResponse(req.poNumber, if (ok) "CONFIRMED" else "PROCESSED", "DELIVERED", true, "Restock confirmed", OffsetDateTime.now().toString()))
+            val ok = res as? ProductResult.Ok
+            call.respond(
+                ConfirmRestockResponse(
+                    poNumber = req.poNumber,
+                    status = if (ok != null) "CONFIRMED" else "PROCESSED",
+                    confirmationStatus = "DELIVERED",
+                    isConfirmed = true,
+                    message = "Restock confirmed",
+                    updatedAt = OffsetDateTime.now().toString(),
+                    backendProduct = ok?.product,
+                    backendInvoice = ok?.invoice
+                )
+            )
         }
 
         // 2.1 & 2.2 Sales Review Endpoints

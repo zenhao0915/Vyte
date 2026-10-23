@@ -37,7 +37,8 @@ data class Product(
     val batchNo: String? = null,
     val expiryDate: String? = null,
     val variantSpec: String? = null,
-    val restockStatus: String // "HEALTHY", "TRIGGERED_PENDING_APPROVAL", "SUPPLIER_CONTACTED", "CONFIRMED"
+    val restockStatus: String, // "HEALTHY", "TRIGGERED_PENDING_APPROVAL", "SUPPLIER_CONTACTED", "CONFIRMED"
+    val photoUrl: String? = null
 )
 
 /**
@@ -73,7 +74,13 @@ data class NewProductForm(
     val unitCostRM: Double? = null,
     val supplierName: String? = null,
     val supplierContact: String? = null,
-    val extraAttr: String? = null
+    val extraAttr: String? = null,
+    val batchNo: String? = null,
+    val expiryDate: String? = null,
+    val variantSpec: String? = null,
+    val leadTimeDays: Int? = null,
+    val moq: Int? = null,
+    val photoUrl: String? = null
 )
 
 /**
@@ -176,7 +183,8 @@ data class ProductExtras(
     val batchNo: String? = null,
     val variantSpec: String? = null,
     val restockStatus: String = "HEALTHY",
-    val archived: Boolean = false
+    val archived: Boolean = false,
+    val photoUrl: String? = null
 )
 
 /**

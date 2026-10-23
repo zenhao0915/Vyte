@@ -206,16 +206,21 @@ object InvoiceService {
     }
 
     @Synchronized
-    fun verify(id: String): InvoiceResult {
+    fun verify(id: String, updatedCategory: String? = null): InvoiceResult {
         val entity = entityOf(id) ?: return InvoiceResult.Fail(HttpStatusCode.NotFound, "Invoice $id not found")
         val ext = extrasFor(entity)
         if (ext.status == "VERIFIED") {
             return InvoiceResult.Fail(HttpStatusCode.Conflict, "Invoice $id is already VERIFIED")
         }
+        val finalEntity = if (!updatedCategory.isNullOrBlank()) {
+            val copy = entity.copy(category = updatedCategory.trim())
+            val idx = DataStore.invoices.indexOfFirst { it.id == id }
+            if (idx >= 0) DataStore.invoices[idx] = copy
+            copy
+        } else entity
         extras[id] = ext.copy(status = "VERIFIED")
-        // Only mirror into InvoiceEntity.status for invoices this module owns; Order module invoices keep their own status
-        if (ext.createdByInvoiceModule) entity.status = "VERIFIED"
-        return InvoiceResult.Ok(toItem(entity))
+        if (ext.createdByInvoiceModule) finalEntity.status = "VERIFIED"
+        return InvoiceResult.Ok(toItem(finalEntity))
     }
 
     /** paid = false undoes a payment. */
