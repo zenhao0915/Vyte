@@ -2,16 +2,16 @@ package com.hazendust.vyte.route.product
 
 import com.hazendust.vyte.data.DataStore
 import com.hazendust.vyte.data.ProductEntity
+import com.hazendust.vyte.data.WorkspaceContext
 import com.hazendust.vyte.route.audit.AuditService
 import com.hazendust.vyte.route.invoice.InvoiceItem
 import com.hazendust.vyte.route.invoice.InvoiceService
-import io.ktor.http.HttpStatusCode
+import io.ktor.http.*
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeParseException
 import java.time.temporal.ChronoUnit
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
@@ -36,13 +36,11 @@ object ProductService {
     private val MALAYSIA: ZoneId = ZoneId.of("Asia/Kuala_Lumpur")
     private val TRIGGERABLE = setOf("HEALTHY", "CONFIRMED")
 
-    private val extras = ConcurrentHashMap<String, ProductExtras>()
-    private val archivedEntities = ConcurrentHashMap<String, ProductEntity>()
-    private val movements = ConcurrentHashMap<String, CopyOnWriteArrayList<StockMovement>>()
-
-    // Stock as last saved by this module; a different value in DataStore means another module changed it directly
-    private val lastKnownStock = ConcurrentHashMap<String, Int>()
-    private val locks = ConcurrentHashMap<String, Any>()
+    private val extras get() = WorkspaceContext.current().productExtras
+    private val archivedEntities get() = WorkspaceContext.current().archivedProducts
+    private val movements get() = WorkspaceContext.current().movements
+    private val lastKnownStock get() = WorkspaceContext.current().lastKnownStock
+    private val locks get() = WorkspaceContext.current().locks
     private val movementSeq = AtomicLong()
 
     @Volatile
@@ -80,22 +78,25 @@ object ProductService {
             .filter { !lastKnownStock.containsKey(it.id) }
             .forEach { synchronized(lockFor(it.id)) { bootstrap(it) } }
 
-        println("[Products] Loaded ${DataStore.products.size} active / ${archivedEntities.size} archived products, " +
-            "${movements.values.sumOf { it.size }} stock movements (persistent: ${ProductRepository.enabled})")
+        println(
+            "[Products] Loaded ${DataStore.products.size} active / ${archivedEntities.size} archived products, " +
+                "${movements.values.sumOf { it.size }} stock movements (persistent: ${ProductRepository.enabled})"
+        )
     }
 
     // ============================== Reads ==============================
 
     fun list(industry: String?, search: String?, includeArchived: Boolean = false): List<Product> {
         val keyword = search?.trim().orEmpty()
-        val ids = DataStore.products.keys.toList() + if (includeArchived) archivedEntities.keys.toList() else emptyList()
+        val ids =
+            DataStore.products.keys.toList() + if (includeArchived) archivedEntities.keys.toList() else emptyList()
         return ids.sorted()
             .mapNotNull { find(it) }
             .filter { industry == null || industry == "ALL" || it.industry == industry }
             .filter {
                 keyword.isEmpty() ||
-                    it.name.contains(keyword, ignoreCase = true) ||
-                    it.sku.contains(keyword, ignoreCase = true)
+                        it.name.contains(keyword, ignoreCase = true) ||
+                        it.sku.contains(keyword, ignoreCase = true)
             }
     }
 
@@ -132,8 +133,7 @@ object ProductService {
 
     /** True if the product exists, is not archived and has at least qty in stock. */
     fun checkStock(productId: String, qty: Int): Boolean {
-        if (qty <= 0 || isArchived(productId)) return false
-        return (find(productId)?.stock ?: return false) >= qty
+        return !(qty <= 0 || isArchived(productId)) && (find(productId)?.stock ?: return false) >= qty
     }
 
     /** Records a SALE of qty units. Returns false (and changes nothing) if the product is missing or stock is insufficient. */
@@ -183,7 +183,12 @@ object ProductService {
                 AuditService.log(
                     module = AuditService.PRODUCTS,
                     role = AuditService.OPERATIONS_STAFF,
-                    detail = "Daily restock check: ${entity.name} (${ext.restockStatus}) - ${triggerNote(entity, newExt)}"
+                    detail = "Daily restock check: ${entity.name} (${ext.restockStatus}) - ${
+                        triggerNote(
+                            entity,
+                            newExt
+                        )
+                    }"
                 )
             }
         }
@@ -387,7 +392,10 @@ object ProductService {
         AuditService.log(
             module = AuditService.PRODUCTS,
             role = role,
-            detail = describeMovement(entity, newExt, movement) + if (triggered) " " + triggerNote(entity, newExt) else ""
+            detail = describeMovement(entity, newExt, movement) + if (triggered) " " + triggerNote(
+                entity,
+                newExt
+            ) else ""
         )
         return ProductResult.Ok(toProduct(entity))
     }
@@ -418,7 +426,8 @@ object ProductService {
     /** Saves a product that exists in DataStore but was never saved by this module (e.g. DataStore's own seed). */
     private fun bootstrap(entity: ProductEntity) {
         val ext = extrasFor(entity)
-        val opening = newMovement(entity.id, "OPENING", entity.stock, entity.stock, "Opening stock (imported)", "system")
+        val opening =
+            newMovement(entity.id, "OPENING", entity.stock, entity.stock, "Opening stock (imported)", "system")
         if (saveOrFail(ProductRecord(entity, ext), opening) != null) return
         movementsOf(entity.id).add(opening)
         lastKnownStock[entity.id] = entity.stock
@@ -432,7 +441,11 @@ object ProductService {
         ProductResult.Fail(HttpStatusCode.InternalServerError, "Could not save product ${record.entity.id}")
     }
 
-    private data class SalesStats(val dailyDepletionRate: Double, val daysUntilStockout: Double?, val performance: String)
+    private data class SalesStats(
+        val dailyDepletionRate: Double,
+        val daysUntilStockout: Double?,
+        val performance: String
+    )
 
     /** From SALE movements of the last 30 days; pending is a movement not yet added to the history. */
     private fun salesStats(id: String, stock: Int, pending: StockMovement? = null): SalesStats {
@@ -454,7 +467,11 @@ object ProductService {
     }
 
     /** HEALTHY/CONFIRMED -> TRIGGERED_PENDING_APPROVAL when at/below min, or when stock runs out within the lead time. */
-    private fun recheckTrigger(entity: ProductEntity, ext: ProductExtras, pending: StockMovement? = null): ProductExtras {
+    private fun recheckTrigger(
+        entity: ProductEntity,
+        ext: ProductExtras,
+        pending: StockMovement? = null
+    ): ProductExtras {
         if (ext.restockStatus !in TRIGGERABLE) return ext
         val stockout = salesStats(entity.id, entity.stock, pending).daysUntilStockout
         val belowMin = entity.stock <= entity.safeThreshold
@@ -538,7 +555,14 @@ object ProductService {
     private fun movementsOf(id: String): CopyOnWriteArrayList<StockMovement> =
         movements.computeIfAbsent(id) { CopyOnWriteArrayList() }
 
-    private fun newMovement(productId: String, type: String, change: Int, stockAfter: Int, reason: String, userID: String) =
+    private fun newMovement(
+        productId: String,
+        type: String,
+        change: Int,
+        stockAfter: Int,
+        reason: String,
+        userID: String
+    ) =
         StockMovement(
             id = "MOV-${System.currentTimeMillis()}-${movementSeq.incrementAndGet()}",
             productId = productId,
@@ -551,7 +575,12 @@ object ProductService {
         )
 
     private fun skuTaken(sku: String, exceptId: String?): Boolean =
-        (DataStore.products.values + archivedEntities.values).any { it.id != exceptId && it.sku.equals(sku, ignoreCase = true) }
+        (DataStore.products.values + archivedEntities.values).any {
+            it.id != exceptId && it.sku.equals(
+                sku,
+                ignoreCase = true
+            )
+        }
 
     private fun round1(value: Double) = Math.round(value * 10) / 10.0
 
@@ -598,13 +627,14 @@ object ProductService {
 
         return when (industry) {
             "FNB_PERISHABLE" -> {
-                // Stop at the separator or at "Exp:", whichever comes first, then drop any trailing separator chars
                 val batchNo = Regex("""Batch:\s*(.+?)\s*(?:Exp:|$)""", RegexOption.IGNORE_CASE)
                     .find(text)?.groupValues?.get(1)
-                    ?.substringBefore('•')?.substringBefore('|')
+                    ?.substringBefore('\u2022')?.substringBefore('|')
                     ?.trim()?.trimEnd { !it.isLetterOrDigit() }?.ifEmpty { null }
-                val exp = Regex("""Exp:\s*([^•|\s]+)""", RegexOption.IGNORE_CASE)
+
+                val exp = Regex("""Exp:\s*([^\u2022|\s]+)""", RegexOption.IGNORE_CASE)
                     .find(text)?.groupValues?.get(1)?.trim()
+
                 if (exp != null) {
                     try {
                         LocalDate.parse(exp)
@@ -633,14 +663,55 @@ object ProductService {
         if (DataStore.products.isNotEmpty() || archivedEntities.isNotEmpty()) return
         val today = LocalDate.now(MALAYSIA)
         listOf(
-            NewProductForm("Dutch Lady Fresh Milk 1L", "FNB-1001", "Dairy", "FNB_PERISHABLE", "bottle", 40, 25, 60, 8.5, 6.2,
-                "Berjaya Wholesale Hub", "+60123456781", "Batch: B-${today.year}-${today.monthValue} • Exp: ${today.plusDays(12)}"),
-            NewProductForm("Gardenia Original Classic Bread", "FNB-1002", "Bakery", "FNB_PERISHABLE", "loaf", 12, 15, 30, 4.2, 2.9,
-                "Ah Hock Grocers Dist", "+60123456782", "Batch: B-${today.year}-${today.monthValue} • Exp: ${today.plusDays(4)}"),
-            NewProductForm("Cotton Polo Tee", "RTL-2001", "Apparel", "RETAIL_VARIANT", "pcs", 35, 10, 20, 39.9, 18.0,
-                "Klang Valley Logistics Hub", "+60123456783", "Size M • Navy"),
-            NewProductForm("Food-Grade Packaging Box 12x12", "B2B-3001", "Packaging", "B2B_RAW_MATERIAL", "box", 18, 20, 100, 1.2, 0.7,
-                "Klang Valley Logistics Hub", "+60123456783", "MOQ: 20 Boxes • Lead Time: 3 Days")
+            NewProductForm(
+                "Dutch Lady Fresh Milk 1L",
+                "FNB-1001",
+                "Dairy",
+                "FNB_PERISHABLE",
+                "bottle",
+                40,
+                25,
+                60,
+                8.5,
+                6.2,
+                "Berjaya Wholesale Hub",
+                "+60123456781",
+                "Batch: B-${today.year}-${today.monthValue} • Exp: ${today.plusDays(12)}"
+            ),
+            NewProductForm(
+                "Gardenia Original Classic Bread",
+                "FNB-1002",
+                "Bakery",
+                "FNB_PERISHABLE",
+                "loaf",
+                12,
+                15,
+                30,
+                4.2,
+                2.9,
+                "Ah Hock Grocers Dist",
+                "+60123456782",
+                "Batch: B-${today.year}-${today.monthValue} • Exp: ${today.plusDays(4)}"
+            ),
+            NewProductForm(
+                "Cotton Polo Tee", "RTL-2001", "Apparel", "RETAIL_VARIANT", "pcs", 35, 10, 20, 39.9, 18.0,
+                "Klang Valley Logistics Hub", "+60123456783", "Size M • Navy"
+            ),
+            NewProductForm(
+                "Food-Grade Packaging Box 12x12",
+                "B2B-3001",
+                "Packaging",
+                "B2B_RAW_MATERIAL",
+                "box",
+                18,
+                20,
+                100,
+                1.2,
+                0.7,
+                "Klang Valley Logistics Hub",
+                "+60123456783",
+                "MOQ: 20 Boxes • Lead Time: 3 Days"
+            )
         ).forEach { create(it) }
     }
 }

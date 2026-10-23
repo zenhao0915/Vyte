@@ -33,7 +33,7 @@ object QCController : BaseRouteController {
                 val id = call.parameters["id"].orEmpty()
                 val req = call.receiveOrNull<ApproveQCAlertRequest>()
                     ?: return@post call.respondError(HttpStatusCode.BadRequest, "Invalid JSON body")
-                if (req.role != "SME_OWNER") {
+                if (req.role !in setOf(AuditService.SME_OWNER, AuditService.MANAGER)) {
                     return@post call.respondError(HttpStatusCode.Forbidden, "Only SME_OWNER can approve QC actions")
                 }
 

@@ -14,6 +14,7 @@ import java.time.format.DateTimeParseException
  */
 object AuditService {
     const val SME_OWNER = "SME_OWNER"
+    const val MANAGER = "MANAGER"
     const val OPERATIONS_STAFF = "OPERATIONS_STAFF"
 
     const val PRODUCTS = "Products"

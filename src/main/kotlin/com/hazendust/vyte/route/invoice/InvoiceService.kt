@@ -2,6 +2,7 @@ package com.hazendust.vyte.route.invoice
 
 import com.hazendust.vyte.data.DataStore
 import com.hazendust.vyte.data.InvoiceEntity
+import com.hazendust.vyte.data.WorkspaceContext
 import io.ktor.http.HttpStatusCode
 import java.io.File
 import java.time.LocalDate
@@ -30,7 +31,7 @@ object InvoiceService {
     private val MALAYSIA: ZoneId = ZoneId.of("Asia/Kuala_Lumpur")
     private val DISPLAY_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH)
 
-    private val extras = ConcurrentHashMap<String, InvoiceExtras>()
+    private val extras get() = WorkspaceContext.current().invoiceExtras
 
     /** Creates a SUPPLIER_PAYABLE invoice (status NEEDS_REVIEW, unpaid, due in 30 days). sourceRef = relatedRef. */
     fun createPayable(

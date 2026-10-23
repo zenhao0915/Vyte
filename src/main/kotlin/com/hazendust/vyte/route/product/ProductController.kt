@@ -157,7 +157,7 @@ object ProductController : BaseRouteController {
                 val id = call.parameters["id"].orEmpty()
                 val req = call.receiveOrNull<OwnerActionRequest>()
                     ?: return@delete call.respondError(HttpStatusCode.BadRequest, "Invalid JSON body")
-                if (req.role != AuditService.SME_OWNER) {
+                if (req.role !in setOf(AuditService.SME_OWNER, AuditService.MANAGER)) {
                     return@delete call.respondError(HttpStatusCode.Forbidden, "Only SME_OWNER can delete products")
                 }
 
@@ -189,7 +189,7 @@ object ProductController : BaseRouteController {
                 val id = call.parameters["id"].orEmpty()
                 val req = call.receiveOrNull<AdjustStockRequest>()
                     ?: return@post call.respondError(HttpStatusCode.BadRequest, "Invalid JSON body")
-                if (req.role != AuditService.SME_OWNER) {
+                if (req.role !in setOf(AuditService.SME_OWNER, AuditService.MANAGER)) {
                     return@post call.respondError(HttpStatusCode.Forbidden, "Only SME_OWNER can adjust stock")
                 }
                 val countedQty = req.countedQty
@@ -209,7 +209,7 @@ object ProductController : BaseRouteController {
                 val id = call.parameters["id"].orEmpty()
                 val req = call.receiveOrNull<OwnerActionRequest>()
                     ?: return@post call.respondError(HttpStatusCode.BadRequest, "Invalid JSON body")
-                if (req.role != AuditService.SME_OWNER) {
+                if (req.role !in setOf(AuditService.SME_OWNER, AuditService.MANAGER)) {
                     return@post call.respondError(HttpStatusCode.Forbidden, "Only SME_OWNER can approve restock")
                 }
 

@@ -1,14 +1,13 @@
 package com.hazendust.vyte.route.qc
 
+import com.hazendust.vyte.data.WorkspaceContext
 import com.hazendust.vyte.route.audit.AuditService
 import com.hazendust.vyte.route.product.ProductResult
 import com.hazendust.vyte.route.product.ProductService
-import io.ktor.http.HttpStatusCode
+import io.ktor.http.*
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.CopyOnWriteArrayList
 
 sealed interface QCResult {
     data class Ok(val alert: QCAlert) : QCResult
@@ -22,10 +21,8 @@ object QCStore {
     private const val ALERT_WINDOW_DAYS = 7
     private val MALAYSIA: ZoneId = ZoneId.of("Asia/Kuala_Lumpur")
 
-    private val alerts = CopyOnWriteArrayList<QCAlert>()
-
-    // QCAlert must match the frontend type, so the product link is kept separately
-    private val alertProductIds = ConcurrentHashMap<String, String>()
+    private val alerts get() = WorkspaceContext.current().qcAlerts
+    private val alertProductIds get() = WorkspaceContext.current().qcAlertProductIds
 
     fun list(status: String?): List<QCAlert> =
         alerts.filter { status == null || it.status == status }
@@ -79,12 +76,14 @@ object QCStore {
                     WRITE_OFF,
                     0.0
                 )
+
                 daysLeft <= 2 -> RuleSuggestion(
                     "Expires in $daysLeft ${if (daysLeft == 1) "day" else "days"}",
                     "Mark down 30% today and bundle with a best seller",
                     "Approve Markdown",
                     stockValue * 0.7
                 )
+
                 else -> RuleSuggestion(
                     "Batch approaching freshness window",
                     "Bundle into a weekend combo (15% off) and pause auto-restock for 3 days",
