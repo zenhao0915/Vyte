@@ -13,6 +13,7 @@ import {
     Camera,
     FileSpreadsheet,
     Upload,
+
 } from 'lucide-react';
 import type { CurrencyCode, InvoiceItem, UserRole } from '../../types/vyte.ts';
 import { CURRENCY_SYMBOLS } from '../../types/vyte.ts';
@@ -226,7 +227,7 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
         const errs: Record<string, string> = {};
 
         if (!invNo.trim() || !/^[A-Za-z0-9-_]{4,20}$/.test(invNo.trim())) {
-            errs.invNo = 'Invoice No. must be 4–20 alphanumeric chars (e.g., SUP-2026-9901).';
+            errs.invNo = 'Invoice No. must be 4â€“20 alphanumeric chars (e.g., SUP-2026-9901).';
         }
         if (!partyName.trim() || partyName.trim().length < 3) {
             errs.partyName = 'Counterparty business name is required (min 3 chars).';
@@ -684,7 +685,7 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                                                 : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
                                         }`}
                                     >
-                                        {inv.paid ? 'Paid ✓ (Toggle)' : 'Unpaid (Mark Paid)'}
+                                        {inv.paid ? 'Paid âœ“ (Toggle)' : 'Unpaid (Mark Paid)'}
                                     </button>
                                 </td>
 

@@ -28,9 +28,9 @@ import type {
 } from '../../types/vyte.ts';
 import { CURRENCY_SYMBOLS } from '../../types/vyte.ts';
 
-export interface QualityControlModuleProps {
+interface QualityControlModuleProps {
     qcAlerts: QCAlert[];
-    products: Product[];
+    products?: Product[];
     role: UserRole;
     currency?: CurrencyCode;
     exchangeRate?: number;
@@ -88,7 +88,7 @@ const sanitizePositiveInt = (raw: string): string => {
 
 export const QualityControlModule: React.FC<QualityControlModuleProps> = ({
                                                                               qcAlerts,
-                                                                              products,
+                                                                              products = [],
                                                                               role,
                                                                               currency = 'MYR',
                                                                               exchangeRate = 1.0,
@@ -441,7 +441,7 @@ export const QualityControlModule: React.FC<QualityControlModuleProps> = ({
                     </div>
 
                     <div>
-                        <label className="font-bold text-slate-700 block mb-1">Days Until Expiry (1–365) *</label>
+                        <label className="font-bold text-slate-700 block mb-1">Days Until Expiry (1â€“365) *</label>
                         <input
                             type="text"
                             inputMode="numeric"
@@ -602,7 +602,7 @@ export const QualityControlModule: React.FC<QualityControlModuleProps> = ({
                                 <td className="py-3.5 px-4 whitespace-nowrap">
                                     <p className="font-mono font-bold text-slate-900">{qc.batchNo}</p>
                                     <span className="inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
-                      {qc.sku} • {qc.qtyAffected}
+                      {qc.sku} â€¢ {qc.qtyAffected}
                     </span>
                                 </td>
 
@@ -657,7 +657,7 @@ export const QualityControlModule: React.FC<QualityControlModuleProps> = ({
                           <UserCheck className="w-3 h-3 text-blue-600" /> {qc.assignedStaffName}
                         </span>
                                             <p className="text-[10px] font-mono text-slate-400 mt-0.5">
-                                                {qc.hrTaskId} • {qc.assignedPriority}
+                                                {qc.hrTaskId} â€¢ {qc.assignedPriority}
                                             </p>
                                         </div>
                                     ) : (
@@ -702,7 +702,7 @@ export const QualityControlModule: React.FC<QualityControlModuleProps> = ({
                                                 <div className="flex items-center gap-1">
                                                     {/* Static solid rose badge (removed animate-pulse) */}
                                                     <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-rose-600 text-white">
-                              OVERDUE • HR ESCALATED
+                              OVERDUE â€¢ HR ESCALATED
                             </span>
                                                     {qc.hrEscalationPayload && (
                                                         <button
@@ -793,7 +793,7 @@ export const QualityControlModule: React.FC<QualityControlModuleProps> = ({
                                     {selectedQcModal.productName} ({selectedQcModal.batchNo})
                                 </h3>
                                 <p className="text-xs text-slate-500">
-                                    SKU: {selectedQcModal.sku} • Affected: {selectedQcModal.qtyAffected} • Expiry: {selectedQcModal.expiryDate}
+                                    SKU: {selectedQcModal.sku} â€¢ Affected: {selectedQcModal.qtyAffected} â€¢ Expiry: {selectedQcModal.expiryDate}
                                 </p>
                             </div>
                             <button
@@ -832,7 +832,7 @@ export const QualityControlModule: React.FC<QualityControlModuleProps> = ({
                                 >
                                     {ORBYTE_HR_STAFF_ROSTER.map((st) => (
                                         <option key={st.staffId} value={st.staffId}>
-                                            {st.name} ({st.staffId}) — {st.position} [{st.department}]
+                                            {st.name} ({st.staffId}) â€” {st.position} [{st.department}]
                                         </option>
                                     ))}
                                 </select>
