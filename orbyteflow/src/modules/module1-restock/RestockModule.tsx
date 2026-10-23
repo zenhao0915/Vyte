@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
     Plus, Send, CheckCircle2, Clock, AlertTriangle, ShoppingBag,
-    Lock, AlertCircle, Loader2, FileSpreadsheet, Camera, X,
+    Lock, AlertCircle, Loader2, FileSpreadsheet, Camera, X, Database,
 } from 'lucide-react';
 import type { CurrencyCode, Product, UserRole } from '../../types/vyte.ts';
 import { CURRENCY_SYMBOLS } from '../../types/vyte.ts';
@@ -17,6 +17,7 @@ interface RestockModuleProps {
     onRecordStockUsage: (productId: string, usedQty: number) => void;
     onOpenAddModal: () => void;
     onBatchImportProducts?: (imported: Product[]) => void;
+    onOpenMigratorModal?: () => void; // 新增：触发旧系统一键迁移 Modal
 }
 
 const USAGE_KEY = 'vyte_restock_usage_inputs_v2';
@@ -25,7 +26,7 @@ const sanitizeInt = (raw: string, maxDigits = 5) => raw.replace(/[^0-9]/g, '').r
 
 export const RestockModule: React.FC<RestockModuleProps> = ({
                                                                 products, role, currency = 'MYR', exchangeRate = 1.0,
-                                                                onApproveAndContactSupplier, onConfirmSupplierDelivery, onRecordStockUsage, onOpenAddModal, onBatchImportProducts,
+                                                                onApproveAndContactSupplier, onConfirmSupplierDelivery, onRecordStockUsage, onOpenAddModal, onBatchImportProducts, onOpenMigratorModal,
                                                             }) => {
     const sym = CURRENCY_SYMBOLS[currency] || 'RM';
 
@@ -156,6 +157,11 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
+                    {onOpenMigratorModal && (
+                        <button type="button" onClick={onOpenMigratorModal} className="px-3.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer">
+                            <Database className="w-3.5 h-3.5 text-[#2BB656]" /> Migrate Old System (.db / .md / ERP)
+                        </button>
+                    )}
                     <button type="button" onClick={() => photoInputRef.current?.click()} className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer">
                         <Camera className="w-3.5 h-3.5 text-purple-600" /> Scan Shelf Photo
                     </button>

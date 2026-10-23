@@ -24,6 +24,7 @@ import { SplashScreen } from './components/SplashScreen';
 import { LoadingScreen } from './components/LoadingScreen';
 import { LoginPage } from './components/auth/LoginPage';
 import { orbyteApi, getDebugMockMode, setDebugMockMode } from './services/api';
+import { UniversalSystemMigratorModal } from './components/migration/UniversalSystemMigratorModal';
 
 const SESSION_KEY = 'vyte_active_session_v1';
 const FALLBACK_RATES: Record<CurrencyCode, number> = { MYR: 1.0, SGD: 0.313, USD: 0.244 };
@@ -72,6 +73,7 @@ export default function App() {
   const [rateSourceLabel, setRateSourceLabel] = useState('Syncing FX rates...');
   const [loadingOverlayMessage, setLoadingOverlayMessage] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showMigratorModal, setShowMigratorModal] = useState(false);
   const [pendingCustomerOrderCount, setPendingCustomerOrderCount] = useState(1);
   const [deductedOrderIds, setDeductedOrderIds] = useState<Record<string, boolean>>({});
 
@@ -317,7 +319,7 @@ export default function App() {
       return;
     }
     const isLow = Number(newProd.stock) <= Number(newProd.minThreshold);
-    const parts = newProd.extraAttr?.split(/\u2022|\|/) || [];
+    const parts = newProd.extraAttr?.split(/[\u2022|]/) || [];
     const created: Product = {
       id: `P-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       sku: newProd.sku || `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -491,6 +493,7 @@ export default function App() {
             pendingComplianceCount={pendingComplianceCount} auditLogCount={auditLogs.length}
             totalProductCount={products.length} userSession={userSession} onLogout={handleLogout}
             debugMockMode={debugMockMode} onToggleDebugMockMode={handleToggleDebugMode}
+            onOpenMigratorModal={() => setShowMigratorModal(true)}
         />
 
         <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden gap-3">
@@ -609,8 +612,23 @@ export default function App() {
         </div>
 
         <AddProductModal isOpen={showAddModal} currency={currency} onClose={() => setShowAddModal(false)} onSaveProduct={handleSaveProduct} />
-        <LoadingScreen isOpen={loadingOverlayMessage !== null} message={loadingOverlayMessage ?? ''} />
 
+        <UniversalSystemMigratorModal
+            isOpen={showMigratorModal}
+            onClose={() => setShowMigratorModal(false)}
+            onImportSuccess={({ products: newProds, invoices: newInvs, complianceProfiles: newComp, sourceFileName, transitionMode }) => {
+              if (newProds.length) setProducts((p) => [...newProds, ...p]);
+              if (newInvs.length) setInvoices((p) => [...newInvs, ...p]);
+              if (newComp.length) setComplianceProfiles((p) => [...newComp, ...p]);
+              addAuditLog(
+                  'AI Migration',
+                  `Migrated ${newProds.length} SKUs, ${newInvs.length} AR invoices & ${newComp.length} licenses/warranties from "${sourceFileName}" (Mode: ${transitionMode}).`
+              );
+              pushToast('success', `AI migrated "${sourceFileName}" (${transitionMode} mode active).`);
+            }}
+        />
+
+        <LoadingScreen isOpen={loadingOverlayMessage !== null} message={loadingOverlayMessage ?? ''} />
         {toasts.length > 0 && (
             <div className="fixed bottom-5 right-5 z-50 space-y-2 max-w-sm">
               {toasts.map((t) => (

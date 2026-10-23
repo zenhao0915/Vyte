@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import type { CurrencyCode, InvoiceItem, UserRole } from '../../types/vyte.ts';
 import { CURRENCY_SYMBOLS } from '../../types/vyte.ts';
-import {getDebugMockMode, orbyteApi} from "../../services/api.ts";
+import { getDebugMockMode, orbyteApi } from "../../services/api.ts";
 
 interface InvoiceModuleProps {
     invoices: InvoiceItem[];
@@ -61,6 +61,18 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
     const filtered = invoices.filter((i) => (directionFilter === 'ALL' || i.type === directionFilter) && (statusFilter === 'ALL' || i.status === statusFilter));
     const totalPayablesRM = invoices.filter((i) => i.type === 'SUPPLIER_PAYABLE').reduce((s, i) => s + i.amountRM, 0);
     const totalReceivablesRM = invoices.filter((i) => i.type === 'CUSTOMER_RECEIVABLE').reduce((s, i) => s + i.amountRM, 0);
+
+    const handleSendPaymentReminder = (inv: InvoiceItem, lang: 'EN' | 'BM' | 'ZH' = 'EN') => {
+        const amountFormatted = `${sym} ${(inv.amountRM * exchangeRate).toFixed(2)}`;
+        const messages = {
+            EN: `Hi ${inv.party}, friendly reminder from Vyte Billing that Invoice ${inv.invNo} (${amountFormatted}) dated ${inv.date} is currently due. Pay instantly via DuitNow/FPX here: https://pay.vyte.my/${inv.invNo}`,
+            BM: `Salam ${inv.party}, peringatan mesra bahawa Invois ${inv.invNo} (${amountFormatted}) bertarikh ${inv.date} masih belum dijelaskan. Sila buat bayaran melalui DuitNow/FPX: https://pay.vyte.my/${inv.invNo}`,
+            ZH: `${inv.party} 您好，温馨提醒您账单 ${inv.invNo}（金额：${amountFormatted}，日期：${inv.date}）目前已到期。您可通过 DuitNow/FPX 一键完成付款：https://pay.vyte.my/${inv.invNo}`,
+        };
+
+        const whatsappUrl = `https://wa.me/60123456789?text=${encodeURIComponent(messages[lang])}`;
+        window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+    };
 
     const getSourceBadge = (inv: InvoiceItem) => {
         if (inv.invNo.startsWith('SUP-')) return { label: 'Auto-Restock PO', color: 'bg-amber-100 text-amber-800' };
@@ -272,7 +284,7 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                         <th className="py-3 px-3">E-Invoice</th>
                         <th className="py-3 px-3">Total ({currency})</th>
                         <th className="py-3 px-3">Payment (Click to Toggle)</th>
-                        <th className="py-3 px-4">Human Verification</th>
+                        <th className="py-3 px-4">Action &amp; Verification</th>
                     </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-xs">
@@ -286,9 +298,9 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                                     <span className={`inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-bold ${source.color}`}>{source.label}</span>
                                 </td>
                                 <td className="py-3 px-3 whitespace-nowrap">
-                    <span className={`px-2 py-0.5 rounded-md text-[11px] font-semibold ${inv.type === 'SUPPLIER_PAYABLE' ? 'bg-amber-50 text-amber-800' : 'bg-blue-50 text-blue-800'}`}>
-                      {inv.type === 'SUPPLIER_PAYABLE' ? 'Supplier Bill' : 'Customer Sales'}
-                    </span>
+                                    <span className={`px-2 py-0.5 rounded-md text-[11px] font-semibold ${inv.type === 'SUPPLIER_PAYABLE' ? 'bg-amber-50 text-amber-800' : 'bg-blue-50 text-blue-800'}`}>
+                                      {inv.type === 'SUPPLIER_PAYABLE' ? 'Supplier Bill' : 'Customer Sales'}
+                                    </span>
                                 </td>
                                 <td className="py-3 px-3 font-semibold text-slate-900 max-w-[200px] truncate">
                                     <p className="truncate">{inv.party}</p><p className="text-[10px] text-slate-400">{inv.date}</p>
@@ -317,13 +329,23 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                                         {inv.paid ? 'Paid ✓ (Toggle)' : 'Unpaid (Mark Paid)'}
                                     </button>
                                 </td>
-                                <td className="py-3 px-4 whitespace-nowrap">
+                                <td className="py-3 px-4 whitespace-nowrap flex items-center gap-2">
                                     {inv.status === 'NEEDS_REVIEW' ? (
                                         <button type="button" onClick={() => onVerifyInvoice(inv.id, activeCategory)} className="px-3 py-1.5 bg-amber-400 hover:bg-amber-500 text-slate-900 rounded-xl text-xs font-bold transition cursor-pointer">
                                             {canApprove ? 'Confirm Category' : 'Owner/Mgr Only'}
                                         </button>
                                     ) : (
                                         <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold inline-flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Verified</span>
+                                    )}
+
+                                    {inv.type === 'CUSTOMER_RECEIVABLE' && !inv.paid && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleSendPaymentReminder(inv, 'EN')}
+                                            className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold inline-flex items-center gap-1 shadow-2xs cursor-pointer"
+                                        >
+                                            Remind Customer (WhatsApp)
+                                        </button>
                                     )}
                                 </td>
                             </tr>

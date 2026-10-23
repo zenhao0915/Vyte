@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import {
     Box, TrendingUp, AlertTriangle, FileText, Clock, Search, ChevronLeft, ChevronRight,
-    Settings, LogOut, X, ShieldCheck, Volume2, FileCode, Sliders, Bug, Server,
+    Settings, LogOut, X, ShieldCheck, Volume2, FileCode, Sliders, Bug, Server, Database,
 } from 'lucide-react';
 import type { ActiveTab, CurrencyCode, UserRole, UserSession } from '../../types/vyte.ts';
 import { VyteLogo } from '../common/VyteLogo';
@@ -30,12 +30,13 @@ interface SidebarProps {
     onLogout: () => void;
     debugMockMode?: boolean;
     onToggleDebugMockMode?: (enabled: boolean) => void;
+    onOpenMigratorModal?: () => void; // <-- 接收打开弹窗的回调
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
                                                     activeTab, setActiveTab, role, operatingCurrency, onCurrencyChange, searchQuery, setSearchQuery,
                                                     pendingRestockCount, pendingOrderCount, pendingQcCount, pendingInvoiceCount, pendingComplianceCount,
-                                                    auditLogCount, userSession, onLogout, debugMockMode = false, onToggleDebugMockMode,
+                                                    auditLogCount, userSession, onLogout, debugMockMode = false, onToggleDebugMockMode, onOpenMigratorModal,
                                                 }) => {
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -132,6 +133,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 </button>
                             );
                         })}
+
+                        {/* AI System Migrator 菜单入口 */}
+                        {onOpenMigratorModal && (
+                            <>
+                                {!isCollapsed && <p className="px-3 pt-3 pb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">DATA MIGRATION</p>}
+                                <button
+                                    type="button"
+                                    onClick={onOpenMigratorModal}
+                                    title={isCollapsed ? 'AI System Migrator' : undefined}
+                                    className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2 py-3' : 'justify-between px-3.5 py-2.5'} rounded-xl text-sm transition-all cursor-pointer border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-950 font-bold shadow-2xs`}
+                                >
+                                    <span className="flex items-center gap-3">
+                                        <Database className="w-4 h-4 shrink-0 text-emerald-600" />
+                                        {!isCollapsed && <span>AI System Migrator</span>}
+                                    </span>
+                                    {!isCollapsed && <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-200 text-emerald-800">AI</span>}
+                                </button>
+                            </>
+                        )}
                     </nav>
                 </div>
 
@@ -181,7 +201,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 <p className="text-emerald-700 font-semibold">Role: {userSession?.userType} ({userSession?.role})</p>
                             </div>
 
-                            {/* Debug / Mock Data Mode Toggle & Backend URL */}
                             <div className="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200 space-y-2.5">
                                 <label className="flex items-center justify-between cursor-pointer">
                                     <div className="flex items-center gap-2.5">

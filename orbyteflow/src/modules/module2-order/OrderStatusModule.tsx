@@ -52,6 +52,43 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
     const sym = CURRENCY_SYMBOLS[currency] || 'RM';
     const todayIso = new Date().toISOString().slice(0, 10);
 
+    const detectLanguageAndBuildReply = (
+        rawText: string,
+        customer: string,
+        items: ExtractedNlpOrderItem[],
+        allStockEnough: boolean
+    ): { langLabel: string; flag: string; autoReplyText: string } => {
+        const hasChinese = /[\u4e00-\u9fa5]/.test(rawText);
+        const hasMalay = /\b(tolong|hantar|esok|kotak|susu|kopi|nak|bila|terima kasih|bos)\b/i.test(rawText);
+        const itemSummary = items.map((i) => `${i.requestedQty}x ${i.name}`).join(', ');
+
+        if (hasChinese) {
+            return {
+                langLabel: '中文 / Mandarin Detected',
+                flag: '🇨🇳/🇲🇾',
+                autoReplyText: allStockEnough
+                    ? `老板您好 (${customer})！Vyte AI 已收到您的订单：${itemSummary}。仓库现货充足，我们已经为您安排出货并附上电子账单，感谢支持！`
+                    : `老板您好 (${customer})！收到您的订单（${itemSummary}）。目前部分货品正在紧急补货中，我们会在配齐后第一时间优先为您送出！`,
+            };
+        }
+        if (hasMalay) {
+            return {
+                langLabel: 'Bahasa Melayu Detected',
+                flag: '🇲🇾',
+                autoReplyText: allStockEnough
+                    ? `Salam Boss (${customer})! Pesanan anda (${itemSummary}) telah diterima oleh Vyte AI. Stok mencukupi dan penghantaran sedang disediakan. Terima kasih!`
+                    : `Salam Boss (${customer})! Pesanan anda (${itemSummary}) diterima. Stok sedang ditambah semula dan kami akan maklumkan masa penghantaran secepat mungkin.`,
+            };
+        }
+        return {
+            langLabel: 'English / Manglish Detected',
+            flag: '🇬🇧/🇲🇾',
+            autoReplyText: allStockEnough
+                ? `Hi ${customer}! We've received your order (${itemSummary}). Stock is confirmed and ready for dispatch. Here is your invoice reference!`
+                : `Hi ${customer}! We received your order (${itemSummary}). One or more items are currently being restocked—we'll update your delivery slot shortly!`,
+        };
+    };
+
     const [customerName, setCustomerName] = useState<string>(() => {
         try { const s = localStorage.getItem(ORDER_INTAKE_KEY); if (s) return JSON.parse(s).customerName ?? 'Bangsar Artisan Cafe'; } catch { /* ignore */ }
         return 'Bangsar Artisan Cafe';
@@ -126,7 +163,6 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
 
     const [addSkuId, setAddSkuId] = useState<string>(products[0]?.id || '');
 
-    // Keep addSkuId synchronized when products list switches between Mock and Backend
     useEffect(() => {
         if (products.length > 0 && !products.some((p) => p.id === addSkuId)) {
             setAddSkuId(products[0].id);
@@ -193,6 +229,17 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
 
     const isDraftStockSufficient = useMemo(() => liveDraftItems.length > 0 && liveDraftItems.every((i) => i.isStockEnough), [liveDraftItems]);
 
+    // 计算当前草稿的智能多语言回复
+    const draftAutoReply = useMemo(() => {
+        if (!parsedDraft) return null;
+        return detectLanguageAndBuildReply(
+            parsedDraft.rawMessage,
+            parsedDraft.customerName,
+            liveDraftItems,
+            isDraftStockSufficient
+        );
+    }, [parsedDraft, liveDraftItems, isDraftStockSufficient]);
+
     const lastShortageKeyRef = useRef<string>('');
     useEffect(() => {
         if (!onTriggerShortageRestock) return;
@@ -214,6 +261,14 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
             : `Hello, we would like to order 5 ${p1?.uom || 'units'} of ${p1?.name || 'Coffee Beans'} for our outlet.`;
         setCustomerName(presetCustomer);
         setRawOrderText(msg);
+        setNlpErrors({});
+        setParseFailureMessage(null);
+    };
+
+    // 新增：支持 BM Sample 与 中文 Sample 快捷预设按钮
+    const applyCustomPreset = (presetCustomer: string, presetText: string) => {
+        setCustomerName(presetCustomer);
+        setRawOrderText(presetText);
         setNlpErrors({});
         setParseFailureMessage(null);
     };
@@ -490,6 +545,13 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                         <button type="button" onClick={() => applyPresetMessage('Subang Retail Hub', 1, 1)} className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-semibold cursor-pointer">
                             Retail Sample
                         </button>
+                        {/* 新增：BM Sample 与 中文 Sample 预设按钮 */}
+                        <button type="button" onClick={() => applyCustomPreset('Kampung Baru Kopitiam', 'Boss, tolong hantar 6 kg Artisan Arabica Coffee Beans esok')} className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-[11px] font-bold cursor-pointer">
+                            🇲🇾 BM Sample
+                        </button>
+                        <button type="button" onClick={() => applyCustomPreset('吉隆坡茶室', '老板，明天帮我送 6 kg Artisan Arabica Coffee Beans 和 3 box Takeaway Box')} className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-lg text-[11px] font-bold cursor-pointer">
+                            🇨🇳 中文 Sample
+                        </button>
                     </div>
                 </div>
 
@@ -583,6 +645,34 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                 </button>
                             </div>
                         </div>
+
+                        {/* 新增：在 parsedDraft 预览框展示 detectLanguageAndBuildReply 的 autoReplyText 以及 Send AI Reply via WhatsApp 按钮 */}
+                        {draftAutoReply && (
+                            <div className="p-4 rounded-xl bg-white border border-purple-200 shadow-2xs space-y-2.5">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-base">{draftAutoReply.flag}</span>
+                                        <span className="text-xs font-bold text-slate-800">{draftAutoReply.langLabel}</span>
+                                        <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold">Vyte AI Auto-Reply</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const encoded = encodeURIComponent(draftAutoReply.autoReplyText);
+                                            window.open(`https://api.whatsapp.com/send?text=${encoded}`, '_blank');
+                                            onLogAction('Orders', `Sent AI WhatsApp reply to ${parsedDraft.customerName} (${draftAutoReply.langLabel}).`);
+                                            notify('success', `WhatsApp AI Reply sent to ${parsedDraft.customerName}!`);
+                                        }}
+                                        className="px-3.5 py-1.5 bg-[#25D366] hover:bg-[#20ba5a] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                                    >
+                                        <MessageSquare className="w-3.5 h-3.5" /> Send AI Reply via WhatsApp
+                                    </button>
+                                </div>
+                                <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700 font-mono">
+                                    &ldquo;{draftAutoReply.autoReplyText}&rdquo;
+                                </div>
+                            </div>
+                        )}
 
                         {!isDraftStockSufficient && (
                             <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 font-semibold flex items-center gap-2">

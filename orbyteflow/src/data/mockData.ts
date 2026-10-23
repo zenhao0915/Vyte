@@ -286,6 +286,28 @@ export const INITIAL_AUDIT_LOGS: AuditLog[] = [
 
 export const INITIAL_COMPLIANCE_PROFILES: BusinessComplianceProfile[] = [
     {
+        registrationNo: 'JPJ-WXY8821-FLT',
+        companyName: 'COLD-CHAIN LORRY (WXY 8821) - ROAD TAX & PUSPAKOM',
+        companyType: 'SDN_BHD',
+        ssmExpiryDate: '2026-11-05', // PUSPAKOM 6-month inspection deadline
+        councilName: 'JPJ / PUSPAKOM Commercial Fleet',
+        licenseType: 'PREMISE_LICENSE',
+        licenseExpiryDate: '2026-10-29', // Road Tax & Commercial Insurance Expiry
+        complianceStatus: 'EXPIRING_SOON',
+        autoAlertEnabled: true,
+    },
+    {
+        registrationNo: 'WARR-CHILL-902',
+        companyName: 'WALK-IN FREEZER & ESPRESSO MACHINE WARRANTY',
+        companyType: 'SDN_BHD',
+        ssmExpiryDate: '2026-11-18',
+        councilName: 'OEM Compressor & Parts Warranty',
+        licenseType: 'FOOD_ESTABLISHMENT',
+        licenseExpiryDate: '2026-11-10',
+        complianceStatus: 'EXPIRING_SOON',
+        autoAlertEnabled: true,
+    },
+    {
         registrationNo: '202401048291',
         companyName: 'ACME TECH SDN. BHD.',
         companyType: 'SDN_BHD',
