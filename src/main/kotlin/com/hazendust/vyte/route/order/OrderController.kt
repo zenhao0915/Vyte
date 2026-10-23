@@ -3,6 +3,7 @@ package com.hazendust.vyte.route.order
 import com.hazendust.vyte.data.DataStore
 import com.hazendust.vyte.data.InvoiceEntity
 import com.hazendust.vyte.manager.BaseRouteController
+import com.hazendust.vyte.route.ai.AiService
 import io.ktor.http.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
@@ -19,35 +20,81 @@ object OrderController : BaseRouteController {
                 call.respond(savedOrders.values.toList())
             }
 
+            // 在 OrderController.kt 的 post("/nlp-process") 中接入 AiService:
             post("/nlp-process") {
                 val req = call.receive<ProcessNlpOrderRequest>()
-                val rawLower = req.rawOrderText.lowercase()
+                val catalogPrompt = DataStore.products.values.joinToString("\n") {
+                    "- productID: \"${it.id}\", SKU: \"${it.sku}\", name: \"${it.name}\", stock: ${it.stock}, price: ${it.sellingPrice}"
+                }
+                val systemPrompt = """
+        You extract customer order items for a Malaysian SME against this catalog:
+        $catalogPrompt
+        Reply with ONLY a JSON object:
+        { "items": [ { "productID": "P-101", "requestedQty": 5 } ] }
+        Match customer product names fuzzy/semantically to the closest catalog item.
+    """.trimIndent()
 
-                val matchedProducts = DataStore.products.values.filter { p ->
-                    val keyword = p.name.split(" ").firstOrNull()?.lowercase() ?: ""
-                    keyword.isNotBlank() && rawLower.contains(keyword)
-                }.ifEmpty {
-                    listOfNotNull(DataStore.products.values.firstOrNull())
+                // 如果前端 JSON 传了 imageBase64，就调视觉模型；否则调文本模型
+                val aiResult = if (!req.imageBase64.isNullOrBlank() && req.imageBase64.contains("base64,")) {
+                    val mime =
+                        req.imageBase64.substringAfter("data:").substringBefore(";base64").ifBlank { "image/jpeg" }
+                    val bytes = java.util.Base64.getDecoder().decode(req.imageBase64.substringAfter("base64,"))
+                    AiService.chatJsonWithImage(
+                        systemPrompt, req.rawOrderText, mime, bytes, 400
+                    )
+                } else {
+                    AiService.chatJson(systemPrompt, req.rawOrderText, 400)
                 }
 
-                val digitMatch = Regex("""\d+""").find(rawLower)
-                val parsedQty = digitMatch?.value?.toIntOrNull() ?: 10
+                val extractedItems = mutableListOf<ExtractedOrderItem>()
+                if (aiResult is AiService.AiResult.Success) {
+                    val itemsArr = aiResult.data["items"] as? kotlinx.serialization.json.JsonArray
+                    itemsArr?.forEach { el ->
+                        val obj = el as? kotlinx.serialization.json.JsonObject ?: return@forEach
+                        val pid = obj["productID"]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+                            ?: return@forEach
+                        val qty =
+                            obj["requestedQty"]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull() }
+                                ?: 1
+                        val product = DataStore.products[pid] ?: return@forEach
+                        extractedItems.add(
+                            ExtractedOrderItem(
+                                productID = product.id,
+                                SKU = product.sku,
+                                name = product.name,
+                                requestedQty = qty,
+                                availableStock = product.stock,
+                                isStockEnough = product.stock >= qty,
+                                sellingPrice = product.sellingPrice.toFloat(),
+                                lineTotal = product.sellingPrice * qty
+                            )
+                        )
+                    }
+                }
 
-                val extractedItems = matchedProducts.map { product ->
-                    val isEnough = product.stock >= parsedQty
-                    val sellingPriceFloat = product.sellingPrice.toFloat()
-                    val lineTotal = (sellingPriceFloat * parsedQty).toDouble()
+                // 如果未配置 GROQ_API_KEY，自动回退到本地关键词匹配规则
+                if (extractedItems.isEmpty()) {
+                    val rawLower = req.rawOrderText.lowercase()
+                    val matchedProducts = DataStore.products.values.filter { p ->
+                        p.name.lowercase().split(" ")
+                            .any { w -> w.length > 2 && rawLower.contains(w) } || rawLower.contains(p.sku.lowercase())
+                    }.ifEmpty { listOfNotNull(DataStore.products.values.firstOrNull()) }
 
-                    ExtractedOrderItem(
-                        productID = product.id,
-                        SKU = "SKU-${product.id}",
-                        name = product.name,
-                        requestedQty = parsedQty,
-                        availableStock = product.stock,
-                        isStockEnough = isEnough,
-                        sellingPrice = sellingPriceFloat,
-                        lineTotal = lineTotal
-                    )
+                    val parsedQty = Regex("""\d+""").find(rawLower)?.value?.toIntOrNull() ?: 5
+                    matchedProducts.forEach { product ->
+                        extractedItems.add(
+                            ExtractedOrderItem(
+                                productID = product.id,
+                                SKU = product.sku,
+                                name = product.name,
+                                requestedQty = parsedQty,
+                                availableStock = product.stock,
+                                isStockEnough = product.stock >= parsedQty,
+                                sellingPrice = product.sellingPrice.toFloat(),
+                                lineTotal = product.sellingPrice * parsedQty
+                            )
+                        )
+                    }
                 }
 
                 val hasSufficientStock = extractedItems.isNotEmpty() && extractedItems.all { it.isStockEnough }
@@ -56,12 +103,11 @@ object OrderController : BaseRouteController {
                 DataStore.recordAudit(
                     role = req.userID.ifBlank { "System" },
                     action = "NLP_ORDER_PARSED",
-                    details = "NLP Order parsed for customer '${req.customerName}'. Total items: ${extractedItems.size}, Stock Sufficient: $hasSufficientStock."
+                    details = "Order parsed for '${req.customerName}'. Items: ${extractedItems.size}, Stock Sufficient: $hasSufficientStock."
                 )
 
                 call.respond(
-                    HttpStatusCode.OK,
-                    ProcessNlpOrderResponse(
+                    HttpStatusCode.OK, ProcessNlpOrderResponse(
                         parseSuccess = extractedItems.isNotEmpty(),
                         hasSufficientStock = hasSufficientStock,
                         extractedItems = extractedItems,
@@ -85,8 +131,7 @@ object OrderController : BaseRouteController {
 
                 // 生成待审核发票实体并归档至 DataStore
                 DataStore.invoices.add(
-                    0,
-                    InvoiceEntity(
+                    0, InvoiceEntity(
                         id = invoiceId,
                         type = "CUSTOMER",
                         relatedRef = finalOrderId,
@@ -104,8 +149,7 @@ object OrderController : BaseRouteController {
                 )
 
                 call.respond(
-                    HttpStatusCode.Created,
-                    CreateInvoiceOrderResponse(
+                    HttpStatusCode.Created, CreateInvoiceOrderResponse(
                         orderID = finalOrderId,
                         invoiceID = invoiceId,
                         status = "PENDING_HUMAN_APPROVAL",
@@ -162,8 +206,7 @@ object OrderController : BaseRouteController {
                 }
 
                 call.respond(
-                    HttpStatusCode.OK,
-                    ApproveCustomerOrderResponse(
+                    HttpStatusCode.OK, ApproveCustomerOrderResponse(
                         orderID = req.orderID,
                         finalStatus = finalStatus,
                         inventoryDeducted = inventoryDeducted,

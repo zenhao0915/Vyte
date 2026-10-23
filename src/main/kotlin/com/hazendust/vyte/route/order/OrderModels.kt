@@ -14,7 +14,8 @@ data class ProcessNlpOrderRequest(
     val rawOrderText: String,
     val customerName: String,
     val requestedDate: String,
-    val userID: String
+    val userID: String,
+    val imageBase64: String? = null
 )
 
 @Serializable
