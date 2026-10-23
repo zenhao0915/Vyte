@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
     TrendingUp, Sparkles, Calendar, DollarSign, PackageCheck, Clock, RefreshCw,
-    Download, CheckCircle2, AlertCircle, Search, ArrowUpDown, Wifi, WifiOff, Inbox, X,
+    Download, CheckCircle2, AlertCircle, Search, ArrowUpDown, Inbox, X,
     FileText, Scale, Printer,
 } from 'lucide-react';
 import type {
@@ -87,7 +87,6 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
 
     const [reportData, setReportData] = useState<GetSalesReviewReportResponse | null>(null);
     const [procurementData, setProcurementData] = useState<AnalyzeProcurementResponse | null>(null);
-    const [isSimulatedData, setIsSimulatedData] = useState(false);
     const [isSyncingReport, setIsSyncingReport] = useState(false);
     const [isRunningAi, setIsRunningAi] = useState(false);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -162,7 +161,6 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
             ]);
             setReportData(reportRes.data);
             setProcurementData(procureRes.data);
-            setIsSimulatedData(reportRes.isSimulatedFallback || procureRes.isSimulatedFallback);
 
             if (logType === 'manual-report') onLogAction('Sales Analytics', `Synced ${reportRes.data.period} sales report.`);
             else if (logType === 'manual-ai') onLogAction('Sales Analytics (AI)', `Recalculated AI holding-cost & restock forecast for ${reportRes.data.period}.`);
@@ -332,9 +330,6 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <span className={`px-2.5 py-1 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 border ${isSimulatedData ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-emerald-50 text-emerald-800 border-emerald-200'}`}>
-                            {isSimulatedData ? <><WifiOff className="w-3 h-3" /> Simulated Data</> : <><Wifi className="w-3 h-3" /> Live Backend</>}
-                        </span>
                         <button type="button" onClick={() => void fetchSalesAndProcurement('manual-report')} disabled={isLoading} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer">
                             <RefreshCw className={`w-3.5 h-3.5 ${isSyncingReport ? 'animate-spin' : ''}`} /> Refresh Report
                         </button>
