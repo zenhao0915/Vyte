@@ -500,6 +500,8 @@ export default function App() {
               pendingInvoices={pendingInvoiceCount}
               totalComplianceProfiles={complianceProfiles.length}
               pendingCompliance={pendingComplianceCount}
+              totalVaultDocs={vaultDocs.length}
+              totalRenewalTasks={renewalTasks.length}
               onNavigateFromNotification={handleNavigateFromNotification}
           />
 

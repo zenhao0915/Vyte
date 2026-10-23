@@ -9,6 +9,8 @@ import {
     AlertTriangle,
     FileText,
     ShieldCheck,
+    FolderLock,
+    Bot,
     ChevronRight,
     Globe,
     CheckCheck,
@@ -32,6 +34,8 @@ interface HeaderBarProps {
     pendingInvoices: number;
     totalComplianceProfiles?: number;
     pendingCompliance?: number;
+    totalVaultDocs?: number;
+    totalRenewalTasks?: number;
     onNavigateFromNotification: (tab: ActiveTab, subTab?: 'restock' | 'orders') => void;
 }
 
@@ -50,7 +54,9 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                                                         totalInvoices,
                                                         pendingInvoices,
                                                         totalComplianceProfiles = 4,
-                                                        pendingCompliance = 0,
+                                                        pendingCompliance = 3,
+                                                        totalVaultDocs = 4,
+                                                        totalRenewalTasks = 1,
                                                         onNavigateFromNotification,
                                                     }) => {
     const [isBellOpen, setIsBellOpen] = useState(false);
@@ -190,13 +196,80 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
     ];
 
     return (
-        <header className="bg-white border border-slate-200/90 rounded-2xl px-6 py-3.5 flex flex-wrap items-center justify-between gap-4 shrink-0 shadow-xs z-30">
-            <div>
-                <h2 className="text-lg font-bold text-slate-900">{titles[activeTab].title}</h2>
-                <p className="text-xs text-slate-500">{titles[activeTab].subtitle}</p>
+        <header className="bg-white border border-slate-200/90 rounded-2xl px-5 py-3 flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-xs z-30">
+            {/* Left: Title & Subtitle */}
+            <div className="min-w-0">
+                <h2 className="text-base sm:text-lg font-bold text-slate-900 truncate">
+                    {titles[activeTab].title}
+                </h2>
+                <p className="text-[11px] text-slate-500 truncate">
+                    {titles[activeTab].subtitle}
+                </p>
             </div>
 
-            <div className="flex items-center gap-3.5">
+            {/* Center (Between Title and Currency Icon): Minimized Compliance KPI Strip */}
+            {activeTab === 'mod6' && (
+                <div className="hidden xl:flex items-center gap-2 mx-auto px-2.5 py-1.5 rounded-xl bg-slate-50/90 border border-slate-200/80">
+                    <div className="flex items-center gap-2 pr-2.5 border-r border-slate-200">
+                        <div className="w-6 h-6 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                            <Building2 className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="leading-tight">
+              <span className="text-[9px] text-slate-400 font-bold uppercase block">
+                SSM &amp; PBT
+              </span>
+                            <span className="text-xs font-extrabold text-slate-900 whitespace-nowrap">
+                {totalComplianceProfiles} Entities
+              </span>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pr-2.5 border-r border-slate-200">
+                        <div className="w-6 h-6 rounded-lg bg-amber-500 text-white flex items-center justify-center shrink-0">
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="leading-tight">
+              <span className="text-[9px] text-slate-400 font-bold uppercase block">
+                Expiring
+              </span>
+                            <span className="text-xs font-extrabold text-amber-600 whitespace-nowrap">
+                {pendingCompliance} Licenses
+              </span>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pr-2.5 border-r border-slate-200">
+                        <div className="w-6 h-6 rounded-lg bg-purple-600 text-white flex items-center justify-center shrink-0">
+                            <FolderLock className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="leading-tight">
+              <span className="text-[9px] text-slate-400 font-bold uppercase block">
+                Doc Vault
+              </span>
+                            <span className="text-xs font-extrabold text-purple-700 whitespace-nowrap">
+                {totalVaultDocs} Indexed
+              </span>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0">
+                            <Bot className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="leading-tight">
+              <span className="text-[9px] text-slate-400 font-bold uppercase block">
+                Concierge / RPA
+              </span>
+                            <span className="text-xs font-extrabold text-blue-700 whitespace-nowrap">
+                {totalRenewalTasks} Tasks
+              </span>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Right: Currency Pill, User Profile & Notification Bell */}
+            <div className="flex items-center gap-3 shrink-0">
                 <button
                     type="button"
                     onClick={onRefreshRates}

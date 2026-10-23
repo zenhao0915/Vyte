@@ -2,7 +2,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     ShieldCheck,
-    Building2,
     AlertTriangle,
     FolderLock,
     Bot,
@@ -250,10 +249,6 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
         });
     }, [profiles, councilFilter, windowDays]);
 
-    const expiringOrExpiredCount = profiles.filter(
-        (p) => p.complianceStatus === 'EXPIRING_SOON' || p.complianceStatus === 'EXPIRED'
-    ).length;
-
     const handleVerifySsmProfile = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         const cleanReg = ssmRegNo.trim();
@@ -439,7 +434,6 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
             return;
         }
 
-        // Type-safe status advancement (fixes TS2322 & TS2367)[cite: 65]
         const nextStatus: RenewalTaskStatus =
             (task.status as string) === 'ASSIGNED_TO_AGENT'
                 ? 'SUBMITTED_TO_PBT'
@@ -486,79 +480,8 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
     };
 
     return (
-        <div className="space-y-4 select-none">
-            {/* Top 4 KPI Summary Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <div className="bg-white px-4 py-3.5 rounded-2xl border border-slate-200/90 shadow-xs flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                        <Building2 className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0">
-                        <p className="text-[11px] text-slate-500 font-medium truncate">
-                            Monitored SSM &amp; PBT Profiles
-                        </p>
-                        <p className="text-xl font-extrabold text-slate-900 leading-tight">
-                            {profiles.length} Entities
-                        </p>
-                        <span className="text-[10px] text-emerald-600 font-bold block truncate">
-              SSM_DATA_FEED Live Sync
-            </span>
-                    </div>
-                </div>
-
-                <div className="bg-white px-4 py-3.5 rounded-2xl border border-slate-200/90 shadow-xs flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0">
-                        <AlertTriangle className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0">
-                        <p className="text-[11px] text-slate-500 font-medium truncate">
-                            Expiring / Action Required
-                        </p>
-                        <p className="text-xl font-extrabold text-amber-600 leading-tight">
-                            {expiringOrExpiredCount} Licenses
-                        </p>
-                        <span className="text-[10px] text-slate-400 font-semibold block truncate">
-              Threshold: {windowDays}-Day Radar
-            </span>
-                    </div>
-                </div>
-
-                <div className="bg-white px-4 py-3.5 rounded-2xl border border-slate-200/90 shadow-xs flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0">
-                        <FolderLock className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0">
-                        <p className="text-[11px] text-slate-500 font-medium truncate">
-                            Centralized Document Vault
-                        </p>
-                        <p className="text-xl font-extrabold text-purple-700 leading-tight">
-                            {vaultDocs.length} Indexed
-                        </p>
-                        <span className="text-[10px] text-emerald-600 font-bold block truncate">
-              {selectedDocIds.length} Selected for PBT Packet
-            </span>
-                    </div>
-                </div>
-
-                <div className="bg-white px-4 py-3.5 rounded-2xl border border-slate-200/90 shadow-xs flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0">
-                        <Bot className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0">
-                        <p className="text-[11px] text-slate-500 font-medium truncate">
-                            Assisted Concierge / RPA
-                        </p>
-                        <p className="text-xl font-extrabold text-blue-700 leading-tight">
-                            {renewalTasks.length} Tasks
-                        </p>
-                        <span className="text-[10px] text-slate-400 font-semibold block truncate">
-              Preparatory Filing Workflow
-            </span>
-                    </div>
-                </div>
-            </div>
-
-            {/* Main 3-Tab Toggle Bar + Sub-Function Toggle Bar */}
+        <div className="space-y-4 select-none w-full">
+            {/* Main 3-Tab Toggle Bar + Secondary Sub-Function Toggle Bar */}
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="inline-flex flex-wrap items-center bg-slate-200/80 p-1 rounded-xl border border-slate-300/70 text-xs font-semibold">
                     <button
@@ -689,11 +612,13 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                 )}
             </div>
 
-            {/* MAIN TAB 1: SSM LOOKUP & EXPIRY RADAR */}
+            {/* =====================================================================
+          MAIN TAB 1: SSM LOOKUP & EXPIRY RADAR (BOTH SUB-FUNCTIONS FULL-WIDTH)
+         ===================================================================== */}
             {mainTab === 'ssm_radar' && (
-                <div>
+                <div className="w-full">
                     {ssmSubTab === 'scanner' && (
-                        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-4">
+                        <div className="w-full bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-4">
                             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
                                 <div>
                                     <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
@@ -824,26 +749,27 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                         </div>
                     )}
 
+                    {/* Full-Width Real-Time SSM Business Lookup */}
                     {ssmSubTab === 'lookup' && (
-                        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 max-w-2xl mx-auto space-y-4">
-                            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div className="w-full bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-5">
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
                                 <div>
                                     <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                                         <Search className="w-4 h-4 text-emerald-600" /> Real-Time SSM Business Lookup &amp; Profile Registration
                                     </h3>
                                     <p className="text-xs text-slate-500 mt-0.5">
-                                        Verify 12-digit SSM registration numbers and register PBT council renewal windows.
+                                        Verify 12-digit SSM registration numbers and register PBT council renewal windows across your organization.
                                     </p>
                                 </div>
-                                <span className="px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono text-[11px] font-bold">
+                                <span className="px-3 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono text-xs font-bold">
                   POST /ssm-verify
                 </span>
                             </div>
 
                             <form onSubmit={handleVerifySsmProfile} noValidate className="space-y-4 text-xs">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                     <div>
-                                        <label className="font-bold text-slate-700 block mb-1">
+                                        <label className="font-bold text-slate-700 block mb-1.5">
                                             SSM Registration No. (12-Digit) *
                                         </label>
                                         <input
@@ -860,8 +786,8 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                                         />
                                     </div>
 
-                                    <div>
-                                        <label className="font-bold text-slate-700 block mb-1">
+                                    <div className="lg:col-span-2">
+                                        <label className="font-bold text-slate-700 block mb-1.5">
                                             Registered Company Name *
                                         </label>
                                         <input
@@ -877,7 +803,7 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                                     </div>
 
                                     <div>
-                                        <label className="font-bold text-slate-700 block mb-1">
+                                        <label className="font-bold text-slate-700 block mb-1.5">
                                             Target Local Council (PBT) *
                                         </label>
                                         <select
@@ -894,19 +820,7 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                                     </div>
 
                                     <div>
-                                        <label className="font-bold text-slate-700 block mb-1">
-                                            PBT License Expiry Date *
-                                        </label>
-                                        <input
-                                            type="date"
-                                            value={ssmExpiryDate}
-                                            onChange={(e) => setSsmExpiryDate(e.target.value)}
-                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono font-bold text-slate-900"
-                                        />
-                                    </div>
-
-                                    <div className="sm:col-span-2">
-                                        <label className="font-bold text-slate-700 block mb-1">
+                                        <label className="font-bold text-slate-700 block mb-1.5">
                                             License Category *
                                         </label>
                                         <select
@@ -921,6 +835,18 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                                             ))}
                                         </select>
                                     </div>
+
+                                    <div>
+                                        <label className="font-bold text-slate-700 block mb-1.5">
+                                            PBT License Expiry Date *
+                                        </label>
+                                        <input
+                                            type="date"
+                                            value={ssmExpiryDate}
+                                            onChange={(e) => setSsmExpiryDate(e.target.value)}
+                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono font-bold text-slate-900"
+                                        />
+                                    </div>
                                 </div>
 
                                 {ssmLookupError && (
@@ -929,7 +855,7 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                                     </p>
                                 )}
 
-                                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
                                     <button
                                         type="button"
                                         onClick={() => setSsmSubTab('scanner')}
@@ -950,11 +876,13 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                 </div>
             )}
 
-            {/* MAIN TAB 2: DOCUMENT VAULT & PACKET BUILDER */}
+            {/* =====================================================================
+          MAIN TAB 2: DOCUMENT VAULT & PACKET BUILDER (BOTH SUB-FUNCTIONS FULL-WIDTH)
+         ===================================================================== */}
             {mainTab === 'vault_packet' && (
-                <div>
+                <div className="w-full">
                     {vaultSubTab === 'repository' && (
-                        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-4">
+                        <div className="w-full bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-4">
                             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
                                 <div>
                                     <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
@@ -1059,8 +987,9 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                         </div>
                     )}
 
+                    {/* Full-Width Upload Document to Compliance Vault */}
                     {vaultSubTab === 'upload' && (
-                        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 max-w-2xl mx-auto space-y-4">
+                        <div className="w-full bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-5">
                             <input
                                 ref={fileInputRef}
                                 type="file"
@@ -1072,7 +1001,7 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                                 className="hidden"
                             />
 
-                            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
                                 <div>
                                     <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                                         <Upload className="w-4 h-4 text-purple-600" /> Upload Document to Compliance Vault
@@ -1081,15 +1010,15 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                                         Index official certificates, tenancy agreements, or floor plans for PBT renewal packets.
                                     </p>
                                 </div>
-                                <span className="px-2.5 py-1 rounded-md bg-purple-50 text-purple-700 border border-purple-200 font-mono text-[11px] font-bold">
+                                <span className="px-3 py-1 rounded-lg bg-purple-50 text-purple-700 border border-purple-200 font-mono text-xs font-bold">
                   POST /vault/upload
                 </span>
                             </div>
 
                             <form onSubmit={handleUploadVaultDoc} noValidate className="space-y-4 text-xs">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                     <div>
-                                        <label className="font-bold text-slate-700 block mb-1">
+                                        <label className="font-bold text-slate-700 block mb-1.5">
                                             Target Company (SSM No.) *
                                         </label>
                                         <select
@@ -1106,7 +1035,7 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                                     </div>
 
                                     <div>
-                                        <label className="font-bold text-slate-700 block mb-1">
+                                        <label className="font-bold text-slate-700 block mb-1.5">
                                             Document Category *
                                         </label>
                                         <select
@@ -1123,7 +1052,7 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                                     </div>
 
                                     <div>
-                                        <label className="font-bold text-slate-700 block mb-1">
+                                        <label className="font-bold text-slate-700 block mb-1.5">
                                             Document Effective Date *
                                         </label>
                                         <input
@@ -1135,7 +1064,7 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                                     </div>
 
                                     <div>
-                                        <label className="font-bold text-slate-700 block mb-1">
+                                        <label className="font-bold text-slate-700 block mb-1.5">
                                             Document Expiry Date *
                                         </label>
                                         <input
@@ -1146,14 +1075,14 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                                         />
                                     </div>
 
-                                    <div className="sm:col-span-2">
-                                        <label className="font-bold text-slate-700 block mb-1">
+                                    <div className="md:col-span-2 lg:col-span-4">
+                                        <label className="font-bold text-slate-700 block mb-1.5">
                                             Document PDF / Scan File
                                         </label>
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-3">
                                             <input
                                                 type="text"
-                                                placeholder="Click 'Choose PDF' or enter filename..."
+                                                placeholder="Click 'Choose PDF / Image' or enter filename..."
                                                 value={uploadFileName}
                                                 onChange={(e) => setUploadFileName(e.target.value)}
                                                 className="flex-1 px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 text-slate-800"
@@ -1161,7 +1090,7 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                                             <button
                                                 type="button"
                                                 onClick={() => fileInputRef.current?.click()}
-                                                className="px-4 py-2.5 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-xl font-bold cursor-pointer"
+                                                className="px-4 py-2.5 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-xl font-bold cursor-pointer shrink-0"
                                             >
                                                 Choose PDF / Image
                                             </button>
@@ -1175,7 +1104,7 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                                     </p>
                                 )}
 
-                                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
                                     <button
                                         type="button"
                                         onClick={() => setVaultSubTab('repository')}
@@ -1196,11 +1125,13 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                 </div>
             )}
 
-            {/* MAIN TAB 3: CONCIERGE & RPA ASSISTED FILING */}
+            {/* =====================================================================
+          MAIN TAB 3: CONCIERGE & RPA ASSISTED FILING (BOTH SUB-FUNCTIONS FULL-WIDTH)
+         ===================================================================== */}
             {mainTab === 'assisted_filing' && (
-                <div>
+                <div className="w-full">
                     {filingSubTab === 'pipeline' && (
-                        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-4">
+                        <div className="w-full bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-4">
                             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
                                 <div>
                                     <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
@@ -1298,9 +1229,10 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                         </div>
                     )}
 
+                    {/* Full-Width Initiate Concierge / RPA Assisted License Renewal */}
                     {filingSubTab === 'initiate' && (
-                        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 max-w-2xl mx-auto space-y-4">
-                            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div className="w-full bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-5">
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
                                 <div>
                                     <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                                         <Plus className="w-4 h-4 text-blue-600" /> Initiate Concierge / RPA Assisted License Renewal
@@ -1309,15 +1241,15 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                                         Packages your selected Vault documents ({selectedDocIds.length} attached) into a preparatory renewal workflow.
                                     </p>
                                 </div>
-                                <span className="px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 border border-blue-200 font-mono text-[11px] font-bold">
+                                <span className="px-3 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 font-mono text-xs font-bold">
                   POST /renewal/initiate
                 </span>
                             </div>
 
                             <form onSubmit={handleInitiateRenewal} noValidate className="space-y-4 text-xs">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                     <div>
-                                        <label className="font-bold text-slate-700 block mb-1">
+                                        <label className="font-bold text-slate-700 block mb-1.5">
                                             Target Monitored Entity *
                                         </label>
                                         <select
@@ -1334,7 +1266,7 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                                     </div>
 
                                     <div>
-                                        <label className="font-bold text-slate-700 block mb-1">
+                                        <label className="font-bold text-slate-700 block mb-1.5">
                                             Assisted Execution Mode *
                                         </label>
                                         <select
@@ -1358,7 +1290,7 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                                     </div>
 
                                     <div>
-                                        <label className="font-bold text-slate-700 block mb-1">
+                                        <label className="font-bold text-slate-700 block mb-1.5">
                                             Estimated Renewal Fee ({currency}) *
                                         </label>
                                         <input
@@ -1375,7 +1307,7 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                                     </div>
 
                                     <div>
-                                        <label className="font-bold text-slate-700 block mb-1">
+                                        <label className="font-bold text-slate-700 block mb-1.5">
                                             Target Submission Deadline *
                                         </label>
                                         <input
@@ -1386,15 +1318,15 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                                         />
                                     </div>
 
-                                    <div className="sm:col-span-2">
-                                        <label className="font-bold text-slate-700 block mb-1">
+                                    <div className="md:col-span-2 lg:col-span-4">
+                                        <label className="font-bold text-slate-700 block mb-1.5">
                                             Internal Filing Notes / Instructions
                                         </label>
                                         <textarea
-                                            rows={2}
+                                            rows={3}
                                             value={filingNotes}
                                             onChange={(e) => setFilingNotes(e.target.value)}
-                                            className="w-full px-3.5 py-2 rounded-xl bg-white border border-slate-300 text-slate-800"
+                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 text-slate-800"
                                         />
                                     </div>
                                 </div>
@@ -1405,7 +1337,7 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                                     </p>
                                 )}
 
-                                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
                                     <button
                                         type="button"
                                         onClick={() => setFilingSubTab('pipeline')}
