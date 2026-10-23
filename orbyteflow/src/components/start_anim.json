@@ -1,0 +1,115 @@
+{
+  "$schema": "https://vyte.io/schemas/figma-smart-animate-v1.json",
+  "meta": {
+    "name": "Vyte_Splash_Choreography",
+    "exportFormat": "Figma-Smart-Animate-Spec",
+    "version": "1.0.0",
+    "fps": 60,
+    "durationMs": 4200,
+    "canvas": {
+      "width": 800,
+      "height": 500,
+      "background": "#F6F7F4"
+    }
+  },
+  "designTokens": {
+    "colors": {
+      "inkBlack": "#0B0C0E",
+      "vyteGreen": "#2BB656",
+      "vyteGreenGlow": "rgba(43, 182, 86, 0.28)",
+      "surfaceOffWhite": "#F6F7F4",
+      "drawerTrack": "#E2E5DF"
+    },
+    "easings": {
+      "figmaSpring": "cubic-bezier(0.22, 1, 0.36, 1)",
+      "figmaGentle": "cubic-bezier(0.4, 0, 0.2, 1)",
+      "churnVortex": "cubic-bezier(0.68, -0.55, 0.265, 1.55)",
+      "snapOut": "cubic-bezier(0.16, 1, 0.3, 1)"
+    }
+  },
+  "timeline": [
+    {
+      "id": "stage_1_database",
+      "label": "Database Init",
+      "startMs": 0,
+      "endMs": 1050,
+      "easing": "figmaSpring",
+      "description": "3-tier cylindrical database stack initializes with LED status pulse"
+    },
+    {
+      "id": "stage_2_drawer",
+      "label": "Inventory Drawer & Block Pulse",
+      "startMs": 1050,
+      "endMs": 2250,
+      "easing": "figmaSpring",
+      "description": "Database platters morph into open inventory drawers; stock blocks pop and pulse"
+    },
+    {
+      "id": "stage_3_churn",
+      "label": "Kinetic Vortex Churn",
+      "startMs": 2250,
+      "endMs": 3050,
+      "easing": "churnVortex",
+      "description": "Drawer & inventory blocks compress and orbit into a high-speed kinetic core"
+    },
+    {
+      "id": "stage_4_logo_reveal",
+      "label": "Vyte Logo Assembly",
+      "startMs": 3050,
+      "endMs": 4200,
+      "easing": "snapOut",
+      "description": "Vortex particles snap into the V, y (with dual green nodes), t, e and subtitle"
+    }
+  ],
+  "logoGeometry": {
+    "viewBox": "0 0 800 500",
+    "glyphs": {
+      "V_leftLeg": {
+        "d": "M 135 120 L 181 120 L 238 272 L 214 332 Z",
+        "fill": "#0B0C0E"
+      },
+      "V_rightGreenSlash": {
+        "d": "M 220 350 L 308 120 L 356 120 L 268 350 Z",
+        "fill": "#2BB656"
+      },
+      "y_leftFork": {
+        "d": "M 332 185 L 376 185 L 414 278 L 392 332 Z",
+        "fill": "#0B0C0E"
+      },
+      "y_descender": {
+        "d": "M 442 214 C 454 226 468 231 482 229 L 434 366 C 419 406 393 422 363 420 C 374 405 376 388 370 374 C 383 374 391 366 397 349 Z",
+        "fill": "#0B0C0E"
+      },
+      "y_topGreenDot": {
+        "cx": 469,
+        "cy": 197,
+        "r": 22,
+        "fill": "#2BB656"
+      },
+      "y_bottomGreenDot": {
+        "cx": 342,
+        "cy": 395,
+        "r": 22,
+        "fill": "#2BB656"
+      },
+      "t_body": {
+        "d": "M 522 132 L 564 132 L 564 185 L 612 185 L 612 223 L 564 223 L 564 300 C 564 316 573 322 590 322 C 598 322 606 320 613 317 L 622 350 C 609 356 593 359 576 359 C 538 359 522 339 522 299 L 522 223 L 498 223 L 498 185 L 522 185 Z",
+        "fill": "#0B0C0E"
+      },
+      "e_body": {
+        "d": "M 792 282 L 675 282 C 680 310 699 324 726 324 C 745 324 759 316 769 302 L 796 327 C 779 349 755 360 723 360 C 668 360 634 323 634 270 C 634 217 668 180 718 180 C 769 180 795 217 795 266 C 795 272 794 277 792 282 Z M 676 251 L 754 251 C 750 227 736 214 716 214 C 695 214 681 227 676 251 Z",
+        "fill": "#0B0C0E",
+        "fillRule": "evenodd"
+      }
+    },
+    "subtitle": {
+      "text": "INVENTORY MANAGEMENT",
+      "x": 465,
+      "y": 472,
+      "letterSpacing": "0.34em",
+      "fontSize": 22,
+      "fontWeight": 600,
+      "fill": "#0B0C0E"
+    }
+  }
+}
