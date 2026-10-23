@@ -1,12 +1,13 @@
-// src/modules/module3-sales/SalesAnalyticsModule.tsx
+
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
     TrendingUp, Sparkles, Calendar, DollarSign, PackageCheck, Clock, RefreshCw,
     Download, CheckCircle2, AlertCircle, Search, ArrowUpDown, Wifi, WifiOff, Inbox, X,
+    FileText, Scale, Printer,
 } from 'lucide-react';
 import type {
     AnalyzeProcurementRequest, AnalyzeProcurementResponse, CurrencyCode,
-    GetSalesReviewReportRequest, GetSalesReviewReportResponse, Product,
+    GetSalesReviewReportRequest, GetSalesReviewReportResponse, Product, QCAlert,
 } from '../../types/vyte.ts';
 import { CURRENCY_SYMBOLS } from '../../types/vyte.ts';
 import { orbyteApi } from '../../services/api.ts';
@@ -14,6 +15,7 @@ import { VyteDropdown } from '../../components/common/VyteDropdown.tsx';
 
 interface SalesAnalyticsModuleProps {
     products: Product[];
+    qcAlerts?: QCAlert[];
     userID: string;
     currency?: CurrencyCode;
     exchangeRate?: number;
@@ -29,7 +31,7 @@ type SalesSortField = 'name' | 'unitsSold' | 'totalSalesAmount' | 'remainingStoc
 type ProcureSortField = 'name' | 'currentStock' | 'costOfHoldingStock' | 'timeNeededToSellOffDays' | 'recommendedProcureQty' | 'priorityLevel';
 
 export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
-                                                                              products, userID, currency = 'MYR', exchangeRate = 1.0,
+                                                                              products, qcAlerts = [], userID, currency = 'MYR', exchangeRate = 1.0,
                                                                               onQueueRestockToOrderModule, onLogAction, onTriggerLoadingScreen,
                                                                           }) => {
     const sym = CURRENCY_SYMBOLS[currency] || 'RM';
@@ -58,6 +60,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
     const [holdingCostInput, setHoldingCostInput] = useState<string>(savedUi.holdingCostInput ?? '18.5');
     const [turnoverDaysInput, setTurnoverDaysInput] = useState<string>(savedUi.turnoverDaysInput ?? '21');
     const [tableSearch, setTableSearch] = useState<string>(savedUi.tableSearch ?? '');
+    const [showExecutiveReportModal, setShowExecutiveReportModal] = useState(false);
 
     useEffect(() => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify({
@@ -79,7 +82,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
 
     const [salesSortBy, setSalesSortBy] = useState<SalesSortField>('totalSalesAmount');
     const [salesSortDir, setSalesSortDir] = useState<'asc' | 'desc'>('desc');
-    const [procureSortBy, setProcureSortBy] = useState<ProcureSortField>('recommendedProcureQty');
+    const [procureSortBy, setProcureSortField] = useState<ProcureSortField>('recommendedProcureQty');
     const [procureSortDir, setProcureSortDir] = useState<'asc' | 'desc'>('desc');
 
     const [reportData, setReportData] = useState<GetSalesReviewReportResponse | null>(null);
@@ -161,35 +164,85 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
             setProcurementData(procureRes.data);
             setIsSimulatedData(reportRes.isSimulatedFallback || procureRes.isSimulatedFallback);
 
-            if (logType === 'manual-report') onLogAction('Sales Analytics', `Synced ${reportRes.data.period} sales report (Total Revenue: ${sym} ${reportRes.data.totalRevenue.toLocaleString()}).`);
-            else if (logType === 'manual-ai') onLogAction('Sales Analytics (AI)', `Recalculated AI holding-cost & restock forecast for ${reportRes.data.period} (${holdingCostPercentage}% holding cost, ${targetTurnoverDays}d turnover).`);
+            if (logType === 'manual-report') onLogAction('Sales Analytics', `Synced ${reportRes.data.period} sales report.`);
+            else if (logType === 'manual-ai') onLogAction('Sales Analytics (AI)', `Recalculated AI holding-cost & restock forecast for ${reportRes.data.period}.`);
         } catch (err) {
-            setErrorMessage(err instanceof Error ? err.message : 'Failed to fetch sales analytics from server.');
+            setErrorMessage(err instanceof Error ? err.message : 'Failed to fetch sales analytics.');
         } finally {
             setIsSyncingReport(false); setIsRunningAi(false);
         }
-    }, [filterYear, filterQuarter, selectedCategory, userID, holdingCostPercentage, targetTurnoverDays, fallbackSalesReport, fallbackProcurementAnalysis, inputErrors, onLogAction, onTriggerLoadingScreen, sym]);
+    }, [filterYear, filterQuarter, selectedCategory, userID, holdingCostPercentage, targetTurnoverDays, fallbackSalesReport, fallbackProcurementAnalysis, inputErrors, onLogAction, onTriggerLoadingScreen]);
 
     useEffect(() => { void fetchSalesAndProcurement('auto'); }, [filterYear, filterQuarter, filterMonth, selectedCategory, products, holdingCostPercentage, targetTurnoverDays, exchangeRate]);
 
     const activeReport = reportData ?? fallbackSalesReport;
     const activeProcurement = procurementData ?? fallbackProcurementAnalysis;
 
+    // Executive & MFRS 102 Combined Report Metrics for the Boss
+    const executiveReportMetrics = useMemo(() => {
+        let totalCogs = 0;
+        let totalHistoricalInventoryCost = 0;
+        let totalNrvWriteDown = 0;
+
+        const skuAuditRows = activeReport.productBreakdown.map((item) => {
+            const p = products.find((x) => x.id === item.productID || x.sku === item.SKU);
+            const unitCost = (p?.unitCostRM ?? (p?.priceRM ?? 40) * 0.62) * exchangeRate;
+            const unitPrice = (p?.priceRM ?? 60) * exchangeRate;
+            const cogs = item.unitsSold * unitCost;
+            const grossProfit = item.totalSalesAmount - cogs;
+            const marginPct = item.totalSalesAmount > 0 ? ((grossProfit / item.totalSalesAmount) * 100).toFixed(1) : '0.0';
+
+            const stockCost = item.remainingStock * unitCost;
+            const hasQcRisk = qcAlerts.some((q) => q.sku === item.SKU && q.status !== 'APPROVED_RESOLVED');
+            const writeDown = hasQcRisk ? Number((stockCost * 0.22).toFixed(2)) : 0;
+            const mfrsValue = Number((stockCost - writeDown).toFixed(2));
+
+            totalCogs += cogs;
+            totalHistoricalInventoryCost += stockCost;
+            totalNrvWriteDown += writeDown;
+
+            return {
+                ...item,
+                unitCost,
+                unitPrice,
+                cogs,
+                grossProfit,
+                marginPct,
+                stockCost,
+                writeDown,
+                mfrsValue,
+                hasQcRisk,
+            };
+        });
+
+        const totalGrossProfit = activeReport.totalRevenue - totalCogs;
+        const grossMarginPct = activeReport.totalRevenue > 0 ? ((totalGrossProfit / activeReport.totalRevenue) * 100).toFixed(1) : '0.0';
+
+        return {
+            skuAuditRows,
+            totalCogs,
+            totalGrossProfit,
+            grossMarginPct,
+            totalHistoricalInventoryCost,
+            totalNrvWriteDown,
+            totalMfrsCarryingValue: totalHistoricalInventoryCost - totalNrvWriteDown,
+        };
+    }, [activeReport, products, qcAlerts, exchangeRate]);
+
     const handleExportCsv = () => {
-        const headers = ['Period', 'Product ID', 'SKU', 'Product Name', 'Category', 'Units Sold', `Revenue (${currency})`, 'Revenue Share (%)', 'Remaining Stock', `Holding Cost (${currency})`, 'Time To Sell Off (Days)', `Optimal Stock (${targetTurnoverDays}d)`, 'Recommended Procure Qty', 'AI Priority Level'];
+        const headers = ['Period', 'Product ID', 'SKU', 'Product Name', 'Category', 'Units Sold', `Revenue (${currency})`, `COGS (${currency})`, `Gross Profit (${currency})`, 'Margin (%)', 'Remaining Stock', `MFRS 102 Carrying Value (${currency})`, `NRV Write-Down (${currency})`, `Holding Cost (${currency})`, 'Recommended Procure Qty'];
         const esc = (v: string | number) => { const s = String(v ?? ''); return /[,"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-        const rows = activeReport.productBreakdown.map((item) => {
-            const sharePct = activeReport.totalRevenue > 0 ? ((item.totalSalesAmount / activeReport.totalRevenue) * 100).toFixed(2) : '0.00';
+        const rows = executiveReportMetrics.skuAuditRows.map((item) => {
             const rec = activeProcurement.procurementRecommendations.find((r) => r.productID === item.productID || r.SKU === item.SKU);
-            return [activeReport.period, item.productID, item.SKU, item.name, item.category, item.unitsSold, item.totalSalesAmount.toFixed(2), sharePct, item.remainingStock, rec ? rec.costOfHoldingStock.toFixed(2) : '0.00', rec ? rec.timeNeededToSellOffDays : '', rec ? rec.optimalStockToHold : '', rec ? rec.recommendedProcureQty : 0, rec ? rec.priorityLevel : 'LOW'].map(esc).join(',');
+            return [activeReport.period, item.productID, item.SKU, item.name, item.category, item.unitsSold, item.totalSalesAmount.toFixed(2), item.cogs.toFixed(2), item.grossProfit.toFixed(2), `${item.marginPct}%`, item.remainingStock, item.mfrsValue.toFixed(2), item.writeDown.toFixed(2), rec ? rec.costOfHoldingStock.toFixed(2) : '0.00', rec ? rec.recommendedProcureQty : 0].map(esc).join(',');
         });
         const blob = new Blob(['\uFEFF' + [headers.join(','), ...rows].join('\n')], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         const safePeriod = activeReport.period.replace(/[^a-zA-Z0-9-_]/g, '_');
-        a.href = url; a.setAttribute('download', `vyte_sales_analytics_${safePeriod}.csv`);
+        a.href = url; a.setAttribute('download', `Vyte_Executive_Sales_MFRS102_Report_${safePeriod}.csv`);
         document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-        onLogAction('Sales Analytics', `Exported CSV report (vyte_sales_analytics_${safePeriod}.csv).`);
+        onLogAction('Sales Analytics', `Generated & exported Executive Sales + MFRS 102 Audit Report (${safePeriod}).`);
     };
 
     const categories = useMemo(() => ['ALL', ...Array.from(new Set(products.map((p) => p.category)))], [products]);
@@ -216,7 +269,7 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
     }, [activeProcurement, tableSearch, procureSortBy, procureSortDir]);
 
     const toggleSalesSort = (f: SalesSortField) => { if (salesSortBy === f) setSalesSortDir((p) => (p === 'asc' ? 'desc' : 'asc')); else { setSalesSortBy(f); setSalesSortDir('desc'); } };
-    const toggleProcureSort = (f: ProcureSortField) => { if (procureSortBy === f) setProcureSortDir((p) => (p === 'asc' ? 'desc' : 'asc')); else { setProcureSortBy(f); setProcureSortDir('desc'); } };
+    const toggleProcureSort = (f: ProcureSortField) => { if (procureSortBy === f) setProcureSortDir((p) => (p === 'asc' ? 'desc' : 'asc')); else { setProcureSortField(f); setProcureSortDir('desc'); } };
 
     const isLoading = isSyncingReport || isRunningAi;
     const topProduct = useMemo(() => activeReport.productBreakdown.length ? [...activeReport.productBreakdown].sort((a, b) => b.totalSalesAmount - a.totalSalesAmount)[0] : null, [activeReport]);
@@ -242,6 +295,20 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
                             AI Restock &amp; Holding-Cost Recommendations ({displayedRecommendations.length})
                         </button>
                     </div>
+
+                    {/* Prominent Generate Executive & Audit Report Button */}
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setShowExecutiveReportModal(true);
+                                onLogAction('Sales Analytics', `Opened Executive Sales & MFRS 102 Audit Report Visualizer (${activeReport.period}).`);
+                            }}
+                            className="px-4 py-2 bg-[#2BB656] hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+                        >
+                            <FileText className="w-3.5 h-3.5" /> Generate Executive &amp; MFRS Audit Report
+                        </button>
+                    </div>
                 </div>
 
                 <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
@@ -265,9 +332,9 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
                     </div>
 
                     <div className="flex items-center gap-2">
-            <span className={`px-2.5 py-1 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 border ${isSimulatedData ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-emerald-50 text-emerald-800 border-emerald-200'}`}>
-              {isSimulatedData ? <><WifiOff className="w-3 h-3" /> Simulated Data</> : <><Wifi className="w-3 h-3" /> Live Backend</>}
-            </span>
+                        <span className={`px-2.5 py-1 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 border ${isSimulatedData ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-emerald-50 text-emerald-800 border-emerald-200'}`}>
+                            {isSimulatedData ? <><WifiOff className="w-3 h-3" /> Simulated Data</> : <><Wifi className="w-3 h-3" /> Live Backend</>}
+                        </span>
                         <button type="button" onClick={() => void fetchSalesAndProcurement('manual-report')} disabled={isLoading} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer">
                             <RefreshCw className={`w-3.5 h-3.5 ${isSyncingReport ? 'animate-spin' : ''}`} /> Refresh Report
                         </button>
@@ -472,6 +539,131 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
                     <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0"><Clock className="w-4 h-4" /></div>
                 </div>
             </div>
+
+            {/* =====================================================================
+                EXECUTIVE SALES & MFRS 102 INVENTORY AUDIT REPORT MODAL (FOR THE BOSS)
+               ===================================================================== */}
+            {showExecutiveReportModal && (
+                <div className="fixed inset-0 bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-2xl border border-slate-200 max-w-4xl w-full p-6 shadow-2xl space-y-5 max-h-[92vh] overflow-y-auto">
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 text-[#2BB656] flex items-center justify-center">
+                                    <Scale className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="text-base font-bold text-slate-900">
+                                            Executive Sales P&amp;L &amp; MFRS 102 Inventory Audit Report ({activeReport.period})
+                                        </h3>
+                                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                                            Boss &amp; Auditor Ready
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-slate-500">
+                                        Combines period sales margin analysis with Malaysian Financial Reporting Standard <strong>MFRS 102 (Lower of Cost &amp; NRV)</strong> inventory valuation.
+                                    </p>
+                                </div>
+                            </div>
+                            <button type="button" onClick={() => setShowExecutiveReportModal(false)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"><X className="w-4 h-4" /></button>
+                        </div>
+
+                        {/* Top KPI Summary for the Boss */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                            <div className="p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200">
+                                <span className="text-[10px] font-bold uppercase text-emerald-700">Period Revenue</span>
+                                <p className="text-base font-extrabold text-slate-900 mt-0.5">
+                                    {sym} {activeReport.totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                </p>
+                                <span className="text-[11px] text-emerald-700">{activeReport.totalUnitsSold.toLocaleString()} units sold</span>
+                            </div>
+                            <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200">
+                                <span className="text-[10px] font-bold uppercase text-blue-700">Gross Profit &amp; Margin</span>
+                                <p className="text-base font-extrabold text-slate-900 mt-0.5">
+                                    {sym} {executiveReportMetrics.totalGrossProfit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                </p>
+                                <span className="text-[11px] text-blue-700 font-bold">Margin: {executiveReportMetrics.grossMarginPct}%</span>
+                            </div>
+                            <div className="p-3.5 rounded-xl bg-indigo-50/70 border border-indigo-200">
+                                <span className="text-[10px] font-bold uppercase text-indigo-700">MFRS 102 Carrying Value</span>
+                                <p className="text-base font-extrabold text-slate-900 mt-0.5">
+                                    {sym} {executiveReportMetrics.totalMfrsCarryingValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                </p>
+                                <span className="text-[11px] text-indigo-700">Net of NRV Write-Downs</span>
+                            </div>
+                            <div className="p-3.5 rounded-xl bg-rose-50/70 border border-rose-200">
+                                <span className="text-[10px] font-bold uppercase text-rose-700">Impairment / Write-Down</span>
+                                <p className="text-base font-extrabold text-rose-700 mt-0.5">
+                                    - {sym} {executiveReportMetrics.totalNrvWriteDown.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                </p>
+                                <span className="text-[11px] text-rose-700">At-risk perishable batches</span>
+                            </div>
+                        </div>
+
+                        {/* Detailed Breakdown Table */}
+                        <div className="overflow-x-auto rounded-xl border border-slate-200">
+                            <table className="w-full text-left border-collapse text-xs">
+                                <thead>
+                                <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-600 uppercase">
+                                    <th className="py-2.5 px-3.5">SKU &amp; Product</th>
+                                    <th className="py-2.5 px-3">Units Sold</th>
+                                    <th className="py-2.5 px-3">Revenue ({currency})</th>
+                                    <th className="py-2.5 px-3">Gross Profit (Margin)</th>
+                                    <th className="py-2.5 px-3">Closing Stock</th>
+                                    <th className="py-2.5 px-3">NRV Write-Down</th>
+                                    <th className="py-2.5 px-3.5 text-right">MFRS 102 Value ({currency})</th>
+                                </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                {executiveReportMetrics.skuAuditRows.map((row) => (
+                                    <tr key={row.productID} className={row.hasQcRisk ? 'bg-rose-50/30' : ''}>
+                                        <td className="py-2.5 px-3.5">
+                                            <p className="font-bold text-slate-900">{row.name}</p>
+                                            <span className="font-mono text-[10px] text-slate-400">{row.SKU}</span>
+                                        </td>
+                                        <td className="py-2.5 px-3 font-bold">{row.unitsSold.toLocaleString()}</td>
+                                        <td className="py-2.5 px-3 font-bold text-emerald-700">{sym} {row.totalSalesAmount.toFixed(2)}</td>
+                                        <td className="py-2.5 px-3">
+                                            <span className="font-semibold text-slate-900">{sym} {row.grossProfit.toFixed(2)}</span>{' '}
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold">{row.marginPct}%</span>
+                                        </td>
+                                        <td className="py-2.5 px-3 font-semibold">{row.remainingStock}</td>
+                                        <td className="py-2.5 px-3 font-bold text-rose-600">
+                                            {row.writeDown > 0 ? `- ${sym} ${row.writeDown.toFixed(2)}` : '—'}
+                                        </td>
+                                        <td className="py-2.5 px-3.5 text-right font-extrabold text-indigo-900">
+                                            {sym} {row.mfrsValue.toFixed(2)}
+                                        </td>
+                                    </tr>
+                                ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
+                            <span className="text-[11px] text-slate-500">
+                                Certified under MFRS 102 para. 9 (Inventories measured at the lower of cost and net realisable value).
+                            </span>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => window.print()}
+                                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                                >
+                                    <Printer className="w-3.5 h-3.5" /> Print / Save PDF
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleExportCsv}
+                                    className="px-4 py-2 bg-[#2BB656] hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
+                                >
+                                    <Download className="w-3.5 h-3.5" /> Download Full Report (CSV)
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

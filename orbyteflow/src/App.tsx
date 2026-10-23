@@ -1,4 +1,4 @@
-// src/App.tsx
+
 import { useState, useEffect, useCallback } from 'react';
 import type {
   ActiveTab, AuditLog, BusinessComplianceProfile, CurrencyCode, DocumentVaultItem,
@@ -25,6 +25,7 @@ import { LoadingScreen } from './components/LoadingScreen';
 import { LoginPage } from './components/auth/LoginPage';
 import { orbyteApi, getDebugMockMode, setDebugMockMode } from './services/api';
 import { UniversalSystemMigratorModal } from './components/migration/UniversalSystemMigratorModal';
+import { CustomerSupportPortalModal } from './components/support/CustomerSupportPortalModal';
 
 const SESSION_KEY = 'vyte_active_session_v1';
 const FALLBACK_RATES: Record<CurrencyCode, number> = { MYR: 1.0, SGD: 0.313, USD: 0.244 };
@@ -74,6 +75,7 @@ export default function App() {
   const [loadingOverlayMessage, setLoadingOverlayMessage] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showMigratorModal, setShowMigratorModal] = useState(false);
+  const [showSupportModal, setShowSupportModal] = useState(false);
   const [pendingCustomerOrderCount, setPendingCustomerOrderCount] = useState(1);
   const [deductedOrderIds, setDeductedOrderIds] = useState<Record<string, boolean>>({});
 
@@ -85,7 +87,7 @@ export default function App() {
   const [auditLogs, setAuditLogs] = usePersistedState<AuditLog[]>('vyte_state_logs_v2', INITIAL_AUDIT_LOGS, (list) =>
       list.map((l) => ({ ...l, module: stripModPrefix(l.module) || 'System', detail: stripModPrefix(l.detail) }))
   );
-  const [complianceProfiles, setComplianceProfiles] = usePersistedState<BusinessComplianceProfile[]>('vyte_state_compliance_profiles_v1', INITIAL_COMPLIANCE_PROFILES);
+  const [complianceProfiles, setComplianceProfiles] = usePersistedState<BusinessComplianceProfile[]>('vyte_state_compliance_profiles_v2', INITIAL_COMPLIANCE_PROFILES);
   const [vaultDocs, setVaultDocs] = usePersistedState<DocumentVaultItem[]>('vyte_state_vault_docs_v1', INITIAL_VAULT_DOCS);
   const [renewalTasks, setRenewalTasks] = usePersistedState<RenewalTask[]>('vyte_state_renewal_tasks_v1', INITIAL_RENEWAL_TASKS);
 
@@ -153,11 +155,11 @@ export default function App() {
         if (parsed) {
           const next: Record<CurrencyCode, number> = { MYR: 1.0, SGD: parsed.SGD, USD: parsed.USD };
           setExchangeRates(next);
-          setRateSourceLabel(`${p.name} \u2022 1 RM = ${next.SGD.toFixed(3)} SGD | ${next.USD.toFixed(3)} USD`);
+          setRateSourceLabel(`${p.name} • 1 RM = ${next.SGD.toFixed(3)} SGD | ${next.USD.toFixed(3)} USD`);
           if (notifyUser) pushToast('success', `Updated FX rates: 1 MYR = ${next.SGD.toFixed(3)} SGD / ${next.USD.toFixed(3)} USD`);
           return;
         }
-      } catch { /* fallback to next */ }
+      } catch { /* fallback */ }
     }
     setRateSourceLabel('Cached FX Rate');
   }, [pushToast, setExchangeRates]);
@@ -167,7 +169,7 @@ export default function App() {
   const handleCurrencyChange = (newCurrency: CurrencyCode) => {
     setCurrency(newCurrency);
     localStorage.setItem('vyte_currency', newCurrency);
-    pushToast('success', `Currency set to ${newCurrency} (${CURRENCY_SYMBOLS[newCurrency]}) \u2022 1 MYR = ${(exchangeRates[newCurrency] ?? 1).toFixed(3)} ${newCurrency}`);
+    pushToast('success', `Currency set to ${newCurrency} (${CURRENCY_SYMBOLS[newCurrency]})`);
   };
 
   const handleTriggerLoadingScreen = useCallback((message: string, durationMs = 900) => {
@@ -211,7 +213,7 @@ export default function App() {
     setUserSession(session);
     setRole(session.role);
     setSplashDone(false);
-    addAuditLog('Auth', `Signed in as ${session.userName} (${session.userID}) \u2022 Role: ${session.userType} \u2022 ${session.companyName}.`, session.role);
+    addAuditLog('Auth', `Signed in as ${session.userName} (${session.userID}) • Role: ${session.userType} • ${session.companyName}.`, session.role);
   };
 
   const handleLogout = () => {
@@ -494,6 +496,7 @@ export default function App() {
             totalProductCount={products.length} userSession={userSession} onLogout={handleLogout}
             debugMockMode={debugMockMode} onToggleDebugMockMode={handleToggleDebugMode}
             onOpenMigratorModal={() => setShowMigratorModal(true)}
+            onOpenSupportModal={() => setShowSupportModal(true)}
         />
 
         <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden gap-3">
@@ -560,6 +563,7 @@ export default function App() {
                         products={filteredProducts} role={role} currency={currency} exchangeRate={activeExchangeRate}
                         onApproveAndContactSupplier={handleApproveAndContactSupplier} onConfirmSupplierDelivery={handleConfirmSupplierDelivery}
                         onRecordStockUsage={handleRecordStockUsage} onOpenAddModal={() => setShowAddModal(true)} onBatchImportProducts={handleBatchImportProducts}
+                        onOpenMigratorModal={() => setShowMigratorModal(true)}
                     />
                   </div>
 
@@ -576,7 +580,7 @@ export default function App() {
 
             {activeTab === 'mod2' && (
                 <SalesAnalyticsModule
-                    products={products} userID={userSession.userID} currency={currency} exchangeRate={activeExchangeRate}
+                    products={products} qcAlerts={qcAlerts} userID={userSession.userID} currency={currency} exchangeRate={activeExchangeRate}
                     onQueueRestockToOrderModule={handleQueueRestockToOrderModule} onLogAction={addAuditLog} onTriggerLoadingScreen={handleTriggerLoadingScreen}
                 />
             )}
@@ -592,7 +596,7 @@ export default function App() {
 
             {activeTab === 'mod5' && (
                 <InvoiceModule
-                    invoices={invoices} role={role} currency={currency} exchangeRate={activeExchangeRate}
+                    invoices={invoices} products={products} role={role} currency={currency} exchangeRate={activeExchangeRate}
                     onVerifyInvoice={handleVerifyInvoice} onToggleInvoicePaid={handleToggleInvoicePaid}
                     onAddValidatedInvoice={handleAddValidatedInvoice}
                     onBatchImportInvoices={(list) => { if (list.length) { setInvoices((p) => [...list, ...p]); pushToast('success', `Imported ${list.length} invoices.`); } }}
@@ -602,8 +606,9 @@ export default function App() {
             {activeTab === 'mod6' && (
                 <ComplianceRenewalModule
                     profiles={complianceProfiles} setProfiles={setComplianceProfiles} vaultDocs={vaultDocs} setVaultDocs={setVaultDocs}
-                    renewalTasks={renewalTasks} setRenewalTasks={setRenewalTasks} role={role} userID={userSession.userID}
-                    currency={currency} exchangeRate={activeExchangeRate} onLogAction={addAuditLog} onTriggerLoadingScreen={handleTriggerLoadingScreen}
+                    renewalTasks={renewalTasks} setRenewalTasks={setRenewalTasks} products={products} qcAlerts={qcAlerts} invoices={invoices}
+                    role={role} userID={userSession.userID} currency={currency} exchangeRate={activeExchangeRate}
+                    onLogAction={addAuditLog} onTriggerLoadingScreen={handleTriggerLoadingScreen}
                 />
             )}
 
@@ -626,6 +631,14 @@ export default function App() {
               );
               pushToast('success', `AI migrated "${sourceFileName}" (${transitionMode} mode active).`);
             }}
+        />
+
+        <CustomerSupportPortalModal
+            isOpen={showSupportModal}
+            onClose={() => setShowSupportModal(false)}
+            userSession={userSession}
+            onLogAction={addAuditLog}
+            onNotify={pushToast}
         />
 
         <LoadingScreen isOpen={loadingOverlayMessage !== null} message={loadingOverlayMessage ?? ''} />

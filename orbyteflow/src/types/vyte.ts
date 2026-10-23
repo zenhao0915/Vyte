@@ -19,7 +19,6 @@ export interface OrbyteHrStaff {
     shiftStatus: 'ON_DUTY' | 'BUSY';
 }
 
-// Payload sent to Orbyte HR System when an assigned staff member misses the due date
 export interface OrbyteHrOverdueEscalationPayload {
     event: 'ORBYTE_HR_TASK_OVERDUE_ESCALATION';
     escalationId: string;
@@ -137,7 +136,6 @@ export interface QCAlert {
     actionLabel: string;
     savedRM: number;
     status: 'PENDING_APPROVAL' | 'ASSIGNED_TO_STAFF' | 'APPROVED_RESOLVED';
-    // Orbyte HR System Integration & Due-Date Tracking Fields
     hrTaskId?: string;
     assignedStaffId?: string;
     assignedStaffName?: string;
@@ -145,8 +143,8 @@ export interface QCAlert {
     assignedStaffPosition?: string;
     assignedStaffRole?: string;
     assignedPriority?: 'URGENT' | 'HIGH' | 'NORMAL';
-    assignedDueDate?: string; // ISO YYYY-MM-DD
-    completedAtDate?: string; // ISO YYYY-MM-DD
+    assignedDueDate?: string;
+    completedAtDate?: string;
     completedLate?: boolean;
     hrNotes?: string;
     assignedAt?: string;
@@ -154,13 +152,19 @@ export interface QCAlert {
     hrEscalationPayload?: OrbyteHrOverdueEscalationPayload;
 }
 
+export type SstTaxCode = 'EXEMPT_0' | 'FNB_LOGISTICS_6' | 'SERVICE_8' | 'SALES_10';
+
 export interface InvoiceItem {
     id: string;
     invNo: string;
     type: 'SUPPLIER_PAYABLE' | 'CUSTOMER_RECEIVABLE';
     party: string;
     date: string;
+    dueDate?: string;
     amountRM: number;
+    sstCode?: SstTaxCode;
+    sstRatePct?: number;
+    sstAmountRM?: number;
     aiCategory: string;
     aiConfidence: number;
     paid: boolean;
@@ -235,10 +239,6 @@ export interface AnalyzeProcurementResponse {
         priorityLevel: 'HIGH' | 'MEDIUM' | 'LOW';
     }[];
 }
-
-// ============================================================================
-// AUTH, SESSION & PASSWORD RESET API PAYLOADS
-// ============================================================================
 
 export type UserType = 'CEO' | 'Manager' | 'Staff';
 
@@ -332,10 +332,6 @@ export interface EnterpriseSsoAuthRequest {
     role: UserRole;
 }
 
-// ============================================================================
-// MODULE 1: AUTO RESTOCK API PAYLOADS
-// ============================================================================
-
 export interface ConfirmRestockRequest {
     poNumber: string;
     productId: string;
@@ -378,10 +374,6 @@ export interface ContactSupplierResponse {
     responseCode: number;
     message: string;
 }
-
-// ============================================================================
-// ORDER MODULE API PAYLOADS
-// ============================================================================
 
 export interface ProcessNlpOrderRequest {
     rawOrderText: string;
@@ -442,7 +434,7 @@ export interface ApproveCustomerOrderResponse {
 }
 
 // ============================================================================
-// MODULE 6: BUSINESS LICENSE & COMPLIANCE RENEWAL ENTITIES & PAYLOADS
+// MODULE 6: BUSINESS LICENSE, FLEET, WARRANTY, ACCOUNTING & MFRS 102 AUDIT
 // ============================================================================
 
 export type CompanyType = 'SDN_BHD' | 'ENTERPRISE' | 'LLP';
@@ -450,7 +442,14 @@ export type CompanyType = 'SDN_BHD' | 'ENTERPRISE' | 'LLP';
 export type LicenseType =
     | 'PREMISE_LICENSE'
     | 'SIGNBOARD_LICENSE'
-    | 'FOOD_ESTABLISHMENT';
+    | 'FOOD_ESTABLISHMENT'
+    | 'FLEET_ROADTAX_PUSPAKOM'
+    | 'EQUIPMENT_OEM_WARRANTY';
+
+export type ComplianceAssetCategory =
+    | 'SSM_PBT_LICENSE'
+    | 'FLEET_VEHICLE'
+    | 'EQUIPMENT_WARRANTY';
 
 export type ComplianceStatus =
     | 'ACTIVE'
@@ -475,12 +474,40 @@ export interface BusinessComplianceProfile {
     registrationNo: string;
     companyName: string;
     companyType: CompanyType | string;
-    ssmExpiryDate: string; // ISO Date YYYY-MM-DD
-    councilName: string; // Target PBT, e.g., MBPJ, MBSA, DBKL
+    ssmExpiryDate: string;
+    councilName: string;
     licenseType: LicenseType | string;
-    licenseExpiryDate: string; // ISO Date YYYY-MM-DD
+    licenseExpiryDate: string;
     complianceStatus: ComplianceStatus;
     autoAlertEnabled: boolean;
+    assetCategory?: ComplianceAssetCategory;
+    annualFeeRM?: number;
+    fiveYearDiscountPct?: number;
+    selectedRenewalTermYears?: 1 | 3 | 5;
+    warrantyClaimed?: boolean;
+}
+
+export interface AccountingStatutoryDeadline {
+    id: string;
+    formCode: string;
+    title: string;
+    authority: 'LHDN (Inland Revenue)' | 'RMCD (Customs SST)' | 'SSM (Companies Commission)' | 'KWSP / PERKESO';
+    frequency: 'ANNUAL' | 'BI_MONTHLY' | 'MONTHLY' | 'QUARTERLY';
+    dueDate: string;
+    estimatedPayableRM: number;
+    penaltyRule: string;
+    status: 'PENDING_FILING' | 'PREPARED_READY' | 'FILED_COMPLETED';
+}
+
+export interface SupportTicket {
+    ticketId: string;
+    subject: string;
+    category: 'HARDWARE_SCANNER' | 'ACCOUNTING_SST_SYNC' | 'INVENTORY_ENGINE' | 'ON_SITE_MAINTENANCE';
+    priority: 'NORMAL' | 'HIGH' | 'URGENT_SLA';
+    status: 'OPEN_ASSIGNED' | 'IN_PROGRESS' | 'RESOLVED';
+    createdAt: string;
+    assignedEngineer: string;
+    resolutionNote: string;
 }
 
 export interface DocumentVaultItem {
@@ -516,11 +543,13 @@ export interface RenewalTask {
     generatedChecklist: { step: number; name: string; isCompleted: boolean }[];
     targetDeadline: string;
     renewalFee: number;
+    renewalTermYears?: 1 | 3 | 5;
+    savedDiscountRM?: number;
     currency: string;
     internalNotes?: string;
     createdAt?: string;
 }
-// 1. Real-Time SSM Business Lookup & Auto-Populate
+
 export interface SSMVerifyRequest {
     registrationNo: string;
     companyName: string;
@@ -540,7 +569,6 @@ export interface SSMVerifyResponse {
     verifiedAt: string;
 }
 
-// 2. License & Compliance Expiry Alert Check
 export interface CheckComplianceExpiryRequest {
     expiryThresholdDays: number;
     councilFilter: string;
@@ -564,7 +592,6 @@ export interface CheckComplianceExpiryResponse {
     expiringItems: ExpiringLicenseItem[];
 }
 
-// 3. Centralized Form Management & Document Vault
 export interface StoreComplianceDocRequest {
     registrationNo: string;
     docType: ComplianceDocType | string;
@@ -585,7 +612,6 @@ export interface StoreComplianceDocResponse {
     message: string;
 }
 
-// 4. Assisted Filing & RPA / Concierge Renewal Initiation
 export interface InitiateRenewalRequest {
     registrationNo: string;
     councilName: string;
@@ -610,7 +636,6 @@ export interface InitiateRenewalResponse {
     createdAt: string;
 }
 
-// 5. Concierge / RPA Task Status Update
 export interface UpdateRenewalTaskRequest {
     renewalID: string;
     action: string;

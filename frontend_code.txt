@@ -220,8 +220,6 @@ import { UniversalSystemMigratorModal } from './components/migration/UniversalSy
 const SESSION_KEY = 'vyte_active_session_v1';
 const FALLBACK_RATES: Record<CurrencyCode, number> = { MYR: 1.0, SGD: 0.313, USD: 0.244 };
 
-const [showMigratorModal, setShowMigratorModal] = useState(false);
-
 const stripModPrefix = (t: string) =>
     t.replace(/\bMod(?:ule)?\s*[1-5]\s*[:\-]?\s*/gi, '').replace(/\bin\s+Mod(?:ule)?\s*[1-5]\b/gi, '').trim();
 
@@ -266,6 +264,7 @@ export default function App() {
   const [rateSourceLabel, setRateSourceLabel] = useState('Syncing FX rates...');
   const [loadingOverlayMessage, setLoadingOverlayMessage] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showMigratorModal, setShowMigratorModal] = useState(false);
   const [pendingCustomerOrderCount, setPendingCustomerOrderCount] = useState(1);
   const [deductedOrderIds, setDeductedOrderIds] = useState<Record<string, boolean>>({});
 
@@ -511,7 +510,7 @@ export default function App() {
       return;
     }
     const isLow = Number(newProd.stock) <= Number(newProd.minThreshold);
-    const parts = newProd.extraAttr?.split(/\u2022|\|/) || [];
+    const parts = newProd.extraAttr?.split(/[\u2022|]/) || [];
     const created: Product = {
       id: `P-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       sku: newProd.sku || `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -685,6 +684,7 @@ export default function App() {
             pendingComplianceCount={pendingComplianceCount} auditLogCount={auditLogs.length}
             totalProductCount={products.length} userSession={userSession} onLogout={handleLogout}
             debugMockMode={debugMockMode} onToggleDebugMockMode={handleToggleDebugMode}
+            onOpenMigratorModal={() => setShowMigratorModal(true)}
         />
 
         <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden gap-3">
@@ -803,7 +803,6 @@ export default function App() {
         </div>
 
         <AddProductModal isOpen={showAddModal} currency={currency} onClose={() => setShowAddModal(false)} onSaveProduct={handleSaveProduct} />
-        <LoadingScreen isOpen={loadingOverlayMessage !== null} message={loadingOverlayMessage ?? ''} />
 
         <UniversalSystemMigratorModal
             isOpen={showMigratorModal}
@@ -820,6 +819,7 @@ export default function App() {
             }}
         />
 
+        <LoadingScreen isOpen={loadingOverlayMessage !== null} message={loadingOverlayMessage ?? ''} />
         {toasts.length > 0 && (
             <div className="fixed bottom-5 right-5 z-50 space-y-2 max-w-sm">
               {toasts.map((t) => (
@@ -3796,7 +3796,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
 import React, { useState, useEffect } from 'react';
 import {
     Box, TrendingUp, AlertTriangle, FileText, Clock, Search, ChevronLeft, ChevronRight,
-    Settings, LogOut, X, ShieldCheck, Volume2, FileCode, Sliders, Bug, Server,
+    Settings, LogOut, X, ShieldCheck, Volume2, FileCode, Sliders, Bug, Server, Database,
 } from 'lucide-react';
 import type { ActiveTab, CurrencyCode, UserRole, UserSession } from '../../types/vyte.ts';
 import { VyteLogo } from '../common/VyteLogo';
@@ -3824,12 +3824,13 @@ interface SidebarProps {
     onLogout: () => void;
     debugMockMode?: boolean;
     onToggleDebugMockMode?: (enabled: boolean) => void;
+    onOpenMigratorModal?: () => void; // <-- æŽ¥æ”¶æ‰“å¼€å¼¹çª—çš„å›žè°ƒ
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
                                                     activeTab, setActiveTab, role, operatingCurrency, onCurrencyChange, searchQuery, setSearchQuery,
                                                     pendingRestockCount, pendingOrderCount, pendingQcCount, pendingInvoiceCount, pendingComplianceCount,
-                                                    auditLogCount, userSession, onLogout, debugMockMode = false, onToggleDebugMockMode,
+                                                    auditLogCount, userSession, onLogout, debugMockMode = false, onToggleDebugMockMode, onOpenMigratorModal,
                                                 }) => {
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -3926,6 +3927,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 </button>
                             );
                         })}
+
+                        {/* AI System Migrator èœå•å…¥å£ */}
+                        {onOpenMigratorModal && (
+                            <>
+                                {!isCollapsed && <p className="px-3 pt-3 pb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">DATA MIGRATION</p>}
+                                <button
+                                    type="button"
+                                    onClick={onOpenMigratorModal}
+                                    title={isCollapsed ? 'AI System Migrator' : undefined}
+                                    className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2 py-3' : 'justify-between px-3.5 py-2.5'} rounded-xl text-sm transition-all cursor-pointer border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-950 font-bold shadow-2xs`}
+                                >
+                                    <span className="flex items-center gap-3">
+                                        <Database className="w-4 h-4 shrink-0 text-emerald-600" />
+                                        {!isCollapsed && <span>AI System Migrator</span>}
+                                    </span>
+                                    {!isCollapsed && <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-200 text-emerald-800">AI</span>}
+                                </button>
+                            </>
+                        )}
                     </nav>
                 </div>
 
@@ -3975,7 +3995,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 <p className="text-emerald-700 font-semibold">Role: {userSession?.userType} ({userSession?.role})</p>
                             </div>
 
-                            {/* Debug / Mock Data Mode Toggle & Backend URL */}
                             <div className="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200 space-y-2.5">
                                 <label className="flex items-center justify-between cursor-pointer">
                                     <div className="flex items-center gap-2.5">
@@ -4062,8 +4081,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 // src/components/migration/UniversalSystemMigratorModal.tsx
 import React, { useState, useRef } from 'react';
 import {
-    Upload, Database, FileText, Sparkles, CheckCircle2, AlertCircle,
-    ArrowRight, ShieldCheck, Layers, Loader2, X, RefreshCw, Sliders
+    Upload, Database, Sparkles, CheckCircle2, AlertCircle,
+    ArrowRight, ShieldCheck, Loader2, X, Sliders
 } from 'lucide-react';
 import type { Product, InvoiceItem, BusinessComplianceProfile } from '../../types/vyte.ts';
 import { orbyteApi } from '../../services/api';
@@ -5050,7 +5069,7 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, curren
 import React, { useState, useRef, useEffect } from 'react';
 import {
     Plus, Send, CheckCircle2, Clock, AlertTriangle, ShoppingBag,
-    Lock, AlertCircle, Loader2, FileSpreadsheet, Camera, X,
+    Lock, AlertCircle, Loader2, FileSpreadsheet, Camera, X, Database,
 } from 'lucide-react';
 import type { CurrencyCode, Product, UserRole } from '../../types/vyte.ts';
 import { CURRENCY_SYMBOLS } from '../../types/vyte.ts';
@@ -5065,6 +5084,7 @@ interface RestockModuleProps {
     onRecordStockUsage: (productId: string, usedQty: number) => void;
     onOpenAddModal: () => void;
     onBatchImportProducts?: (imported: Product[]) => void;
+    onOpenMigratorModal?: () => void; // æ–°å¢žï¼šè§¦å‘æ—§ç³»ç»Ÿä¸€é”®è¿ç§» Modal
 }
 
 const USAGE_KEY = 'vyte_restock_usage_inputs_v2';
@@ -5073,7 +5093,7 @@ const sanitizeInt = (raw: string, maxDigits = 5) => raw.replace(/[^0-9]/g, '').r
 
 export const RestockModule: React.FC<RestockModuleProps> = ({
                                                                 products, role, currency = 'MYR', exchangeRate = 1.0,
-                                                                onApproveAndContactSupplier, onConfirmSupplierDelivery, onRecordStockUsage, onOpenAddModal, onBatchImportProducts,
+                                                                onApproveAndContactSupplier, onConfirmSupplierDelivery, onRecordStockUsage, onOpenAddModal, onBatchImportProducts, onOpenMigratorModal,
                                                             }) => {
     const sym = CURRENCY_SYMBOLS[currency] || 'RM';
 
@@ -5204,6 +5224,11 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
+                    {onOpenMigratorModal && (
+                        <button type="button" onClick={onOpenMigratorModal} className="px-3.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer">
+                            <Database className="w-3.5 h-3.5 text-[#2BB656]" /> Migrate Old System (.db / .md / ERP)
+                        </button>
+                    )}
                     <button type="button" onClick={() => photoInputRef.current?.click()} className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer">
                         <Camera className="w-3.5 h-3.5 text-purple-600" /> Scan Shelf Photo
                     </button>
