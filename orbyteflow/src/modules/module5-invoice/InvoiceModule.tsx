@@ -55,7 +55,7 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
     const [selectedSstCodes, setSelectedSstCodes] = useState<Record<string, SstTaxCode>>({});
     const [showUploadForm, setShowUploadForm] = useState(false);
 
-    // Cash Flow Liquidity Guard Interactive Inputs (in RM base or converted)
+    // Cash Flow Liquidity Guard Interactive Inputs
     const [bankCashInputRM, setBankCashInputRM] = useState<string>('14500');
     const [monthlyFixedOpExRM, setMonthlyFixedOpExRM] = useState<string>('8500');
 
@@ -92,7 +92,6 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
     const totalPayablesRM = invoices.filter((i) => i.type === 'SUPPLIER_PAYABLE').reduce((s, i) => s + i.amountRM, 0);
     const totalReceivablesRM = invoices.filter((i) => i.type === 'CUSTOMER_RECEIVABLE').reduce((s, i) => s + i.amountRM, 0);
 
-    // Cash Flow Problem Solver: How much money do I need to make sure my cash flow is enough?
     const cashFlowAnalysis = useMemo(() => {
         const currentCashRM = Math.max(0, Number(bankCashInputRM) || 0);
         const fixedOverheadRM = Math.max(0, Number(monthlyFixedOpExRM) || 0);
@@ -113,11 +112,8 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
             .filter((i) => i.type === 'CUSTOMER_RECEIVABLE')
             .reduce((s, i) => s + inferSstForInvoice(i).sstRM, 0);
 
-        // Total 30-Day Cash Outflow Obligations
         const total30DayOutflowRM = unpaidSupplierBillsRM + pendingRestockPoRM + fixedOverheadRM + totalSstOutputTaxRM;
-        // Minimum Safe Cash Needed = 30-Day Outflows + 20% Safety Cushion
         const minSafeCashNeededRM = Number((total30DayOutflowRM * 1.2).toFixed(2));
-        // Expected Reliable Cash Available = Current Bank Cash + 80% of Unpaid Customer AR
         const projectedLiquidCashRM = Number((currentCashRM + unpaidCustomerReceivablesRM * 0.8).toFixed(2));
         const cashGapOrSurplusRM = Number((projectedLiquidCashRM - minSafeCashNeededRM).toFixed(2));
         const dailyBurnRM = Math.max(100, total30DayOutflowRM / 30);
@@ -154,13 +150,12 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
         document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
     };
 
-    const handleSendPaymentReminder = (inv: InvoiceItem, lang: 'EN' | 'BM' | 'ZH' = 'EN') => {
+    const handleSendPaymentReminder = (inv: InvoiceItem, lang: 'EN' | 'BM' = 'EN') => {
         const sst = inferSstForInvoice(inv);
         const amountFormatted = `${sym} ${((inv.amountRM + sst.sstRM) * exchangeRate).toFixed(2)}`;
         const messages = {
-            EN: `Hi ${inv.party}, friendly reminder from Vyte Billing that Invoice ${inv.invNo} (${amountFormatted} incl. SST) dated ${inv.date} is currently due. Pay instantly via DuitNow/FPX here: https://pay.vyte.my/${inv.invNo}`,
-            BM: `Salam ${inv.party}, peringatan mesra bahawa Invois ${inv.invNo} (${amountFormatted}) bertarikh ${inv.date} masih belum dijelaskan. Sila buat bayaran melalui DuitNow/FPX: https://pay.vyte.my/${inv.invNo}`,
-            ZH: `${inv.party} 您好，温馨提醒您账单 ${inv.invNo}（金额：${amountFormatted}，日期：${inv.date}）目前已到期。您可通过 DuitNow/FPX 一键完成付款：https://pay.vyte.my/${inv.invNo}`,
+            EN: `Hi ${inv.party}, friendly reminder from Vyte Billing: Invoice ${inv.invNo} (${amountFormatted} incl. SST) dated ${inv.date} is due. Pay securely via DuitNow/FPX: https://pay.vyte.my/${inv.invNo}`,
+            BM: `Salam ${inv.party}, peringatan mesra: Invois ${inv.invNo} (${amountFormatted}) bertarikh ${inv.date} masih belum dijelaskan. Sila buat bayaran melalui DuitNow/FPX: https://pay.vyte.my/${inv.invNo}`,
         };
         window.open(`https://wa.me/60123456789?text=${encodeURIComponent(messages[lang])}`, '_blank', 'noopener,noreferrer');
     };
@@ -268,9 +263,7 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
 
     return (
         <div className="space-y-4">
-            {/* =========================================================================
-                CASH FLOW & MINIMUM SAFE WORKING CAPITAL CALCULATOR (现金流安全水位计算器)
-               ========================================================================= */}
+            {/* CASH FLOW & WORKING CAPITAL LIQUIDITY GUARD */}
             <div className="bg-gradient-to-r from-slate-900 via-[#10241B] to-slate-900 text-white rounded-2xl p-5 border border-emerald-500/30 shadow-md space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
                     <div className="flex items-center gap-2.5">
@@ -280,7 +273,7 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                         <div>
                             <div className="flex items-center gap-2">
                                 <h3 className="text-sm font-bold text-white">
-                                    SME Cash Flow Liquidity Guard: How Much Money Do I Need On Hand? (现金流安全水位计算器)
+                                    Cash Flow Liquidity Guard: Minimum Safe Working Capital
                                 </h3>
                                 <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
                                     cashFlowAnalysis.isHealthy
@@ -293,12 +286,12 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                                 </span>
                             </div>
                             <p className="text-[11px] text-slate-300">
-                                Calculates your exact <strong>Minimum Required Safe Cash</strong> for the next 30 days (Unpaid Supplier Bills + Pending Auto-Restock POs + Fixed Overhead + SST).
+                                Calculates your exact <strong>Minimum Required Safe Cash</strong> for the next 30 days (Unpaid Bills + Pending POs + Fixed Overhead + SST).
                             </p>
                         </div>
                     </div>
 
-                    {/* Interactive Boss Inputs */}
+                    {/* Interactive Inputs */}
                     <div className="flex flex-wrap items-center gap-3 text-xs">
                         <div className="bg-white/10 px-3 py-1.5 rounded-xl border border-white/15">
                             <label className="text-[10px] text-emerald-300 font-bold block">Current Bank Cash (RM)</label>
@@ -350,7 +343,7 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                             {sym} {(cashFlowAnalysis.projectedLiquidCashRM * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </p>
                         <p className="text-[11px] text-slate-300">
-                            Bank ({sym} {(cashFlowAnalysis.currentCashRM * exchangeRate).toFixed(0)}) + Unpaid Customer AR ({sym} {(cashFlowAnalysis.unpaidCustomerReceivablesRM * exchangeRate).toFixed(0)})
+                            Bank ({sym} {(cashFlowAnalysis.currentCashRM * exchangeRate).toFixed(0)}) + Unpaid AR ({sym} {(cashFlowAnalysis.unpaidCustomerReceivablesRM * exchangeRate).toFixed(0)})
                         </p>
                     </div>
 
@@ -369,16 +362,14 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                         </p>
                         <p className="text-[11px] text-slate-200">
                             {cashFlowAnalysis.isHealthy
-                                ? 'Safe! You have enough cash to approve all pending restock POs.'
-                                : `You need ${sym} ${(Math.abs(cashFlowAnalysis.cashGapOrSurplusRM) * exchangeRate).toFixed(0)} more cash! Click "Remind Customer" below to collect AR immediately.`}
+                                ? 'Healthy runway. Available cash is sufficient to cover pending restock orders.'
+                                : `Cash deficit of ${sym} ${(Math.abs(cashFlowAnalysis.cashGapOrSurplusRM) * exchangeRate).toFixed(0)}. Click "Remind Customer" below to expedite receivables.`}
                         </p>
                     </div>
                 </div>
             </div>
 
-            {/* =========================================================================
-                INVOICE & GOVERNMENT SST (0% / 6% / 8% / 10%) REPOSITORY
-               ========================================================================= */}
+            {/* INVOICE & GOVERNMENT SST REPOSITORY */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden space-y-4">
                 <input ref={photoInputRef} type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
                 <input ref={excelInputRef} type="file" accept=".csv,.xlsx,.xls" onChange={handleExcelSpreadsheetUpload} className="hidden" />
@@ -390,7 +381,7 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                             Smart Invoices &amp; RMCD SST Compliance Repository (0% / 6% F&amp;B / 8% Service / 10% Sales Tax)
                         </h3>
                         <p className="text-xs text-slate-500 mt-0.5">
-                            Auto-computes Malaysia RMCD SST per invoice, tracks LHDN MyInvois readiness, and accelerates customer AR collection via WhatsApp.
+                            Automated RMCD SST computation, statutory invoice tracking, and customer AR reminders.
                         </p>
                     </div>
 
@@ -498,7 +489,7 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                             <th className="py-3 px-3">Direction</th>
                             <th className="py-3 px-3">Counterparty</th>
                             <th className="py-3 px-3">AI Categorization</th>
-                            <th className="py-3 px-3">Government SST Rate</th>
+                            <th className="py-3 px-3">SST Rate</th>
                             <th className="py-3 px-3">Total + SST ({currency})</th>
                             <th className="py-3 px-3">Payment Status</th>
                             <th className="py-3 px-4">Action &amp; AR Chase</th>
@@ -516,9 +507,9 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                                         <span className={`inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-bold ${source.color}`}>{source.label}</span>
                                     </td>
                                     <td className="py-3 px-3 whitespace-nowrap">
-                                            <span className={`px-2 py-0.5 rounded-md text-[11px] font-semibold ${inv.type === 'SUPPLIER_PAYABLE' ? 'bg-amber-50 text-amber-800' : 'bg-blue-50 text-blue-800'}`}>
-                                                {inv.type === 'SUPPLIER_PAYABLE' ? 'Supplier Bill' : 'Customer Sales'}
-                                            </span>
+                                        <span className={`px-2 py-0.5 rounded-md text-[11px] font-semibold ${inv.type === 'SUPPLIER_PAYABLE' ? 'bg-amber-50 text-amber-800' : 'bg-blue-50 text-blue-800'}`}>
+                                            {inv.type === 'SUPPLIER_PAYABLE' ? 'Supplier Bill' : 'Customer Sales'}
+                                        </span>
                                     </td>
                                     <td className="py-3 px-3 font-semibold text-slate-900 max-w-[180px] truncate">
                                         <p className="truncate">{inv.party}</p><p className="text-[10px] text-slate-400">{inv.date}</p>
@@ -543,7 +534,7 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                                             className="px-2 py-1 rounded-lg bg-slate-100 border border-slate-200 font-bold text-[11px] text-slate-800"
                                         >
                                             <option value="EXEMPT_0">0% Exempt</option>
-                                            <option value="FNB_LOGISTICS_6">6% F&amp;B / Cold-Chain</option>
+                                            <option value="FNB_LOGISTICS_6">6% F&amp;B / Logistics</option>
                                             <option value="SERVICE_8">8% Service Tax</option>
                                             <option value="SALES_10">10% Sales Tax</option>
                                         </select>
@@ -553,8 +544,8 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                                             {sym} {((inv.amountRM + sst.sstRM) * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </p>
                                         <span className="text-[10px] text-slate-500">
-                                                Base: {sym} {(inv.amountRM * exchangeRate).toFixed(2)} + SST ({sst.ratePct}%): {sym} {(sst.sstRM * exchangeRate).toFixed(2)}
-                                            </span>
+                                            Base: {sym} {(inv.amountRM * exchangeRate).toFixed(2)} + SST ({sst.ratePct}%): {sym} {(sst.sstRM * exchangeRate).toFixed(2)}
+                                        </span>
                                     </td>
                                     <td className="py-3 px-3 whitespace-nowrap">
                                         <button type="button" onClick={() => onToggleInvoicePaid(inv.id)} className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer border transition ${inv.paid ? 'bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'}`}>

@@ -34,7 +34,7 @@ export const CustomerSupportPortalModal: React.FC<CustomerSupportPortalModalProp
     });
 
     const [subject, setSubject] = useState('');
-    const [category, setCategory] = useState<SupportTicket['category']>('ACCOUNTING_SST_SYNC');
+    const [category, setCategory] = useState<SupportTicket['category']>('HARDWARE_SCANNER');
     const [priority, setPriority] = useState<SupportTicket['priority']>('HIGH');
     const [details, setDetails] = useState('');
 

@@ -1,4 +1,4 @@
-
+// src/components/layout/Sidebar.tsx
 import React, { useState, useEffect } from 'react';
 import {
     Box, TrendingUp, AlertTriangle, FileText, Clock, Search, ChevronLeft, ChevronRight,
@@ -81,7 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { key: 'autoPo' as const, icon: Box, title: 'Auto-Draft Purchase Orders', desc: 'Prepare PO in queue immediately upon low stock trigger' },
         { key: 'wa' as const, icon: FileText, title: 'Automated WhatsApp PO Dispatch', desc: 'Send supplier POs upon authorized human approval' },
         { key: 'rbac' as const, icon: ShieldCheck, title: 'Enforce Strict RBAC Permissions', desc: 'Lock approvals and PO releases to Owner and Manager' },
-        { key: 'einv' as const, icon: FileCode, title: 'LHDN MyInvois 2.0 Compliance', desc: 'Enable validation schemas for Malaysian e-invoices' },
+        { key: 'einv' as const, icon: FileCode, title: 'E-Invoicing Validation', desc: 'Enable validation schemas for digital invoices' },
     ];
 
     return (
@@ -123,28 +123,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             return (
                                 <button
                                     key={mod.id} onClick={() => setActiveTab(mod.id)} title={isCollapsed ? mod.label : undefined}
-                                    className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2 py-3' : 'justify-between px-3.5 py-2.5'} rounded-xl text-sm transition-all cursor-pointer border ${
-                                        isActive ? 'bg-[#EBFDF2] border-[#A7F3D0] text-emerald-950 font-bold shadow-[0_1px_2px_rgba(16,185,129,0.06)]' : 'border-transparent text-slate-700 font-medium hover:bg-slate-50'
-                                    }`}
-                                >
-                                    <span className="flex items-center gap-3">
-                                        <Icon className={`w-4 h-4 shrink-0 ${mod.iconColor}`} />
-                                        {!isCollapsed && <span>{mod.label}</span>}
+                                    className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2 py-3' : 'justify-between px-3 py-2.5'} rounded-xl text-xs transition-all cursor-pointer border ${ isActive ? 'bg-[#EBFDF2] border-[#A7F3D0] text-emerald-950 font-bold shadow-[0_1px_2px_rgba(16,185,129,0.06)]' : 'border-transparent text-slate-700 font-medium hover:bg-slate-50' }`} > <span className="flex items-center gap-2.5 min-w-0"> <Icon className={`w-4 h-4 shrink-0 ${mod.iconColor}`} />
+                                    {!isCollapsed && (
+                                        <span className={`truncate whitespace-nowrap ${mod.id === 'mod6' ? 'text-[11px] tracking-tight' : 'text-xs'}`}>
+                                                {mod.label}
+                                            </span>
+                                    )}
                                     </span>
-                                    {!isCollapsed && <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${mod.badgeClass}`}>{mod.badge}</span>}
+                                    {!isCollapsed && <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold shrink-0 ml-1 ${mod.badgeClass}`}>{mod.badge}</span>}
                                 </button>
                             );
                         })}
 
-                        {!isCollapsed && <p className="px-3 pt-2 pb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">MIGRATION &amp; CARE</p>}
+                        {!isCollapsed && <p className="px-3 pt-2 pb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">TOOLS &amp; SUPPORT</p>}
                         {onOpenMigratorModal && (
                             <button
-                                type="button" onClick={onOpenMigratorModal} title={isCollapsed ? 'AI System Migrator' : undefined}
-                                className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2 py-2.5' : 'justify-between px-3.5 py-2'} rounded-xl text-xs transition-all cursor-pointer border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-950 font-bold`}
+                                type="button" onClick={onOpenMigratorModal} title={isCollapsed ? 'Data Import Tool' : undefined}
+                                className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2 py-2.5' : 'justify-between px-3 py-2'} rounded-xl text-xs transition-all cursor-pointer border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-950 font-bold`}
                             >
-                                <span className="flex items-center gap-2.5">
+                                <span className="flex items-center gap-2.5 min-w-0">
                                     <Database className="w-4 h-4 shrink-0 text-emerald-600" />
-                                    {!isCollapsed && <span>AI System Migrator</span>}
+                                    {!isCollapsed && <span className="truncate">Data Import Tool</span>}
                                 </span>
                                 {!isCollapsed && <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-200 text-emerald-800">AI</span>}
                             </button>
@@ -152,12 +151,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                         {onOpenSupportModal && (
                             <button
-                                type="button" onClick={onOpenSupportModal} title={isCollapsed ? 'After-Sales Support (售后服务)' : undefined}
-                                className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2 py-2.5' : 'justify-between px-3.5 py-2'} rounded-xl text-xs transition-all cursor-pointer border border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-blue-950 font-bold`}
+                                type="button" onClick={onOpenSupportModal} title={isCollapsed ? 'After-Sales Support' : undefined}
+                                className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2 py-2.5' : 'justify-between px-3 py-2'} rounded-xl text-xs transition-all cursor-pointer border border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-blue-950 font-bold`}
                             >
-                                <span className="flex items-center gap-2.5">
+                                <span className="flex items-center gap-2.5 min-w-0">
                                     <Headset className="w-4 h-4 shrink-0 text-blue-600" />
-                                    {!isCollapsed && <span>After-Sales Support</span>}
+                                    {!isCollapsed && <span className="truncate">After-Sales Support</span>}
                                 </span>
                                 {!isCollapsed && <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-blue-200 text-blue-800">24/7</span>}
                             </button>
@@ -217,7 +216,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                         <Bug className="w-4 h-4 text-amber-600 shrink-0" />
                                         <div>
                                             <p className="font-bold text-slate-900">Debug Mode (Use Local Mock Data)</p>
-                                            <p className="text-[11px] text-slate-600">When enabled, bypasses Ktor backend and uses built-in mock dataset</p>
+                                            <p className="text-[11px] text-slate-600">When enabled, uses the built-in mock dataset</p>
                                         </div>
                                     </div>
                                     <input type="checkbox" checked={tempDebugMode} onChange={(e) => setTempDebugMode(e.target.checked)} className="w-4 h-4 accent-[#2BB656] cursor-pointer" />
