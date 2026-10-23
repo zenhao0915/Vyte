@@ -29,6 +29,7 @@ import {
 
 const DEBUG_MODE_KEY = 'vyte_debug_mock_mode';
 const API_BASE_URL_KEY = 'vyte_api_base_url';
+const WORKSPACE_ID_KEY = 'vyte_isolated_workspace_id';
 
 // 切换模式时需要清理的本地缓存 Key
 const MOCK_CACHE_KEYS = [
@@ -64,10 +65,23 @@ export const setApiBaseUrl = (url: string): void => {
     localStorage.setItem(API_BASE_URL_KEY, url.trim().replace(/\/+$/, ''));
 };
 
+export const getWorkspaceId = (): string => {
+    let wsId = localStorage.getItem(WORKSPACE_ID_KEY);
+    if (!wsId) {
+        wsId = `ws-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+        localStorage.setItem(WORKSPACE_ID_KEY, wsId);
+    }
+    return wsId;
+};
+
 async function requestJson<T>(path: string, options?: RequestInit): Promise<T> {
     if (getDebugMockMode()) throw new Error('DEBUG_MOCK_MODE_ACTIVE');
     const res = await fetch(`${getApiBaseUrl()}${path}`, {
-        headers: { 'Content-Type': 'application/json', ...(options?.headers || {}) },
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Workspace-ID': getWorkspaceId(),
+            ...(options?.headers || {}),
+        },
         ...options,
     });
     if (!res.ok) {
@@ -379,6 +393,7 @@ export const orbyteApi = {
             if (payload.invNo) fd.append('invNo', payload.invNo);
             const res = await fetch(`${getApiBaseUrl()}/api/invoices/upload`, {
                 method: 'POST',
+                headers: { 'X-Workspace-ID': getWorkspaceId() },
                 body: fd,
             });
             if (!res.ok) {
