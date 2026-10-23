@@ -19,13 +19,29 @@ import type {
 } from '../types/vyte.ts';
 import {
     INITIAL_AUDIT_LOGS,
+    INITIAL_COMPLIANCE_PROFILES,
     INITIAL_INVOICES,
     INITIAL_PRODUCTS,
     INITIAL_QC_ALERTS,
+    INITIAL_RENEWAL_TASKS,
+    INITIAL_VAULT_DOCS,
 } from '../data/mockData';
 
 const DEBUG_MODE_KEY = 'vyte_debug_mock_mode';
 const API_BASE_URL_KEY = 'vyte_api_base_url';
+
+// 切换模式时需要清理的本地缓存 Key
+const MOCK_CACHE_KEYS = [
+    'vyte_state_products_v2',
+    'vyte_state_qc_v2',
+    'vyte_state_invoices_v2',
+    'vyte_state_logs_v2',
+    'vyte_state_compliance_profiles_v1',
+    'vyte_state_vault_docs_v1',
+    'vyte_state_renewal_tasks_v1',
+    'vyte_customer_orders_list_v2',
+    'vyte_order_parsed_step2_draft_v2',
+];
 
 export const getDebugMockMode = (): boolean => {
     const raw = localStorage.getItem(DEBUG_MODE_KEY);
@@ -34,6 +50,9 @@ export const getDebugMockMode = (): boolean => {
 
 export const setDebugMockMode = (enabled: boolean): void => {
     localStorage.setItem(DEBUG_MODE_KEY, String(enabled));
+    if (!enabled) {
+        MOCK_CACHE_KEYS.forEach((k) => localStorage.removeItem(k));
+    }
 };
 
 export const getApiBaseUrl = (): string => {
@@ -59,27 +78,39 @@ async function requestJson<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const orbyteApi = {
-    async fetchWorkspaceData(): Promise<{
-        products: Product[];
-        qcAlerts: QCAlert[];
-        invoices: InvoiceItem[];
-        auditLogs: AuditLog[];
-    }> {
+    // 切换模式时拉取全量工作区数据：Debug 关掉时绝不混入任何 Mock Data
+    async fetchWorkspaceData() {
         if (getDebugMockMode()) {
             return {
                 products: INITIAL_PRODUCTS,
                 qcAlerts: INITIAL_QC_ALERTS,
                 invoices: INITIAL_INVOICES,
                 auditLogs: INITIAL_AUDIT_LOGS,
+                complianceProfiles: INITIAL_COMPLIANCE_PROFILES,
+                vaultDocs: INITIAL_VAULT_DOCS,
+                renewalTasks: INITIAL_RENEWAL_TASKS,
             };
         }
         const [products, qcAlerts, invoices, auditLogs] = await Promise.all([
             requestJson<Product[]>('/api/products'),
-            requestJson<QCAlert[]>('/api/qc-alerts').catch(() => INITIAL_QC_ALERTS),
-            requestJson<InvoiceItem[]>('/api/invoices').catch(() => INITIAL_INVOICES),
-            requestJson<AuditLog[]>('/api/audit-logs?limit=100').catch(() => INITIAL_AUDIT_LOGS),
+            requestJson<QCAlert[]>('/api/qc-alerts').catch(() => []),
+            requestJson<InvoiceItem[]>('/api/invoices').catch(() => []),
+            requestJson<AuditLog[]>('/api/audit-logs?limit=100').catch(() => []),
         ]);
-        return { products, qcAlerts, invoices, auditLogs };
+        return {
+            products,
+            qcAlerts,
+            invoices,
+            auditLogs,
+            complianceProfiles: [],
+            vaultDocs: [],
+            renewalTasks: [],
+        };
+    },
+
+    async fetchBackendOrders(): Promise<any[]> {
+        if (getDebugMockMode()) return [];
+        return requestJson<any[]>('/api/order').catch(() => []);
     },
 
     // Module 1: Products & Restock
@@ -113,19 +144,17 @@ export const orbyteApi = {
         role?: UserRole;
     }) {
         if (!getDebugMockMode()) {
-            try {
-                if (payload.productId) {
-                    await requestJson(`/api/products/${payload.productId}/approve-restock`, {
-                        method: 'POST',
-                        body: JSON.stringify({ userID: payload.userID, role: 'SME_OWNER' }),
-                    });
-                } else {
-                    await requestJson('/api/restock/contact-supplier', {
-                        method: 'POST',
-                        body: JSON.stringify(payload),
-                    });
-                }
-            } catch { /* fallback */ }
+            if (payload.productId) {
+                await requestJson(`/api/products/${payload.productId}/approve-restock`, {
+                    method: 'POST',
+                    body: JSON.stringify({ userID: payload.userID, role: 'SME_OWNER' }),
+                });
+            } else {
+                await requestJson('/api/restock/contact-supplier', {
+                    method: 'POST',
+                    body: JSON.stringify(payload),
+                });
+            }
         }
         return {
             data: {
@@ -155,24 +184,22 @@ export const orbyteApi = {
         userID: string;
     }) {
         if (!getDebugMockMode()) {
-            try {
-                const res = await requestJson<{ product: Product; invoice: InvoiceItem }>(
-                    `/api/products/${payload.productId}/confirm-delivery`,
-                    { method: 'POST', body: JSON.stringify({ receivedQty: payload.quantity, userID: payload.userID }) }
-                );
-                return {
-                    data: {
-                        poNumber: payload.poNumber,
-                        status: 'CONFIRMED',
-                        confirmationStatus: 'DELIVERED',
-                        isConfirmed: true,
-                        message: 'Delivery confirmed & invoice generated by backend',
-                        updatedAt: new Date().toISOString(),
-                        backendProduct: res.product,
-                        backendInvoice: res.invoice,
-                    },
-                };
-            } catch { /* fallback */ }
+            const res = await requestJson<{ product: Product; invoice: InvoiceItem }>(
+                `/api/products/${payload.productId}/confirm-delivery`,
+                { method: 'POST', body: JSON.stringify({ receivedQty: payload.quantity, userID: payload.userID }) }
+            );
+            return {
+                data: {
+                    poNumber: payload.poNumber,
+                    status: 'CONFIRMED',
+                    confirmationStatus: 'DELIVERED',
+                    isConfirmed: true,
+                    message: 'Delivery confirmed & invoice generated by backend',
+                    updatedAt: new Date().toISOString(),
+                    backendProduct: res.product,
+                    backendInvoice: res.invoice,
+                },
+            };
         }
         return {
             data: {
@@ -228,9 +255,15 @@ export const orbyteApi = {
         return { data: fallback, isSimulatedFallback: true };
     },
 
-    // Module 3: Customer Orders & NLP
+    // Module 3: Customer Orders & NLP (支持纯文本或 Base64 图片 JSON 上传)
     async processNlpOrder(
-        payload: { rawOrderText: string; customerName: string; requestedDate: string; userID: string },
+        payload: {
+            rawOrderText: string;
+            customerName: string;
+            requestedDate: string;
+            userID: string;
+            imageBase64?: string;
+        },
         fallbackResult: {
             parseSuccess: boolean;
             hasSufficientStock: boolean;
@@ -240,13 +273,11 @@ export const orbyteApi = {
         }
     ) {
         if (!getDebugMockMode()) {
-            try {
-                const data = await requestJson<typeof fallbackResult>('/api/order/nlp-process', {
-                    method: 'POST',
-                    body: JSON.stringify(payload),
-                });
-                return { data };
-            } catch { /* fallback */ }
+            const data = await requestJson<typeof fallbackResult>('/api/order/nlp-process', {
+                method: 'POST',
+                body: JSON.stringify(payload),
+            });
+            return { data };
         }
         return { data: fallbackResult };
     },
@@ -261,17 +292,15 @@ export const orbyteApi = {
         lineOrders: { lineID: string; productID: string; quantity: number; lineTotal: number; currency: string }[];
     }) {
         if (!getDebugMockMode()) {
-            try {
-                const data = await requestJson<{
-                    orderID: string;
-                    invoiceID: string;
-                    status: string;
-                    databaseUpdated: boolean;
-                    invoicePdfUrl: string;
-                    createdAt: string;
-                }>('/api/order', { method: 'POST', body: JSON.stringify(payload) });
-                return { data };
-            } catch { /* fallback */ }
+            const data = await requestJson<{
+                orderID: string;
+                invoiceID: string;
+                status: string;
+                databaseUpdated: boolean;
+                invoicePdfUrl: string;
+                createdAt: string;
+            }>('/api/order', { method: 'POST', body: JSON.stringify(payload) });
+            return { data };
         }
         const invoiceID = `CUST-${payload.orderID.replace('ORD-', '')}`;
         return {
@@ -294,16 +323,14 @@ export const orbyteApi = {
         updatedBy: string;
     }) {
         if (!getDebugMockMode()) {
-            try {
-                const data = await requestJson<{
-                    orderID: string;
-                    finalStatus: string;
-                    inventoryDeducted: boolean;
-                    updatedAt: string;
-                    message: string;
-                }>('/api/order/status', { method: 'PATCH', body: JSON.stringify(payload) });
-                return { data };
-            } catch { /* fallback */ }
+            const data = await requestJson<{
+                orderID: string;
+                finalStatus: string;
+                inventoryDeducted: boolean;
+                updatedAt: string;
+                message: string;
+            }>('/api/order/status', { method: 'PATCH', body: JSON.stringify(payload) });
+            return { data };
         }
         return {
             data: {
@@ -319,26 +346,57 @@ export const orbyteApi = {
     // Module 4: Quality Control
     async triggerQcScan(): Promise<{ newAlerts: QCAlert[]; scannedCount: number } | null> {
         if (getDebugMockMode()) return null;
-        try {
-            return await requestJson<{ newAlerts: QCAlert[]; scannedCount: number }>('/api/qc/scan', { method: 'POST' });
-        } catch {
-            return null;
-        }
+        return requestJson<{ newAlerts: QCAlert[]; scannedCount: number }>('/api/qc/scan', { method: 'POST' });
     },
 
     async approveQcAlert(qcId: string, userID: string): Promise<QCAlert | null> {
         if (getDebugMockMode()) return null;
-        try {
-            return await requestJson<QCAlert>(`/api/qc-alerts/${qcId}/approve`, {
-                method: 'POST',
-                body: JSON.stringify({ userID, role: 'SME_OWNER' }),
-            });
-        } catch {
-            return null;
-        }
+        return requestJson<QCAlert>(`/api/qc-alerts/${qcId}/approve`, {
+            method: 'POST',
+            body: JSON.stringify({ userID, role: 'SME_OWNER' }),
+        });
     },
 
-    // Module 5: Smart Invoices
+    // Module 5: Smart Invoices (支持 Multipart 真实图片上传 + JSON 上传)
+    async uploadInvoiceFileOrText(payload: {
+        file?: File;
+        rawText?: string;
+        type?: 'SUPPLIER_PAYABLE' | 'CUSTOMER_RECEIVABLE';
+        party?: string;
+        amountRM?: string;
+        invNo?: string;
+        userID: string;
+    }): Promise<InvoiceItem | null> {
+        if (getDebugMockMode()) return null;
+        if (payload.file) {
+            const fd = new FormData();
+            fd.append('file', payload.file);
+            fd.append('userID', payload.userID);
+            if (payload.rawText) fd.append('rawText', payload.rawText);
+            if (payload.type) fd.append('type', payload.type);
+            if (payload.party) fd.append('party', payload.party);
+            if (payload.amountRM) fd.append('amountRM', payload.amountRM);
+            if (payload.invNo) fd.append('invNo', payload.invNo);
+            const res = await fetch(`${getApiBaseUrl()}/api/invoices/upload`, {
+                method: 'POST',
+                body: fd,
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err?.error || `Upload failed (${res.status})`);
+            }
+            return (await res.json()) as InvoiceItem;
+        }
+        return requestJson<InvoiceItem>('/api/invoices/upload', {
+            method: 'POST',
+            body: JSON.stringify({
+                rawText: payload.rawText,
+                type: payload.type,
+                userID: payload.userID,
+            }),
+        });
+    },
+
     async createBackendInvoice(payload: {
         type: 'SUPPLIER_PAYABLE' | 'CUSTOMER_RECEIVABLE';
         party: string;
@@ -349,41 +407,29 @@ export const orbyteApi = {
         sourceRef?: string;
     }): Promise<InvoiceItem | null> {
         if (getDebugMockMode()) return null;
-        try {
-            return await requestJson<InvoiceItem>('/api/invoices', { method: 'POST', body: JSON.stringify(payload) });
-        } catch {
-            return null;
-        }
+        return requestJson<InvoiceItem>('/api/invoices', { method: 'POST', body: JSON.stringify(payload) });
     },
 
     async verifyBackendInvoice(invId: string, userID: string, updatedCategory?: string): Promise<InvoiceItem | null> {
         if (getDebugMockMode()) return null;
-        try {
-            if (updatedCategory) {
-                await requestJson(`/api/invoices/${invId}`, {
-                    method: 'PATCH',
-                    body: JSON.stringify({ aiCategory: updatedCategory, userID }),
-                }).catch(() => null);
-            }
-            return await requestJson<InvoiceItem>(`/api/invoices/${invId}/verify`, {
+        if (updatedCategory) {
+            await requestJson(`/api/invoices/${invId}`, {
                 method: 'PATCH',
-                body: JSON.stringify({ userID, role: 'SME_OWNER' }),
-            });
-        } catch {
-            return null;
+                body: JSON.stringify({ aiCategory: updatedCategory, userID }),
+            }).catch(() => null);
         }
+        return requestJson<InvoiceItem>(`/api/invoices/${invId}/verify`, {
+            method: 'PATCH',
+            body: JSON.stringify({ userID, role: 'SME_OWNER' }),
+        });
     },
 
     async toggleBackendInvoicePaid(invId: string, paid: boolean, userID: string): Promise<InvoiceItem | null> {
         if (getDebugMockMode()) return null;
-        try {
-            return await requestJson<InvoiceItem>(`/api/invoices/${invId}/paid`, {
-                method: 'PATCH',
-                body: JSON.stringify({ userID, paid }),
-            });
-        } catch {
-            return null;
-        }
+        return requestJson<InvoiceItem>(`/api/invoices/${invId}/paid`, {
+            method: 'PATCH',
+            body: JSON.stringify({ userID, paid }),
+        });
     },
 
     // Auth & Session
@@ -461,17 +507,14 @@ export const orbyteApi = {
     },
 };
 
-// Module 6: Business License & Compliance Renewal API
 export const complianceApi = {
     async verifySsmBusiness(payload: { registrationNo: string; companyName: string; userID: string }): Promise<{ data: SSMVerifyResponse }> {
         if (!getDebugMockMode()) {
-            try {
-                const data = await requestJson<SSMVerifyResponse>('/api/compliance/ssm-verify', {
-                    method: 'POST',
-                    body: JSON.stringify(payload),
-                });
-                return { data };
-            } catch { /* fallback */ }
+            const data = await requestJson<SSMVerifyResponse>('/api/compliance/ssm-verify', {
+                method: 'POST',
+                body: JSON.stringify(payload),
+            });
+            return { data };
         }
         const nameUpper = payload.companyName.toUpperCase();
         const companyType = nameUpper.includes('PLT') || nameUpper.includes('LLP') ? 'LLP' : nameUpper.includes('ENTERPRISE') ? 'ENTERPRISE' : 'SDN_BHD';
@@ -495,13 +538,11 @@ export const complianceApi = {
         fallbackPayload: CheckComplianceExpiryResponse
     ): Promise<{ data: CheckComplianceExpiryResponse }> {
         if (!getDebugMockMode()) {
-            try {
-                const data = await requestJson<CheckComplianceExpiryResponse>('/api/compliance/expiry-check', {
-                    method: 'POST',
-                    body: JSON.stringify(payload),
-                });
-                if (data && Array.isArray(data.expiringItems)) return { data };
-            } catch { /* fallback */ }
+            const data = await requestJson<CheckComplianceExpiryResponse>('/api/compliance/expiry-check', {
+                method: 'POST',
+                body: JSON.stringify(payload),
+            }).catch(() => ({ lastCheckedAt: new Date().toISOString(), totalLicensesMonitored: 0, expiringItems: [] }));
+            return { data };
         }
         return { data: fallbackPayload };
     },
@@ -516,13 +557,11 @@ export const complianceApi = {
         createdBy: string;
     }) {
         if (!getDebugMockMode()) {
-            try {
-                const data = await requestJson<any>('/api/compliance/vault/upload', {
-                    method: 'POST',
-                    body: JSON.stringify(payload),
-                });
-                if (data?.docID) return { data };
-            } catch { /* fallback */ }
+            const data = await requestJson<any>('/api/compliance/vault/upload', {
+                method: 'POST',
+                body: JSON.stringify(payload),
+            });
+            return { data };
         }
         return {
             data: {
@@ -530,7 +569,7 @@ export const complianceApi = {
                 registrationNo: payload.registrationNo,
                 docType: payload.docType,
                 storedAt: new Date().toISOString(),
-                message: 'Document indexed & formatted for PBT compliance packet',
+                message: 'Document indexed for PBT compliance packet',
             },
         };
     },
@@ -547,13 +586,11 @@ export const complianceApi = {
         createdBy: string;
     }) {
         if (!getDebugMockMode()) {
-            try {
-                const data = await requestJson<any>('/api/compliance/renewal/initiate', {
-                    method: 'POST',
-                    body: JSON.stringify(payload),
-                });
-                if (data?.renewalID) return { data };
-            } catch { /* fallback */ }
+            const data = await requestJson<any>('/api/compliance/renewal/initiate', {
+                method: 'POST',
+                body: JSON.stringify(payload),
+            });
+            return { data };
         }
         const renewalID = `REN-2026-${Math.floor(1000 + Math.random() * 9000)}`;
         const portalMap: Record<string, string> = {
@@ -590,13 +627,11 @@ export const complianceApi = {
         updatedBy: string;
     }) {
         if (!getDebugMockMode()) {
-            try {
-                const data = await requestJson<any>('/api/compliance/renewal/status', {
-                    method: 'POST',
-                    body: JSON.stringify(payload),
-                });
-                if (data?.currentStatus) return { data };
-            } catch { /* fallback */ }
+            const data = await requestJson<any>('/api/compliance/renewal/status', {
+                method: 'POST',
+                body: JSON.stringify(payload),
+            });
+            return { data };
         }
         const isFinal = payload.action === 'APPROVE_FINAL_LICENSE';
         return {

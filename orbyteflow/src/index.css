@@ -1,7 +1,11 @@
 /* src/index.css */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
 :root {
   color-scheme: light;
-  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-brand: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-code: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  font-family: var(--font-brand);
   color: #0B0C0E;
   background-color: #F6F7F4;
   font-synthesis: none;
@@ -14,6 +18,33 @@
 *::before,
 *::after {
   box-sizing: border-box;
+}
+
+html,
+body,
+#root,
+.font-sans,
+input,
+select,
+textarea,
+button {
+  font-family: var(--font-brand) !important;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+.font-mono,
+code,
+pre {
+  font-family: var(--font-code) !important;
+  letter-spacing: -0.015em;
+}
+
+table,
+td,
+th,
+input[type="number"],
+input[type="date"] {
+  font-variant-numeric: tabular-nums;
 }
 
 html,
@@ -33,6 +64,7 @@ h2,
 h3,
 h4 {
   margin: 0;
+  letter-spacing: -0.01em;
 }
 
 input,

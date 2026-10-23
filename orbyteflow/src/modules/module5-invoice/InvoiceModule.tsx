@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import type { CurrencyCode, InvoiceItem, UserRole } from '../../types/vyte.ts';
 import { CURRENCY_SYMBOLS } from '../../types/vyte.ts';
+import {getDebugMockMode, orbyteApi} from "../../services/api.ts";
 
 interface InvoiceModuleProps {
     invoices: InvoiceItem[];
@@ -70,9 +71,21 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
         return { label: 'Uploaded Invoice', color: 'bg-slate-100 text-slate-700' };
     };
 
-    const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
+        if (!getDebugMockMode()) {
+            try {
+                const created = await orbyteApi.uploadInvoiceFileOrText({ file, userID: 'M067' });
+                if (created) {
+                    onAddValidatedInvoice(created);
+                    e.target.value = '';
+                    return;
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
         const reader = new FileReader();
         reader.onload = () => {
             setPhotoPreviewUrl(String(reader.result));

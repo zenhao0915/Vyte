@@ -102,20 +102,30 @@ export default function App() {
       setQcAlerts(INITIAL_QC_ALERTS);
       setInvoices(INITIAL_INVOICES);
       setAuditLogs(INITIAL_AUDIT_LOGS);
-      if (showNotification) pushToast('info', 'Debug Mode enabled: using local mock dataset.');
+      setComplianceProfiles(INITIAL_COMPLIANCE_PROFILES);
+      setVaultDocs(INITIAL_VAULT_DOCS);
+      setRenewalTasks(INITIAL_RENEWAL_TASKS);
+      if (showNotification) pushToast('info', 'Debug Mode enabled: restored local mock dataset.');
       return;
     }
+    setProducts([]);
+    setQcAlerts([]);
+    setInvoices([]);
+    setAuditLogs([]);
+    setComplianceProfiles([]);
+    setVaultDocs([]);
+    setRenewalTasks([]);
     try {
       const data = await orbyteApi.fetchWorkspaceData();
       setProducts(data.products);
       setQcAlerts(data.qcAlerts);
       setInvoices(data.invoices);
       setAuditLogs(data.auditLogs);
-      if (showNotification) pushToast('success', 'Synced workspace with backend server.');
+      if (showNotification) pushToast('success', `Synced ${data.products.length} products from live backend.`);
     } catch {
-      if (showNotification) pushToast('warning', 'Backend unreachable, using cached workspace state.');
+      if (showNotification) pushToast('error', 'Cannot reach backend server. Workspace cleared.');
     }
-  }, [pushToast, setAuditLogs, setInvoices, setProducts, setQcAlerts]);
+  }, [pushToast, setAuditLogs, setComplianceProfiles, setInvoices, setProducts, setQcAlerts, setRenewalTasks, setVaultDocs]);
 
   useEffect(() => {
     if (userSession && !debugMockMode) void syncWithBackend(false, false);

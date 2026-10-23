@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import type { CurrencyCode, ExtractedNlpOrderItem, Product, UserRole } from '../../types/vyte.ts';
 import { CURRENCY_SYMBOLS } from '../../types/vyte.ts';
-import { orbyteApi } from '../../services/api';
+import {getDebugMockMode, orbyteApi} from '../../services/api';
 import { VyteDropdown } from '../../components/common/VyteDropdown';
 
 interface OrderStatusModuleProps {
@@ -66,6 +66,39 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
         const p2 = products[2] || products[1] || products[0];
         return `Hi team, please send 6 ${p1?.uom || 'units'} of ${p1?.name || 'Coffee Beans'} and 3 ${p2?.uom || 'units'} of ${p2?.name || 'Takeaway Box'} by tomorrow.`;
     });
+
+    useEffect(() => {
+        if (!getDebugMockMode()) {
+            void orbyteApi.fetchBackendOrders().then((orders) => {
+                if (Array.isArray(orders)) {
+                    const mapped: CustomerOrderRecord[] = orders.map((o: any) => ({
+                        orderID: o.orderID,
+                        invoiceID: `INV-CUST-${o.orderID.replace('ORD-', '')}`,
+                        invoicePdfUrl: `/invoices/${o.orderID}.pdf`,
+                        customerName: o.internalNotes?.replace('Order from ', '') || 'B2B Customer',
+                        requestedDate: o.requestedDate,
+                        rawMessage: o.internalNotes || '',
+                        items: (o.lineOrders || []).map((l: any) => {
+                            const prod = products.find((p) => p.id === l.productID);
+                            return {
+                                productID: l.productID,
+                                SKU: prod?.sku || l.productID,
+                                name: prod?.name || l.productID,
+                                requestedQty: l.quantity,
+                                availableStock: prod?.stock ?? 0,
+                                isStockEnough: (prod?.stock ?? 0) >= l.quantity,
+                                sellingPrice: prod?.priceRM ?? Number((l.lineTotal / Math.max(1, l.quantity)).toFixed(2)),
+                                lineTotal: l.lineTotal,
+                            };
+                        }),
+                        subtotal: o.subtotal,
+                        status: 'PENDING_HUMAN_APPROVAL',
+                    }));
+                    setCustomerOrders(mapped);
+                }
+            });
+        }
+    }, [products]);
 
     useEffect(() => {
         localStorage.setItem(ORDER_INTAKE_KEY, JSON.stringify({ customerName, requestedDate, rawOrderText }));

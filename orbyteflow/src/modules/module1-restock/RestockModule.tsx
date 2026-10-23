@@ -136,6 +136,14 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
         try { await onConfirmSupplierDelivery(item.id); } finally { setConfirmingIds((p) => ({ ...p, [item.id]: false })); }
     };
 
+    const sortedProducts = React.useMemo(() => {
+        return [...products].sort((a, b) => {
+            const rank = (s: Product['restockStatus']) =>
+                s === 'TRIGGERED_PENDING_APPROVAL' ? 0 : s === 'SUPPLIER_CONTACTED' ? 1 : s === 'CONFIRMED' ? 2 : 3;
+            return rank(a.restockStatus) - rank(b.restockStatus);
+        });
+    }, [products]);
+
     return (
         <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
             <input ref={excelInputRef} type="file" accept=".csv,.xlsx,.xls" onChange={handleSpreadsheetImport} className="hidden" />
@@ -174,7 +182,7 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                     </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-xs">
-                    {products.map((item) => {
+                    {sortedProducts.map((item) => {
                         const isLow = item.stock <= item.minThreshold;
                         const isOutOfStock = item.stock <= 0;
                         const currentUsageVal = usageInputs[item.id] ?? '3';
