@@ -1,5 +1,3 @@
-// src/types/vyte.ts
-
 export type UserRole = 'SME_OWNER' | 'MANAGER' | 'OPERATIONS_STAFF';
 export type IndustryProfile = 'FNB_PERISHABLE' | 'RETAIL_VARIANT' | 'B2B_RAW_MATERIAL';
 export type ActiveTab = 'mod1' | 'mod2' | 'mod3' | 'mod4' | 'mod5' | 'mod6' | 'logs';
@@ -10,6 +8,36 @@ export const CURRENCY_SYMBOLS: Record<CurrencyCode, string> = {
     SGD: 'S$',
     USD: '$',
 };
+
+export interface SupplierQuotationBid {
+    quotationNo: string;
+    rfqNo: string;
+    productId: string;
+    sku: string;
+    productName: string;
+    orderQty: number;
+    uom: string;
+    supplierCode: string;
+    supplierName: string;
+    supplierContact: string;
+    address: string;
+    status: 'Submitted' | 'Awarded' | 'Completed';
+    unitPriceRM: number;
+    totalNetValueRM: number;
+    quotationDate: string;
+    deliveryLeadDays: number;
+    fullyQuotedItems: string;
+    bestPricedItems: string;
+    pastOrdersCount: number;
+    pastDefectRatePct: number;
+    pastExperienceNote: string;
+    sampleTestStatus: 'PASSED' | 'WARNING' | 'FAILED' | 'PENDING';
+    staffSampleComment: string;
+    testedByStaff: string;
+    aiQualityScore: number;
+    aiRecommendation: 'RECOMMENDED_BEST_VALUE' | 'LOWEST_PRICE_HIGH_RISK' | 'ACCEPTABLE_BACKUP' | 'AVOID_DEFECT_RISK';
+    aiAnalysisNote: string;
+}
 
 export interface OrbyteHrStaff {
     staffId: string;
@@ -79,6 +107,8 @@ export interface Product {
     expiryDate?: string;
     variantSpec?: string;
     photoUrl?: string;
+    valuationClass?: string;
+    priceControl?: 'V' | 'S';
     restockStatus: 'HEALTHY' | 'TRIGGERED_PENDING_APPROVAL' | 'SUPPLIER_CONTACTED' | 'CONFIRMED';
 }
 
@@ -165,6 +195,13 @@ export interface InvoiceItem {
     sstCode?: SstTaxCode;
     sstRatePct?: number;
     sstAmountRM?: number;
+    sapTaxCode?: 'XI' | '0';
+    reconciliationAccount?: string;
+    glOffsetAccount?: string;
+    paymentTerms?: string;
+    doubleInvoiceChecked?: boolean;
+    poReference?: string;
+    grnDocNo?: string;
     aiCategory: string;
     aiConfidence: number;
     paid: boolean;
@@ -242,212 +279,21 @@ export interface AnalyzeProcurementResponse {
 
 export type UserType = 'CEO' | 'Manager' | 'Staff';
 
-export interface RegisterAccountRequest {
-    firstName: string;
-    lastName: string;
-    email: string;
-    password: string;
-    companyName: string;
-    userType: UserType;
-    role: UserRole;
-    acceptedTermsAt: string;
-}
-
-export interface RegisterAccountResponse {
-    userID: string;
-    userName: string;
-    email: string;
-    companyName: string;
-    userType: UserType;
-    role: UserRole;
-    registeredAt: string;
-    message: string;
-}
-
-export interface LoginAccountRequest {
-    email: string;
-    password: string;
-    companyName?: string;
-    userType?: UserType;
-}
-
-export interface AuthSessionResponse {
-    authenticated: boolean;
-    accessToken: string;
-    authProvider: 'LOCAL' | 'GOOGLE' | 'ENTERPRISE_SSO';
-    issuedAt: string;
-    session?: UserSession;
-}
-
-export interface ValidateSessionRequest {
-    accessToken: string;
-    userID: string;
-    email: string;
-}
-
-export interface ValidateSessionResponse {
-    valid: boolean;
-    session: UserSession;
-    verifiedAt: string;
-}
-
-export interface ForgotPasswordRequest {
-    email: string;
-}
-
-export interface ForgotPasswordResponse {
-    resetToken: string;
-    email: string;
-    expiresAt: string;
-    message: string;
-}
-
-export interface ResetPasswordRequest {
-    email: string;
-    resetToken: string;
-    newPassword: string;
-}
-
-export interface ResetPasswordResponse {
-    success: boolean;
-    updatedAt: string;
-    message: string;
-}
-
-export interface GoogleAuthRequest {
-    idToken: string;
-    email: string;
-    fullName: string;
-    companyName: string;
-    userType: UserType;
-    role: UserRole;
-}
-
-export interface EnterpriseSsoAuthRequest {
-    ssoAssertionToken: string;
-    corporateDomain: string;
-    email: string;
-    companyName: string;
-    userType: UserType;
-    role: UserRole;
-}
-
-export interface ConfirmRestockRequest {
-    poNumber: string;
-    productId: string;
-    SKU: string;
-    quantity: number;
-    unitPrice: number;
-    currency: string;
-    MOQ: number;
-    unitOfMeasure: string;
-    supplierName: string;
-    supplierPhoneNumber: string;
-    requestedDeliveryDate: string;
-    deliveryLocation: string;
-    automationStatus: boolean;
-    userID: string;
-}
-
-export interface ConfirmRestockResponse {
-    poNumber: string;
-    status: string;
-    confirmationStatus: string;
-    isConfirmed: boolean;
-    message: string;
-    updatedAt: string;
-}
-
-export interface ContactSupplierRequest {
-    poNumber: string;
-    supplierName: string;
-    supplierPhoneNumber: string;
-    channel: 'WHATSAPP' | 'EMAIL' | 'SMS';
-    messageBody: string;
-    userID: string;
-}
-
-export interface ContactSupplierResponse {
-    poNumber: string;
-    deliveryStatus: string;
-    sentAt: string;
-    responseCode: number;
-    message: string;
-}
-
-export interface ProcessNlpOrderRequest {
-    rawOrderText: string;
-    customerName: string;
-    requestedDate: string;
-    userID: string;
-}
-
-export interface ProcessNlpOrderResponse {
-    parseSuccess: boolean;
-    hasSufficientStock: boolean;
-    extractedItems: ExtractedNlpOrderItem[];
-    calculatedSubtotal: number;
-    currency: string;
-}
-
-export interface CreateInvoiceOrderLine {
-    lineID: string;
-    productID: string;
-    quantity: number;
-    lineTotal: number;
-    currency: string;
-}
-
-export interface CreateInvoiceOrderRequest {
-    orderID: string;
-    requestedDate: string;
-    subtotal: number;
-    currency: string;
-    internalNotes: string;
-    createdBy: string;
-    lineOrders: CreateInvoiceOrderLine[];
-}
-
-export interface CreateInvoiceOrderResponse {
-    orderID: string;
-    invoiceID: string;
-    status: string;
-    databaseUpdated: boolean;
-    invoicePdfUrl: string;
-    createdAt: string;
-}
-
-export interface ApproveCustomerOrderRequest {
-    orderID: string;
-    invoiceID: string;
-    approvalAction: 'APPROVE' | 'REJECT' | 'MODIFY';
-    approvalNotes: string;
-    updatedBy: string;
-}
-
-export interface ApproveCustomerOrderResponse {
-    orderID: string;
-    finalStatus: string;
-    inventoryDeducted: boolean;
-    updatedAt: string;
-    message: string;
-}
-
-// ============================================================================
-// MODULE 6: BUSINESS LICENSE, FLEET, WARRANTY, ACCOUNTING & MFRS 102 AUDIT
-// ============================================================================
-
 export type CompanyType = 'SDN_BHD' | 'ENTERPRISE' | 'LLP';
 
 export type LicenseType =
     | 'PREMISE_LICENSE'
     | 'SIGNBOARD_LICENSE'
     | 'FOOD_ESTABLISHMENT'
+    | 'PREMISE_TENANCY_CONTRACT'
+    | 'SOFTWARE_SUBSCRIPTION_LICENSE'
     | 'FLEET_ROADTAX_PUSPAKOM'
     | 'EQUIPMENT_OEM_WARRANTY';
 
 export type ComplianceAssetCategory =
     | 'SSM_PBT_LICENSE'
+    | 'RENTAL_CONTRACT'
+    | 'SOFTWARE_LICENSE'
     | 'FLEET_VEHICLE'
     | 'EQUIPMENT_WARRANTY';
 
@@ -460,6 +306,7 @@ export type ComplianceStatus =
 export type ComplianceDocType =
     | 'SSM_CERT_FORM_9'
     | 'TENANCY_AGREEMENT'
+    | 'SOFTWARE_LICENSE_AGREEMENT'
     | 'FLOOR_PLAN'
     | 'FIRE_SAFETY_CERT'
     | 'PREVIOUS_LICENSE';
@@ -485,6 +332,8 @@ export interface BusinessComplianceProfile {
     fiveYearDiscountPct?: number;
     selectedRenewalTermYears?: 1 | 3 | 5;
     warrantyClaimed?: boolean;
+    contractPartyOrVendor?: string;
+    seatOrUnitInfo?: string;
 }
 
 export interface AccountingStatutoryDeadline {
@@ -495,6 +344,7 @@ export interface AccountingStatutoryDeadline {
     frequency: 'ANNUAL' | 'BI_MONTHLY' | 'MONTHLY' | 'QUARTERLY';
     dueDate: string;
     estimatedPayableRM: number;
+    sapGlAccount?: string;
     penaltyRule: string;
     status: 'PENDING_FILING' | 'PREPARED_READY' | 'FILED_COMPLETED';
 }
@@ -520,6 +370,7 @@ export interface DocumentVaultItem {
     expiryDate?: string;
     uploadedAt: string;
     uploadedBy: string;
+    notes?: string;
 }
 
 export interface RenewalChecklistStep {
@@ -550,12 +401,6 @@ export interface RenewalTask {
     createdAt?: string;
 }
 
-export interface SSMVerifyRequest {
-    registrationNo: string;
-    companyName: string;
-    userID: string;
-}
-
 export interface SSMVerifyResponse {
     registrationNo: string;
     companyName: string;
@@ -567,12 +412,6 @@ export interface SSMVerifyResponse {
     isWithinRenewalWindow: boolean;
     verificationSource: string;
     verifiedAt: string;
-}
-
-export interface CheckComplianceExpiryRequest {
-    expiryThresholdDays: number;
-    councilFilter: string;
-    userID: string;
 }
 
 export interface ExpiringLicenseItem {
@@ -590,67 +429,4 @@ export interface CheckComplianceExpiryResponse {
     lastCheckedAt: string;
     totalLicensesMonitored: number;
     expiringItems: ExpiringLicenseItem[];
-}
-
-export interface StoreComplianceDocRequest {
-    registrationNo: string;
-    docType: ComplianceDocType | string;
-    fileUrl: string;
-    fileSizeKb: number;
-    effectiveDate: string;
-    expiryDate: string;
-    createdBy: string;
-}
-
-export interface StoreComplianceDocResponse {
-    docID: string;
-    registrationNo: string;
-    docType: ComplianceDocType | string;
-    fileStored: boolean;
-    formattedPackageReady: boolean;
-    storedAt: string;
-    message: string;
-}
-
-export interface InitiateRenewalRequest {
-    registrationNo: string;
-    councilName: string;
-    licenseType: LicenseType | string;
-    filingMode: string;
-    selectedDocumentIds: string[];
-    renewalFeeEstimate: number;
-    currency: string;
-    internalNotes: string;
-    createdBy: string;
-}
-
-export interface InitiateRenewalResponse {
-    renewalID: string;
-    status: RenewalTaskStatus;
-    targetCouncil: string;
-    pbtPortalUrl: string;
-    generatedChecklist: RenewalChecklistStep[];
-    compiledSubmissionPdfUrl: string;
-    assignedAgentID: string | null;
-    deadlineDate: string;
-    createdAt: string;
-}
-
-export interface UpdateRenewalTaskRequest {
-    renewalID: string;
-    action: string;
-    submissionReferenceNo: string;
-    pbtReceiptUrl: string;
-    agentNotes: string;
-    updatedBy: string;
-}
-
-export interface UpdateRenewalTaskResponse {
-    renewalID: string;
-    currentStatus: RenewalTaskStatus;
-    submissionReferenceNo: string;
-    isAcknowledged: boolean;
-    nextFollowUpDate: string;
-    updatedAt: string;
-    message: string;
 }

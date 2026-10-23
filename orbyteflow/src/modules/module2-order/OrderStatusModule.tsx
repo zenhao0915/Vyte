@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import type { CurrencyCode, ExtractedNlpOrderItem, Product, UserRole } from '../../types/vyte.ts';
 import { CURRENCY_SYMBOLS } from '../../types/vyte.ts';
-import {getDebugMockMode, orbyteApi} from '../../services/api';
+import { getDebugMockMode, orbyteApi } from '../../services/api';
 import { VyteDropdown } from '../../components/common/VyteDropdown';
 
 interface OrderStatusModuleProps {
@@ -57,35 +57,23 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
         customer: string,
         items: ExtractedNlpOrderItem[],
         allStockEnough: boolean
-    ): { langLabel: string; flag: string; autoReplyText: string } => {
-        const hasChinese = /[\u4e00-\u9fa5]/.test(rawText);
+    ): { langLabel: string; autoReplyText: string } => {
         const hasMalay = /\b(tolong|hantar|esok|kotak|susu|kopi|nak|bila|terima kasih|bos)\b/i.test(rawText);
         const itemSummary = items.map((i) => `${i.requestedQty}x ${i.name}`).join(', ');
 
-        if (hasChinese) {
-            return {
-                langLabel: '中文 / Mandarin Detected',
-                flag: '🇨🇳/🇲🇾',
-                autoReplyText: allStockEnough
-                    ? `老板您好 (${customer})！Vyte AI 已收到您的订单：${itemSummary}。仓库现货充足，我们已经为您安排出货并附上电子账单，感谢支持！`
-                    : `老板您好 (${customer})！收到您的订单（${itemSummary}）。目前部分货品正在紧急补货中，我们会在配齐后第一时间优先为您送出！`,
-            };
-        }
         if (hasMalay) {
             return {
                 langLabel: 'Bahasa Melayu Detected',
-                flag: '🇲🇾',
                 autoReplyText: allStockEnough
-                    ? `Salam Boss (${customer})! Pesanan anda (${itemSummary}) telah diterima oleh Vyte AI. Stok mencukupi dan penghantaran sedang disediakan. Terima kasih!`
-                    : `Salam Boss (${customer})! Pesanan anda (${itemSummary}) diterima. Stok sedang ditambah semula dan kami akan maklumkan masa penghantaran secepat mungkin.`,
+                    ? `Salam (${customer})! Pesanan anda (${itemSummary}) telah diterima oleh Vyte. Stok mencukupi dan penghantaran sedang disediakan. Terima kasih!`
+                    : `Salam (${customer})! Pesanan anda (${itemSummary}) diterima. Stok sedang ditambah semula dan kami akan maklumkan masa penghantaran secepat mungkin.`,
             };
         }
         return {
-            langLabel: 'English / Manglish Detected',
-            flag: '🇬🇧/🇲🇾',
+            langLabel: 'English Detected',
             autoReplyText: allStockEnough
-                ? `Hi ${customer}! We've received your order (${itemSummary}). Stock is confirmed and ready for dispatch. Here is your invoice reference!`
-                : `Hi ${customer}! We received your order (${itemSummary}). One or more items are currently being restocked—we'll update your delivery slot shortly!`,
+                ? `Hi ${customer}! We have received your order (${itemSummary}). Stock is confirmed and ready for dispatch.`
+                : `Hi ${customer}! We received your order (${itemSummary}). One or more items are currently being restocked; we will update your delivery slot shortly.`,
         };
     };
 
@@ -229,7 +217,6 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
 
     const isDraftStockSufficient = useMemo(() => liveDraftItems.length > 0 && liveDraftItems.every((i) => i.isStockEnough), [liveDraftItems]);
 
-    // 计算当前草稿的智能多语言回复
     const draftAutoReply = useMemo(() => {
         if (!parsedDraft) return null;
         return detectLanguageAndBuildReply(
@@ -265,7 +252,6 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
         setParseFailureMessage(null);
     };
 
-    // 新增：支持 BM Sample 与 中文 Sample 快捷预设按钮
     const applyCustomPreset = (presetCustomer: string, presetText: string) => {
         setCustomerName(presetCustomer);
         setRawOrderText(presetText);
@@ -492,7 +478,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
             } else if (action === 'MODIFY') {
                 setCustomerOrders((p) => p.map((o) => (o.orderID === order.orderID ? { ...o, items: updatedItems, subtotal: updatedSubtotal, status: 'MODIFIED', approvalNotes, inventoryDeducted: res.data.inventoryDeducted, updatedAt: res.data.updatedAt } : o)));
                 setModifyingOrderId(null);
-                onLogAction('Orders', `Modified order ${order.orderID} (${order.customerName}) \u2022 New Total: ${sym} ${(updatedSubtotal * exchangeRate).toFixed(2)}.`);
+                onLogAction('Orders', `Modified order ${order.orderID} (${order.customerName}) | New Total: ${sym} ${(updatedSubtotal * exchangeRate).toFixed(2)}.`);
                 notify('info', `Order ${order.orderID} updated.`);
             } else {
                 setCustomerOrders((p) => p.map((o) => (o.orderID === order.orderID ? { ...o, status: 'REJECTED', approvalNotes, inventoryDeducted: res.data.inventoryDeducted, updatedAt: res.data.updatedAt } : o)));
@@ -528,7 +514,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                         <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                             <MessageSquare className="w-4 h-4 text-purple-600" /> Customer Order Intake (Text, Photo OCR &amp; Spreadsheet)
                         </h3>
-                        <p className="text-xs text-slate-500 mt-0.5">Parse incoming WhatsApp/Email orders, upload purchase order photos, or import CSV/Excel sheets.</p>
+                        <p className="text-xs text-slate-500 mt-0.5">Parse incoming customer orders, upload purchase order photos, or import CSV/Excel sheets.</p>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -545,12 +531,8 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                         <button type="button" onClick={() => applyPresetMessage('Subang Retail Hub', 1, 1)} className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-semibold cursor-pointer">
                             Retail Sample
                         </button>
-                        {/* 新增：BM Sample 与 中文 Sample 预设按钮 */}
                         <button type="button" onClick={() => applyCustomPreset('Kampung Baru Kopitiam', 'Boss, tolong hantar 6 kg Artisan Arabica Coffee Beans esok')} className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-[11px] font-bold cursor-pointer">
-                            🇲🇾 BM Sample
-                        </button>
-                        <button type="button" onClick={() => applyCustomPreset('吉隆坡茶室', '老板，明天帮我送 6 kg Artisan Arabica Coffee Beans 和 3 box Takeaway Box')} className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-lg text-[11px] font-bold cursor-pointer">
-                            🇨🇳 中文 Sample
+                            BM Sample
                         </button>
                     </div>
                 </div>
@@ -566,7 +548,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                             <div>
                                 <span className="px-2 py-0.5 rounded bg-purple-600 text-white text-[10px] font-bold">{uploadedOrderPhotoPreview ? 'Photo OCR Extracted' : 'Spreadsheet Parsed'}</span>
                                 <p className="font-bold text-slate-900 mt-0.5">{uploadedOrderFileName}</p>
-                                <p className="text-[11px] text-slate-600">Items loaded into the review table below.</p>
+                                <p className="text-([11px]) text-slate-600">Items loaded into the review table below.</p>
                             </div>
                         </div>
                         <button type="button" onClick={() => { setUploadedOrderPhotoPreview(null); setUploadedOrderFileName(null); }} className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"><X className="w-4 h-4" /></button>
@@ -646,26 +628,24 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                             </div>
                         </div>
 
-                        {/* 新增：在 parsedDraft 预览框展示 detectLanguageAndBuildReply 的 autoReplyText 以及 Send AI Reply via WhatsApp 按钮 */}
                         {draftAutoReply && (
                             <div className="p-4 rounded-xl bg-white border border-purple-200 shadow-2xs space-y-2.5">
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                     <div className="flex items-center gap-2">
-                                        <span className="text-base">{draftAutoReply.flag}</span>
                                         <span className="text-xs font-bold text-slate-800">{draftAutoReply.langLabel}</span>
-                                        <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold">Vyte AI Auto-Reply</span>
+                                        <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold">Auto-Reply Draft</span>
                                     </div>
                                     <button
                                         type="button"
                                         onClick={() => {
                                             const encoded = encodeURIComponent(draftAutoReply.autoReplyText);
                                             window.open(`https://api.whatsapp.com/send?text=${encoded}`, '_blank');
-                                            onLogAction('Orders', `Sent AI WhatsApp reply to ${parsedDraft.customerName} (${draftAutoReply.langLabel}).`);
-                                            notify('success', `WhatsApp AI Reply sent to ${parsedDraft.customerName}!`);
+                                            onLogAction('Orders', `Sent WhatsApp reply to ${parsedDraft.customerName}.`);
+                                            notify('success', `WhatsApp reply sent to ${parsedDraft.customerName}.`);
                                         }}
-                                        className="px-3.5 py-1.5 bg-[#25D366] hover:bg-[#20ba5a] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                                        className="px-3.5 py-1.5 bg-[#25D366] hover:bg-([#20ba5a]) text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
                                     >
-                                        <MessageSquare className="w-3.5 h-3.5" /> Send AI Reply via WhatsApp
+                                        <MessageSquare className="w-3.5 h-3.5" /> Send Reply via WhatsApp
                                     </button>
                                 </div>
                                 <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700 font-mono">
@@ -685,7 +665,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                             <div className="w-72">
                                 <VyteDropdown
                                     variant="light" size="sm" value={addSkuId} onChange={setAddSkuId}
-                                    options={products.map((p) => ({ label: `${p.name} (${p.sku}) \u2014 ${sym} ${(p.priceRM * exchangeRate).toFixed(2)}`, value: p.id }))}
+                                    options={products.map((p) => ({ label: `${p.name} (${p.sku}) - ${sym} ${(p.priceRM * exchangeRate).toFixed(2)}`, value: p.id }))}
                                 />
                             </div>
                             <button type="button" onClick={handleAddDraftItem} className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold inline-flex items-center gap-1 cursor-pointer">
@@ -702,7 +682,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                             <div className="overflow-x-auto rounded-xl border border-purple-200 bg-white">
                                 <table className="w-full text-left border-collapse text-xs">
                                     <thead>
-                                    <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase">
+                                    <tr className="bg-slate-50 border-b border-slate-200 text-([11px]) font-semibold text-slate-500 uppercase">
                                         <th className="py-2 px-3.5">SKU &amp; Product</th>
                                         <th className="py-2 px-3.5">Requested Qty</th>
                                         <th className="py-2 px-3.5">Warehouse Stock</th>
@@ -720,9 +700,9 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                             </td>
                                             <td className="py-2.5 px-3.5">
                                                 {item.isStockEnough ? (
-                                                    <span className="text-emerald-700 font-bold">{"\u2713"} {item.availableStock} Available</span>
+                                                    <span className="text-emerald-700 font-bold">{item.availableStock} Available</span>
                                                 ) : (
-                                                    <span className="text-rose-600 font-bold">{"\u26A0"} Only {item.availableStock} Left (Short by {item.shortageQty})</span>
+                                                    <span className="text-rose-600 font-bold">Only {item.availableStock} Left (Short by {item.shortageQty})</span>
                                                 )}
                                             </td>
                                             <td className="py-2.5 px-3.5 text-slate-600">{sym} {(item.sellingPrice * exchangeRate).toFixed(2)}</td>
@@ -787,12 +767,12 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                                 </a>
                                             )}
                                             <span className="text-sm font-bold text-slate-900">{co.customerName}</span>
-                                            <span className="text-xs font-mono text-slate-500">{"\u2022"} {co.requestedDate}</span>
+                                            <span className="text-xs font-mono text-slate-500">| {co.requestedDate}</span>
                                             {co.status === 'MODIFIED' && <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">MODIFIED</span>}
                                             {isPendingOrModified && (
                                                 <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full inline-flex items-center gap-1 ${allEnoughLive ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-700'}`}>
-                          {allEnoughLive ? <><CheckCircle2 className="w-3 h-3" /> Stock Sufficient</> : <><AlertTriangle className="w-3 h-3" /> Insufficient Stock</>}
-                        </span>
+                                                    {allEnoughLive ? <><CheckCircle2 className="w-3 h-3" /> Stock Sufficient</> : <><AlertTriangle className="w-3 h-3" /> Insufficient Stock</>}
+                                                </span>
                                             )}
                                         </div>
 
@@ -856,7 +836,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
 
                                             {co.status === 'APPROVED_AWAITING_DELIVERY' && (
                                                 <div className="flex items-center gap-2">
-                                                    <span className="px-2.5 py-1 rounded-lg bg-blue-100 text-blue-800 text-[11px] font-bold">{"\u2713"} Invoiced</span>
+                                                    <span className="px-2.5 py-1 rounded-lg bg-blue-100 text-blue-800 text-[11px] font-bold">Invoiced</span>
                                                     <button
                                                         type="button"
                                                         onClick={() => {
@@ -922,14 +902,14 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                                             <td className="py-2.5 px-3.5">
                                                                 {isPendingOrModified ? (
                                                                     item.isStockEnough ? (
-                                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold text-[11px]">{"\u2713"} {item.availableStock} {item.uom} Available</span>
+                                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold text-([11px])">{item.availableStock} {item.uom} Available</span>
                                                                     ) : (
-                                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 font-bold text-[11px]">{"\u26A0"} Only {item.availableStock} {item.uom} Left (Short by {item.shortageQty} {item.uom})</span>
+                                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 font-bold text-([11px])">Only {item.availableStock} {item.uom} Left (Short by {item.shortageQty} {item.uom})</span>
                                                                     )
                                                                 ) : co.status === 'REJECTED' ? (
                                                                     <span className="text-slate-400 font-semibold">Order Cancelled</span>
                                                                 ) : (
-                                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold text-[11px]">{"\u2713"} {item.requestedQty} {item.uom} Deducted (Rem: {item.availableStock} {item.uom})</span>
+                                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold text-([11px])">{item.requestedQty} {item.uom} Deducted (Rem: {item.availableStock} {item.uom})</span>
                                                                 )}
                                                             </td>
                                                             <td className="py-2.5 px-3.5 text-slate-600 font-medium">{sym} {(item.sellingPrice * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {item.uom}</td>
@@ -970,7 +950,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
 
             {selectedDetailOrder && (
                 <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-                    <div className="bg-white rounded-2xl border border-slate-200 max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+                    <div className="bg-white rounded-2xl border border-slate-200 max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-([90vh]) overflow-y-auto">
                         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                             <div>
                                 <div className="flex items-center gap-2">

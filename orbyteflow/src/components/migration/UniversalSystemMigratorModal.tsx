@@ -2,7 +2,7 @@
 import React, { useState, useRef } from 'react';
 import {
     Upload, Database, Sparkles, CheckCircle2, AlertCircle,
-    ArrowRight, ShieldCheck, Loader2, X, Sliders
+    ArrowRight, ShieldCheck, Loader2, X, Sliders,
 } from 'lucide-react';
 import type { Product, InvoiceItem, BusinessComplianceProfile } from '../../types/vyte.ts';
 import { orbyteApi } from '../../services/api';
@@ -45,7 +45,6 @@ export const UniversalSystemMigratorModal: React.FC<UniversalSystemMigratorModal
 
     if (!isOpen) return null;
 
-    // Read any file (.md, .db, .sql, .json, .csv, etc.) and send to Backend AI / Local AI Parser
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -56,27 +55,23 @@ export const UniversalSystemMigratorModal: React.FC<UniversalSystemMigratorModal
         try {
             const ext = file.name.split('.').pop()?.toLowerCase() || 'unknown';
             const rawContent = await readFileContentSafely(file, ext);
-
-            // Call backend AI endpoint (with automatic fallback for Hackathon live demo)
             const parsedResult = await orbyteApi.parseLegacySystemFile(file, rawContent);
             setPreview(parsedResult);
         } catch (err) {
-            setErrorMsg(err instanceof Error ? err.message : 'AI failed to parse file.');
+            setErrorMsg(err instanceof Error ? err.message : 'Failed to parse file.');
         } finally {
             setIsAnalyzing(false);
             e.target.value = '';
         }
     };
 
-    // Safely extract readable strings even from binary SQLite .db files or .md/.sql files
     const readFileContentSafely = (file: File, ext: string): Promise<string> => {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             if (ext === 'db' || ext === 'sqlite' || ext === 'sqlite3') {
                 reader.onload = () => {
                     const buffer = reader.result as ArrayBuffer;
-                    const bytes = new Uint8Array(buffer.slice(0, 65536)); // Read first 64KB
-                    // Extract printable ASCII/UTF-8 strings from SQLite binary pages (CREATE TABLE & row text)
+                    const bytes = new Uint8Array(buffer.slice(0, 65536));
                     let extractedStrings = '';
                     let currentChunk = '';
                     for (let i = 0; i < bytes.length; i++) {
@@ -88,9 +83,9 @@ export const UniversalSystemMigratorModal: React.FC<UniversalSystemMigratorModal
                             currentChunk = '';
                         }
                     }
-                    resolve(extractedStrings || `SQLite Binary Database (${file.name})`);
+                    resolve(extractedStrings || `SQLite Database (${file.name})`);
                 };
-                reader.onerror = () => reject(new Error('Failed to read binary database file.'));
+                reader.onerror = () => reject(new Error('Failed to read database file.'));
                 reader.readAsArrayBuffer(file);
             } else {
                 reader.onload = () => resolve(String(reader.result || '').slice(0, 50000));
@@ -103,7 +98,7 @@ export const UniversalSystemMigratorModal: React.FC<UniversalSystemMigratorModal
     const handleConfirmMigration = async () => {
         if (!preview || !selectedFile) return;
         setIsImporting(true);
-        await new Promise((r) => setTimeout(r, 650));
+        await new Promise((r) => setTimeout(r, 500));
         onImportSuccess({
             products: preview.products,
             invoices: preview.invoices,
@@ -120,23 +115,17 @@ export const UniversalSystemMigratorModal: React.FC<UniversalSystemMigratorModal
     return (
         <div className="fixed inset-0 bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-4 z-50 select-none">
             <div className="bg-white rounded-2xl border border-slate-200 max-w-3xl w-full p-6 shadow-2xl space-y-5 max-h-[92vh] overflow-y-auto">
-                {/* Header */}
                 <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 text-[#2BB656] flex items-center justify-center">
                             <Database className="w-5 h-5" />
                         </div>
                         <div>
-                            <div className="flex items-center gap-2">
-                                <h3 className="text-base font-bold text-slate-900">
-                                    AI Universal Legacy System Migrator
-                                </h3>
-                                <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
-                  Zero Switching Cost
-                </span>
-                            </div>
+                            <h3 className="text-base font-bold text-slate-900">
+                                Data Import &amp; System Migrator
+                            </h3>
                             <p className="text-xs text-slate-500">
-                                Upload any file from your current software (.db, .sqlite, .md, .sql, .json, .csv, SQL Accounting, AutoCount) — Vyte AI maps &amp; imports it automatically.
+                                Upload your existing inventory, invoice, or license records (.db, .sql, .json, .csv, .xlsx, .md) to map them automatically into Vyte.
                             </p>
                         </div>
                     </div>
@@ -149,33 +138,27 @@ export const UniversalSystemMigratorModal: React.FC<UniversalSystemMigratorModal
                     </button>
                 </div>
 
-                {/* Mentor Point #2 & #3: Smooth Transition Mode Selector (Overcoming SME Resistance) */}
                 <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
-                    <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-              <Sliders className="w-3.5 h-3.5 text-emerald-600" />
-              Step 1: Choose Smooth Transition Pace (Zero Disruption to Staff Habits)
-            </span>
-                        <span className="text-[11px] text-emerald-700 font-semibold">
-              Solves Change Resistance
-            </span>
-                    </div>
+                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <Sliders className="w-3.5 h-3.5 text-emerald-600" />
+                        Select Automation Mode
+                    </span>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
                         {[
                             {
                                 id: 'SHADOW' as const,
-                                title: '1. Shadow Sync Mode',
-                                desc: 'Keep using your old software & WhatsApp. Vyte syncs silently in the background.',
+                                title: 'Read-Only Sync',
+                                desc: 'Import records for visibility without triggering automated notifications.',
                             },
                             {
                                 id: 'COPILOT' as const,
-                                title: '2. AI Co-Pilot (Recommended)',
-                                desc: 'AI drafts POs, orders & reminders; boss approves in 1 click on WhatsApp/Web.',
+                                title: 'Assisted Approval',
+                                desc: 'Drafts purchase orders and reminders for manager approval.',
                             },
                             {
                                 id: 'AUTOPILOT' as const,
-                                title: '3. Full Auto-Pilot',
-                                desc: 'Autonomous restock & payment chasing within your safety thresholds.',
+                                title: 'Automated Dispatch',
+                                desc: 'Automatically triggers restock and payment reminders within thresholds.',
                             },
                         ].map((m) => (
                             <button
@@ -195,7 +178,6 @@ export const UniversalSystemMigratorModal: React.FC<UniversalSystemMigratorModal
                     </div>
                 </div>
 
-                {/* Step 2: Universal Dropzone */}
                 <div className="space-y-3">
                     <input
                         ref={fileInputRef}
@@ -214,11 +196,11 @@ export const UniversalSystemMigratorModal: React.FC<UniversalSystemMigratorModal
                         </div>
                         <p className="text-xs font-bold text-slate-900">
                             {isAnalyzing
-                                ? `Vyte AI is deconstructing "${selectedFile?.name}" & mapping database schema...`
-                                : 'Click to Upload Any Legacy System File (.db, .md, .sql, .json, .csv, .xlsx, .txt)'}
+                                ? `Analyzing "${selectedFile?.name}" and mapping fields...`
+                                : 'Click to Upload Data File (.db, .md, .sql, .json, .csv, .xlsx, .txt)'}
                         </p>
                         <p className="text-[11px] text-slate-500">
-                            Supports SQLite raw <code className="font-mono bg-white px-1 rounded">.db</code> files, Markdown notes <code className="font-mono bg-white px-1 rounded">.md</code>, SQL dumps, and ERP exports.
+                            Automatically detects product SKUs, stock balances, invoices, and compliance records.
                         </p>
                     </div>
                 </div>
@@ -230,27 +212,25 @@ export const UniversalSystemMigratorModal: React.FC<UniversalSystemMigratorModal
                     </div>
                 )}
 
-                {/* Step 3: AI Schema Mapping & Data Preview */}
                 {preview && (
                     <div className="p-4 rounded-2xl bg-slate-900 text-slate-100 space-y-4 border border-slate-800">
                         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
                             <div className="flex items-center gap-2">
                                 <Sparkles className="w-4 h-4 text-[#2BB656]" />
                                 <span className="text-xs font-bold text-white">
-                  Detected Source: {preview.detectedSystem} ({preview.fileFormat})
-                </span>
+                                    Detected Format: {preview.detectedSystem} ({preview.fileFormat})
+                                </span>
                             </div>
                             <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold">
-                AI Schema Match: {preview.aiConfidence}%
-              </span>
+                                Field Match: {preview.aiConfidence}%
+                            </span>
                         </div>
 
                         <p className="text-xs text-slate-300 leading-relaxed">{preview.aiSummary}</p>
 
-                        {/* Field Mappings */}
                         <div className="space-y-1.5">
                             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                                AI Automatic Schema Mapping (Old System &rarr; Vyte DB)
+                                Field Mapping Preview
                             </p>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
                                 {preview.fieldMappings.map((m, idx) => (
@@ -261,41 +241,39 @@ export const UniversalSystemMigratorModal: React.FC<UniversalSystemMigratorModal
                                         <span className="font-mono text-amber-300 truncate">{m.sourceField}</span>
                                         <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
                                         <span className="font-mono font-bold text-emerald-400 truncate">
-                      {m.targetVyteField}
-                    </span>
+                                            {m.targetVyteField}
+                                        </span>
                                     </div>
                                 ))}
                             </div>
                         </div>
 
-                        {/* Extracted Counts */}
                         <div className="grid grid-cols-3 gap-2.5 text-center pt-1">
                             <div className="p-2.5 rounded-xl bg-slate-800/60 border border-slate-700">
                                 <p className="text-lg font-extrabold text-emerald-400">{preview.products.length}</p>
-                                <p className="text-[10px] text-slate-400 font-semibold">Inventory SKUs Mapped</p>
+                                <p className="text-[10px] text-slate-400 font-semibold">Inventory SKUs</p>
                             </div>
                             <div className="p-2.5 rounded-xl bg-slate-800/60 border border-slate-700">
                                 <p className="text-lg font-extrabold text-blue-400">{preview.invoices.length}</p>
-                                <p className="text-[10px] text-slate-400 font-semibold">Unpaid Invoices / AR</p>
+                                <p className="text-[10px] text-slate-400 font-semibold">Invoices</p>
                             </div>
                             <div className="p-2.5 rounded-xl bg-slate-800/60 border border-slate-700">
                                 <p className="text-lg font-extrabold text-amber-400">
                                     {preview.complianceProfiles.length}
                                 </p>
                                 <p className="text-[10px] text-slate-400 font-semibold">
-                                    Licenses &amp; Warranties
+                                    Licenses &amp; Contracts
                                 </p>
                             </div>
                         </div>
                     </div>
                 )}
 
-                {/* Footer Actions */}
                 <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-          <span className="text-[11px] text-slate-500 flex items-center gap-1.5">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            Existing data is non-destructively merged with rollback protection.
-          </span>
+                    <span className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                        Records are merged non-destructively into your workspace.
+                    </span>
                     <div className="flex items-center gap-2.5">
                         <button
                             type="button"
@@ -312,8 +290,8 @@ export const UniversalSystemMigratorModal: React.FC<UniversalSystemMigratorModal
                         >
                             {isImporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
                             <span>
-                {isImporting ? 'Writing to Vyte Database...' : 'Import Parsed Data into Vyte'}
-              </span>
+                                {isImporting ? 'Importing...' : 'Import Records'}
+                            </span>
                         </button>
                     </div>
                 </div>

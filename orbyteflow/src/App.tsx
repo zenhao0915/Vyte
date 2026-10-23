@@ -228,33 +228,79 @@ export default function App() {
     if (subTab) setInventorySubTab(subTab);
   };
 
-  const handleApproveAndContactSupplier = async (productId: string, customReorderQty?: number) => {
+  const handleApproveAndContactSupplier = async (
+      productId: string,
+      customReorderQty?: number,
+      awardedBid?: import('./types/vyte.ts').SupplierQuotationBid
+  ) => {
     if (!canApprove) return pushToast('error', 'Access denied: Only Owner or Manager accounts can approve purchase orders.');
     const target = products.find((p) => p.id === productId);
     if (!target) return;
     const orderQty = customReorderQty && customReorderQty > 0 ? customReorderQty : target.reorderQty;
-    const poNumber = `PO-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+    const supplierName = awardedBid ? awardedBid.supplierName : target.supplierName;
+    const supplierContact = awardedBid ? awardedBid.supplierContact : target.supplierContact;
+    const unitCost = awardedBid ? awardedBid.unitPriceRM : (target.unitCostRM ?? Number((target.priceRM * 0.62).toFixed(2)));
+    const poNumber = awardedBid ? `PO-RFQ-${awardedBid.quotationNo.slice(-4)}` : `PO-2026-${Math.floor(1000 + Math.random() * 9000)}`;
 
     await orbyteApi.contactSupplier({
-      poNumber, productId: target.id, supplierName: target.supplierName, supplierPhoneNumber: target.supplierContact,
+      poNumber, productId: target.id, supplierName, supplierPhoneNumber: supplierContact,
       channel: 'WHATSAPP', messageBody: `Vyte PO ${poNumber}: Please supply ${orderQty} ${target.uom} of ${target.name} (${target.sku}).`,
       userID: userSession?.userID || 'M067', role,
     });
 
-    setProducts((p) => p.map((x) => (x.id === productId ? { ...x, reorderQty: orderQty, restockStatus: 'SUPPLIER_CONTACTED' } : x)));
-    const unitCost = target.unitCostRM ?? Number((target.priceRM * 0.62).toFixed(2));
+    setProducts((p) =>
+        p.map((x) =>
+            x.id === productId
+                ? {
+                  ...x,
+                  reorderQty: orderQty,
+                  supplierName,
+                  supplierContact,
+                  unitCostRM: unitCost,
+                  restockStatus: 'SUPPLIER_CONTACTED',
+                }
+                : x
+        )
+    );
+
     const poTotalRM = Number((unitCost * orderQty).toFixed(2));
     const poInvoiceNo = `SUP-${poNumber}`;
 
     if (debugMockMode) {
-      setInvoices((p) => [{
-        id: `INV-${Date.now()}`, invNo: poInvoiceNo, type: 'SUPPLIER_PAYABLE', party: target.supplierName,
-        date: formatDisplayDate(), amountRM: poTotalRM, aiCategory: `Inventory Procurement (${orderQty} ${target.uom} ${target.name})`,
-        aiConfidence: 98, paid: false, status: 'NEEDS_REVIEW',
-      }, ...p]);
+      setInvoices((p) => [
+        {
+          id: `INV-${Date.now()}`,
+          invNo: poInvoiceNo,
+          type: 'SUPPLIER_PAYABLE',
+          party: supplierName,
+          date: formatDisplayDate(),
+          amountRM: poTotalRM,
+          sapTaxCode: '0',
+          reconciliationAccount: '3300000 (Trade Payables)',
+          glOffsetAccount: '9100000 (GR/IR Clearing)',
+          paymentTerms: '0001 (Payable immediately Due net)',
+          doubleInvoiceChecked: true,
+          poReference: poNumber,
+          aiCategory: `Inventory Procurement (${orderQty} ${target.uom} ${target.name})`,
+          aiConfidence: 98,
+          paid: false,
+          status: 'NEEDS_REVIEW',
+        },
+        ...p,
+      ]);
     }
-    addAuditLog('Restock', `Approved PO ${poNumber} (+${orderQty} ${target.uom} ${target.name}) to ${target.supplierName}.`);
-    pushToast('success', `PO ${poNumber} dispatched to ${target.supplierName}.`);
+    addAuditLog(
+        'Restock',
+        awardedBid
+            ? `Awarded Quotation ${awardedBid.quotationNo} (AI Score ${awardedBid.aiQualityScore}/100) & dispatched PO ${poNumber} (+${orderQty} ${target.uom} ${target.name}) to ${supplierName}.`
+            : `Approved PO ${poNumber} (+${orderQty} ${target.uom} ${target.name}) to ${supplierName}.`
+    );
+    pushToast(
+        'success',
+        awardedBid
+            ? `Quotation ${awardedBid.quotationNo} awarded! PO ${poNumber} sent to ${supplierName}.`
+            : `PO ${poNumber} dispatched to ${supplierName}.`
+    );
   };
 
   const handleConfirmSupplierDelivery = async (productId: string) => {
