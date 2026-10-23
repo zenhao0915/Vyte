@@ -31,6 +31,9 @@ const FALLBACK_RATES: Record<CurrencyCode, number> = { MYR: 1.0, SGD: 0.313, USD
 const stripModPrefix = (t: string) =>
     t.replace(/\bMod(?:ule)?\s*[1-5]\s*[:\-]?\s*/gi, '').replace(/\bin\s+Mod(?:ule)?\s*[1-5]\b/gi, '').trim();
 
+const formatDisplayDate = () =>
+    new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
 function usePersistedState<T>(key: string, fallback: T, transform?: (val: T) => T) {
   const [state, setState] = useState<T>(() => {
     try {
@@ -66,7 +69,7 @@ export default function App() {
     return s && s in CURRENCY_SYMBOLS ? (s as CurrencyCode) : 'MYR';
   });
   const [exchangeRates, setExchangeRates] = usePersistedState<Record<CurrencyCode, number>>('vyte_live_fx_rates_v2', FALLBACK_RATES);
-  const [rateSourceLabel, setRateSourceLabel] = useState('Syncing Live FX API...');
+  const [rateSourceLabel, setRateSourceLabel] = useState('Syncing FX rates...');
   const [loadingOverlayMessage, setLoadingOverlayMessage] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [pendingCustomerOrderCount, setPendingCustomerOrderCount] = useState(1);
@@ -78,7 +81,7 @@ export default function App() {
       list.filter((i) => !i.invNo.startsWith('CLM-')).map((i) => ({ ...i, aiCategory: stripModPrefix(i.aiCategory) }))
   );
   const [auditLogs, setAuditLogs] = usePersistedState<AuditLog[]>('vyte_state_logs_v2', INITIAL_AUDIT_LOGS, (list) =>
-      list.map((l) => ({ ...l, module: stripModPrefix(l.module) || 'System Hub', detail: stripModPrefix(l.detail) }))
+      list.map((l) => ({ ...l, module: stripModPrefix(l.module) || 'System', detail: stripModPrefix(l.detail) }))
   );
   const [complianceProfiles, setComplianceProfiles] = usePersistedState<BusinessComplianceProfile[]>('vyte_state_compliance_profiles_v1', INITIAL_COMPLIANCE_PROFILES);
   const [vaultDocs, setVaultDocs] = usePersistedState<DocumentVaultItem[]>('vyte_state_vault_docs_v1', INITIAL_VAULT_DOCS);
@@ -86,7 +89,6 @@ export default function App() {
 
   const canApprove = role === 'SME_OWNER' || role === 'MANAGER';
   const activeExchangeRate = exchangeRates[currency] ?? 1.0;
-  const currencySymbol = CURRENCY_SYMBOLS[currency] || 'RM';
 
   const pushToast = useCallback((type: 'success' | 'error' | 'warning' | 'info', message: string) => {
     const id = `T-${Date.now()}-${Math.random()}`;
@@ -100,7 +102,7 @@ export default function App() {
       setQcAlerts(INITIAL_QC_ALERTS);
       setInvoices(INITIAL_INVOICES);
       setAuditLogs(INITIAL_AUDIT_LOGS);
-      if (showNotification) pushToast('info', 'Debug Mode ON: Switched to local Mock Data.');
+      if (showNotification) pushToast('info', 'Debug Mode enabled: using local mock dataset.');
       return;
     }
     try {
@@ -109,9 +111,9 @@ export default function App() {
       setQcAlerts(data.qcAlerts);
       setInvoices(data.invoices);
       setAuditLogs(data.auditLogs);
-      if (showNotification) pushToast('success', 'Connected to Ktor Backend Server & synced live data!');
+      if (showNotification) pushToast('success', 'Synced workspace with backend server.');
     } catch {
-      if (showNotification) pushToast('warning', 'Backend unreachable, using cached state.');
+      if (showNotification) pushToast('warning', 'Backend unreachable, using cached workspace state.');
     }
   }, [pushToast, setAuditLogs, setInvoices, setProducts, setQcAlerts]);
 
@@ -127,9 +129,9 @@ export default function App() {
 
   const fetchLiveExchangeRates = useCallback(async (notifyUser = false) => {
     const providers = [
-      { url: 'https://open.er-api.com/v6/latest/MYR', name: 'ExchangeRate-API Live', parse: (d: any) => d?.rates?.SGD && d?.rates?.USD ? { SGD: +d.rates.SGD, USD: +d.rates.USD } : null },
-      { url: 'https://api.frankfurter.dev/v1/latest?base=MYR&symbols=SGD,USD', name: 'ECB Frankfurter Live', parse: (d: any) => d?.rates?.SGD && d?.rates?.USD ? { SGD: +d.rates.SGD, USD: +d.rates.USD } : null },
-      { url: 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/myr.json', name: 'CDN Forex Live', parse: (d: any) => d?.myr?.sgd && d?.myr?.usd ? { SGD: +d.myr.sgd, USD: +d.myr.usd } : null },
+      { url: 'https://open.er-api.com/v6/latest/MYR', name: 'ExchangeRate-API', parse: (d: any) => d?.rates?.SGD && d?.rates?.USD ? { SGD: +d.rates.SGD, USD: +d.rates.USD } : null },
+      { url: 'https://api.frankfurter.dev/v1/latest?base=MYR&symbols=SGD,USD', name: 'ECB Frankfurter', parse: (d: any) => d?.rates?.SGD && d?.rates?.USD ? { SGD: +d.rates.SGD, USD: +d.rates.USD } : null },
+      { url: 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/myr.json', name: 'Forex CDN', parse: (d: any) => d?.myr?.sgd && d?.myr?.usd ? { SGD: +d.myr.sgd, USD: +d.myr.usd } : null },
     ];
     for (const p of providers) {
       try {
@@ -139,13 +141,13 @@ export default function App() {
         if (parsed) {
           const next: Record<CurrencyCode, number> = { MYR: 1.0, SGD: parsed.SGD, USD: parsed.USD };
           setExchangeRates(next);
-          setRateSourceLabel(`${p.name} • 1 RM = ${next.SGD.toFixed(3)} SGD | ${next.USD.toFixed(3)} USD`);
-          if (notifyUser) pushToast('success', `Synced live rates: 1 MYR = ${next.SGD.toFixed(3)} SGD / ${next.USD.toFixed(3)} USD`);
+          setRateSourceLabel(`${p.name} \u2022 1 RM = ${next.SGD.toFixed(3)} SGD | ${next.USD.toFixed(3)} USD`);
+          if (notifyUser) pushToast('success', `Updated FX rates: 1 MYR = ${next.SGD.toFixed(3)} SGD / ${next.USD.toFixed(3)} USD`);
           return;
         }
-      } catch { /* try next */ }
+      } catch { /* fallback to next */ }
     }
-    setRateSourceLabel('Cached Market FX Rate Active');
+    setRateSourceLabel('Cached FX Rate');
   }, [pushToast, setExchangeRates]);
 
   useEffect(() => { void fetchLiveExchangeRates(false); }, [fetchLiveExchangeRates]);
@@ -153,7 +155,7 @@ export default function App() {
   const handleCurrencyChange = (newCurrency: CurrencyCode) => {
     setCurrency(newCurrency);
     localStorage.setItem('vyte_currency', newCurrency);
-    pushToast('success', `Operating currency set to ${newCurrency} (${CURRENCY_SYMBOLS[newCurrency]}) • 1 MYR = ${(exchangeRates[newCurrency] ?? 1).toFixed(3)} ${newCurrency}`);
+    pushToast('success', `Currency set to ${newCurrency} (${CURRENCY_SYMBOLS[newCurrency]}) \u2022 1 MYR = ${(exchangeRates[newCurrency] ?? 1).toFixed(3)} ${newCurrency}`);
   };
 
   const handleTriggerLoadingScreen = useCallback((message: string, durationMs = 900) => {
@@ -163,7 +165,7 @@ export default function App() {
 
   const addAuditLog = useCallback((module: string, detail: string, overrideRole?: UserRole) => {
     const time = new Date().toLocaleTimeString('en-GB', { hour12: false });
-    setAuditLogs((p) => [{ id: `L-${Date.now()}-${Math.random()}`, time, module: stripModPrefix(module) || 'System Hub', role: overrideRole ?? role, detail: stripModPrefix(detail) }, ...p]);
+    setAuditLogs((p) => [{ id: `L-${Date.now()}-${Math.random()}`, time, module: stripModPrefix(module) || 'System', role: overrideRole ?? role, detail: stripModPrefix(detail) }, ...p]);
   }, [role, setAuditLogs]);
 
   useEffect(() => {
@@ -197,7 +199,7 @@ export default function App() {
     setUserSession(session);
     setRole(session.role);
     setSplashDone(false);
-    addAuditLog('Auth Hub', `Signed in as ${session.userName} (${session.userID}) • Role: ${session.userType} • Organization: ${session.companyName}.`, session.role);
+    addAuditLog('Auth', `Signed in as ${session.userName} (${session.userID}) \u2022 Role: ${session.userType} \u2022 ${session.companyName}.`, session.role);
   };
 
   const handleLogout = () => {
@@ -213,7 +215,7 @@ export default function App() {
   };
 
   const handleApproveAndContactSupplier = async (productId: string, customReorderQty?: number) => {
-    if (!canApprove) return pushToast('error', 'Vyte RBAC Restriction: Only Owner or Manager accounts can approve supplier purchase orders.');
+    if (!canApprove) return pushToast('error', 'Access denied: Only Owner or Manager accounts can approve purchase orders.');
     const target = products.find((p) => p.id === productId);
     if (!target) return;
     const orderQty = customReorderQty && customReorderQty > 0 ? customReorderQty : target.reorderQty;
@@ -221,7 +223,7 @@ export default function App() {
 
     await orbyteApi.contactSupplier({
       poNumber, productId: target.id, supplierName: target.supplierName, supplierPhoneNumber: target.supplierContact,
-      channel: 'WHATSAPP', messageBody: `Automated Vyte PO ${poNumber}: Please supply ${orderQty} ${target.uom} of ${target.name} (${target.sku}).`,
+      channel: 'WHATSAPP', messageBody: `Vyte PO ${poNumber}: Please supply ${orderQty} ${target.uom} of ${target.name} (${target.sku}).`,
       userID: userSession?.userID || 'M067', role,
     });
 
@@ -233,12 +235,12 @@ export default function App() {
     if (debugMockMode) {
       setInvoices((p) => [{
         id: `INV-${Date.now()}`, invNo: poInvoiceNo, type: 'SUPPLIER_PAYABLE', party: target.supplierName,
-        date: '22 Oct 2026', amountRM: poTotalRM, aiCategory: `Inventory Procurement (${orderQty} ${target.uom} ${target.name})`,
+        date: formatDisplayDate(), amountRM: poTotalRM, aiCategory: `Inventory Procurement (${orderQty} ${target.uom} ${target.name})`,
         aiConfidence: 98, paid: false, status: 'NEEDS_REVIEW',
       }, ...p]);
     }
-    addAuditLog('Auto Restock', `Approved PO (+${orderQty} ${target.uom} ${target.name}) to ${target.supplierName}. Created Supplier Bill ${poInvoiceNo} (${currencySymbol} ${(poTotalRM * activeExchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) in Smart Invoices.`);
-    pushToast('success', `PO sent to ${target.supplierName} & logged in Smart Invoices.`);
+    addAuditLog('Restock', `Approved PO ${poNumber} (+${orderQty} ${target.uom} ${target.name}) to ${target.supplierName}.`);
+    pushToast('success', `PO ${poNumber} dispatched to ${target.supplierName}.`);
   };
 
   const handleConfirmSupplierDelivery = async (productId: string) => {
@@ -254,12 +256,14 @@ export default function App() {
 
     if (res.data.backendProduct) {
       setProducts((p) => p.map((x) => (x.id === productId ? res.data.backendProduct! : x)));
-      if (res.data.backendInvoice) setInvoices((p) => [res.data.backendInvoice!, ...p]);
+      if (res.data.backendInvoice) {
+        setInvoices((p) => [res.data.backendInvoice!, ...p.filter((i) => i.id !== res.data.backendInvoice!.id)]);
+      }
     } else {
       const newStock = target.stock + target.reorderQty;
       setProducts((p) => p.map((x) => x.id === productId ? { ...x, stock: newStock, restockStatus: newStock <= x.minThreshold ? 'TRIGGERED_PENDING_APPROVAL' : 'CONFIRMED' } : x));
     }
-    addAuditLog('Delivery Confirmed', `Received +${target.reorderQty} ${target.uom} of ${target.name} from ${target.supplierName}.`);
+    addAuditLog('Delivery', `Received +${target.reorderQty} ${target.uom} of ${target.name} from ${target.supplierName}.`);
     pushToast('success', `Confirmed delivery of +${target.reorderQty} ${target.uom} ${target.name}.`);
   };
 
@@ -270,7 +274,7 @@ export default function App() {
     const saleAmountRM = Number((actual * target.priceRM).toFixed(2));
     const posInvoiceNo = `SALE-2026-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    const updatedProd = await orbyteApi.recordStockMovement(productId, -actual, 'SALE', `Direct Counter Sale (${posInvoiceNo})`, userSession?.userID || 'M067').catch(() => null);
+    const updatedProd = await orbyteApi.recordStockMovement(productId, -actual, 'SALE', `Counter Sale (${posInvoiceNo})`, userSession?.userID || 'M067').catch(() => null);
     if (updatedProd) {
       setProducts((p) => p.map((x) => (x.id === productId ? updatedProd : x)));
     } else {
@@ -279,17 +283,17 @@ export default function App() {
     }
 
     const backendInv = await orbyteApi.createBackendInvoice({
-      type: 'CUSTOMER_RECEIVABLE', party: `Direct Counter Sale (${target.sku})`, amountRM: saleAmountRM,
-      invNo: posInvoiceNo, aiCategory: `Direct Product Sales (${actual} ${target.uom} ${target.name})`, sourceRef: target.id,
+      type: 'CUSTOMER_RECEIVABLE', party: `Direct Sale (${target.sku})`, amountRM: saleAmountRM,
+      invNo: posInvoiceNo, aiCategory: `Product Sales (${actual} ${target.uom} ${target.name})`, sourceRef: target.id,
     });
     setInvoices((p) => [backendInv ?? {
-      id: `INV-${Date.now()}`, invNo: posInvoiceNo, type: 'CUSTOMER_RECEIVABLE', party: `Direct Counter Sale (${target.sku})`,
-      date: '22 Oct 2026', amountRM: saleAmountRM, aiCategory: `Direct Product Sales (${actual} ${target.uom} ${target.name})`,
+      id: `INV-${Date.now()}`, invNo: posInvoiceNo, type: 'CUSTOMER_RECEIVABLE', party: `Direct Sale (${target.sku})`,
+      date: formatDisplayDate(), amountRM: saleAmountRM, aiCategory: `Product Sales (${actual} ${target.uom} ${target.name})`,
       aiConfidence: 99, paid: true, status: 'NEEDS_REVIEW',
     }, ...p]);
 
-    addAuditLog('Stock Dispatch', `Dispatched ${actual} ${target.uom} of ${target.name} (Invoice ${posInvoiceNo}).`);
-    pushToast('success', `Deducted ${actual} ${target.uom} of ${target.name} & created Invoice ${posInvoiceNo}.`);
+    addAuditLog('Dispatch', `Dispatched ${actual} ${target.uom} of ${target.name} (${posInvoiceNo}).`);
+    pushToast('success', `Recorded sale of ${actual} ${target.uom} ${target.name} (${posInvoiceNo}).`);
   };
 
   const handleSaveProduct = async (newProd: NewProductForm) => {
@@ -297,20 +301,20 @@ export default function App() {
     const backendCreated = await orbyteApi.createProduct({ ...newProd, priceRM: basePriceRM }).catch(() => null);
     if (backendCreated) {
       setProducts((p) => [backendCreated, ...p]);
-      addAuditLog('Catalog', `Added ${backendCreated.industry} SKU "${backendCreated.name}" (${backendCreated.stock} ${backendCreated.uom}).`);
+      addAuditLog('Catalog', `Added SKU "${backendCreated.name}" (${backendCreated.stock} ${backendCreated.uom}).`);
       setShowAddModal(false);
-      pushToast('success', `Added ${backendCreated.name} (${backendCreated.sku}) to backend catalog.`);
+      pushToast('success', `Added ${backendCreated.name} (${backendCreated.sku}).`);
       return;
     }
     const isLow = Number(newProd.stock) <= Number(newProd.minThreshold);
-    const parts = newProd.extraAttr?.split('•') || [];
+    const parts = newProd.extraAttr?.split(/\u2022|\|/) || [];
     const created: Product = {
       id: `P-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       sku: newProd.sku || `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
       name: newProd.name, category: newProd.category, industry: newProd.industry, uom: newProd.uom,
       stock: Number(newProd.stock), minThreshold: Number(newProd.minThreshold), reorderQty: Number(newProd.reorderQty),
       priceRM: basePriceRM, unitCostRM: Number((basePriceRM * 0.6).toFixed(2)), dailyDepletionRate: 3.0, leadTimeDays: 2, moq: 10,
-      supplierName: newProd.supplierName || 'Preferred Vyte Supplier', supplierContact: newProd.supplierContact || '+6012-9998888',
+      supplierName: newProd.supplierName || 'Preferred Supplier', supplierContact: newProd.supplierContact || '+6012-9998888',
       performance: 'Good', visibility: true,
       batchNo: newProd.industry === 'FNB_PERISHABLE' ? parts[0]?.replace('Batch:', '').trim() || 'B-2026-NEW' : undefined,
       expiryDate: newProd.industry === 'FNB_PERISHABLE' ? parts[1]?.replace('Exp:', '').trim() || '2026-11-15' : undefined,
@@ -318,24 +322,24 @@ export default function App() {
       photoUrl: newProd.photoUrl, restockStatus: isLow ? 'TRIGGERED_PENDING_APPROVAL' : 'HEALTHY',
     };
     setProducts((p) => [created, ...p]);
-    addAuditLog('Catalog', `Added ${created.industry} SKU "${created.name}" (${created.stock} ${created.uom}).`);
+    addAuditLog('Catalog', `Added SKU "${created.name}" (${created.stock} ${created.uom}).`);
     setShowAddModal(false);
-    pushToast('success', `Added ${created.name} (${created.sku}) to catalog.`);
+    pushToast('success', `Added ${created.name} (${created.sku}).`);
   };
 
   const handleBatchImportProducts = (importedList: Product[]) => {
     if (!importedList.length) return;
     setProducts((p) => [...importedList, ...p]);
-    addAuditLog('Spreadsheet Import', `Batch-imported ${importedList.length} SKU(s) via Excel/CSV upload.`);
-    pushToast('success', `Successfully imported ${importedList.length} products.`);
+    addAuditLog('Import', `Batch-imported ${importedList.length} SKU(s) from file.`);
+    pushToast('success', `Imported ${importedList.length} products.`);
   };
 
   const handleQueueRestockToOrderModule = (product: Product, recommendedQty: number, aiReason: string) => {
     setProducts((p) => p.map((x) => (x.id === product.id ? { ...x, reorderQty: recommendedQty, restockStatus: 'TRIGGERED_PENDING_APPROVAL' } : x)));
-    addAuditLog('AI Forecast Applied', `${aiReason} -> Updated ${product.name} reorder quantity to +${recommendedQty} ${product.uom}.`);
+    addAuditLog('Forecast', `${aiReason} -> Updated ${product.name} reorder qty to +${recommendedQty} ${product.uom}.`);
     setActiveTab('mod1');
     setInventorySubTab('restock');
-    pushToast('info', `AI restock forecast applied to ${product.name}.`);
+    pushToast('info', `Restock quantity updated for ${product.name}.`);
   };
 
   const handleTriggerShortageRestock = useCallback((shortageItems: { productID: string; neededQty: number }[]) => {
@@ -359,15 +363,15 @@ export default function App() {
     const totalOrderRM = items.reduce((s, i) => s + i.lineTotal, 0);
     setInvoices((p) => [{
       id: `INV-${Date.now()}`, invNo: invoiceId, type: 'CUSTOMER_RECEIVABLE', party: customerName,
-      date: new Date().toISOString().slice(0, 10), amountRM: totalOrderRM,
-      aiCategory: `Wholesale NLP Order (${items.map((i) => `${i.requestedQty} ${i.name}`).join(', ')})`,
+      date: formatDisplayDate(), amountRM: totalOrderRM,
+      aiCategory: `Customer Order (${items.map((i) => `${i.requestedQty} ${i.name}`).join(', ')})`,
       aiConfidence: 97, paid: false, status: 'NEEDS_REVIEW',
     }, ...p]);
-    addAuditLog('Order Approved', `Approved NLP Order ${orderId} for ${customerName}. Created Invoice ${invoiceId}.`);
+    addAuditLog('Orders', `Approved order ${orderId} for ${customerName} (Invoice ${invoiceId}).`);
   };
 
   const handleDispatchQCToHrStaff = (qcId: string, staff: OrbyteHrStaff, priority: 'URGENT' | 'HIGH' | 'NORMAL', dueDate: string, hrNotes: string) => {
-    if (!canApprove) return pushToast('error', 'Vyte RBAC Restriction: Only Owner or Manager accounts can dispatch QC tasks.');
+    if (!canApprove) return pushToast('error', 'Access denied: Only Owner or Manager accounts can assign QC tasks.');
     const targetQc = qcAlerts.find((q) => q.id === qcId);
     if (!targetQc) return;
     const hrTaskId = `HR-TASK-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -378,14 +382,14 @@ export default function App() {
       assignedDueDate: dueDate, hrNotes: hrNotes || q.aiSuggestion, assignedAt: new Date().toLocaleTimeString('en-GB', { hour12: false }),
       hrEscalated: false, hrEscalationPayload: undefined,
     } : q));
-    addAuditLog('Orbyte HR Hub', `Dispatched QC Task ${hrTaskId} for ${targetQc.productName} to ${staff.name} (${staff.staffId}).`);
+    addAuditLog('Quality Control', `Assigned task ${hrTaskId} (${targetQc.productName}) to ${staff.name}.`);
     pushToast('success', `Task ${hrTaskId} assigned to ${staff.name} (Due: ${dueDate}).`);
   };
 
   const handleEscalateOverdueToHr = useCallback((qcId: string, payload: OrbyteHrOverdueEscalationPayload, simulatedPastDate?: string) => {
     setQcAlerts((p) => p.map((q) => q.id === qcId ? { ...q, assignedDueDate: simulatedPastDate ?? q.assignedDueDate, hrEscalated: true, hrEscalationPayload: payload } : q));
-    addAuditLog('Orbyte HR Escalation', `OVERDUE SLA BREACH: Task ${payload.hrTaskId} assigned to ${payload.staff.name} escalated.`);
-    pushToast('warning', `Overdue task ${payload.hrTaskId} escalated to Orbyte HR System.`);
+    addAuditLog('HR Escalation', `Overdue task ${payload.hrTaskId} (${payload.staff.name}) escalated.`);
+    pushToast('warning', `Overdue task ${payload.hrTaskId} escalated to HR.`);
   }, [addAuditLog, pushToast, setQcAlerts]);
 
   const handleCompleteHrQcTask = async (qcId: string) => {
@@ -395,8 +399,8 @@ export default function App() {
     const todayIso = new Date().toISOString().slice(0, 10);
     const isLate = Boolean(targetQc.hrEscalated || (targetQc.assignedDueDate && targetQc.assignedDueDate < todayIso));
     setQcAlerts((p) => p.map((q) => q.id === qcId ? { ...q, status: 'APPROVED_RESOLVED', completedAtDate: todayIso, completedLate: isLate } : q));
-    addAuditLog('Orbyte HR Completed', `Staff ${targetQc.assignedStaffName || 'Operator'} completed QC task for ${targetQc.productName}.`);
-    pushToast(isLate ? 'warning' : 'success', `Task ${targetQc.hrTaskId || targetQc.batchNo} completed.`);
+    addAuditLog('Quality Control', `${targetQc.assignedStaffName || 'Staff'} completed QC task for ${targetQc.productName}.`);
+    pushToast(isLate ? 'warning' : 'success', `Task ${targetQc.hrTaskId || targetQc.batchNo} marked complete.`);
   };
 
   const handleTriggerQCScan = async () => {
@@ -404,9 +408,9 @@ export default function App() {
     if (backendScan) {
       if (backendScan.newAlerts.length > 0) {
         setQcAlerts((p) => [...backendScan.newAlerts, ...p]);
-        pushToast('warning', `Backend AI Scan detected ${backendScan.newAlerts.length} new at-risk batch(es).`);
+        pushToast('warning', `Expiry scan found ${backendScan.newAlerts.length} new at-risk batch(es).`);
       } else {
-        pushToast('info', `Backend scanned ${backendScan.scannedCount} batches. All up to date.`);
+        pushToast('info', `Scanned ${backendScan.scannedCount} batches. No new risks found.`);
       }
       return;
     }
@@ -416,24 +420,24 @@ export default function App() {
         .map((p) => ({
           id: `QC-${Date.now()}-${p.id}`, productName: p.name, sku: p.sku, batchNo: p.batchNo || 'B-2026-SCAN',
           expiryDate: p.expiryDate || '2026-10-26', daysLeft: 4, qtyAffected: `${p.stock} ${p.uom}`,
-          triggerReason: 'AI Scan: High humidity shelf-life risk (< 5 days)',
+          triggerReason: 'Shelf-life threshold (< 5 days remaining)',
           aiSuggestion: `Bundle ${p.name} with morning combo deals (-20%) & relabel ${p.stock} ${p.uom}.`,
-          actionLabel: 'Assign Staff: Combo Relabel', savedRM: Number((p.stock * p.priceRM * 0.75).toFixed(2)), status: 'PENDING_APPROVAL',
+          actionLabel: 'Approve Promo & Relabel', savedRM: Number((p.stock * p.priceRM * 0.75).toFixed(2)), status: 'PENDING_APPROVAL',
         }));
     if (newlyDetected.length > 0) {
       setQcAlerts((p) => [...newlyDetected, ...p]);
-      addAuditLog('Quality AI Scan', `Detected ${newlyDetected.length} new at-risk perishable batch(es).`);
-      pushToast('warning', `Detected ${newlyDetected.length} new at-risk batch(es).`);
-    } else pushToast('info', 'Batch scan complete. All perishable SKUs are up to date.');
+      addAuditLog('Quality Scan', `Detected ${newlyDetected.length} new at-risk batch(es).`);
+      pushToast('warning', `Found ${newlyDetected.length} new at-risk batch(es).`);
+    } else pushToast('info', 'Batch scan complete. All perishable items are within safe dates.');
   };
 
   const handleVerifyInvoice = async (invId: string, updatedCategory?: string) => {
-    if (!canApprove) return pushToast('error', 'Vyte RBAC Restriction: Only Owner or Manager accounts can verify accounting categories.');
+    if (!canApprove) return pushToast('error', 'Access denied: Only Owner or Manager accounts can verify invoices.');
     const target = invoices.find((i) => i.id === invId);
     if (!target) return;
     await orbyteApi.verifyBackendInvoice(invId, userSession?.userID || 'M067', updatedCategory);
     setInvoices((p) => p.map((i) => (i.id === invId ? { ...i, aiCategory: updatedCategory ?? i.aiCategory, status: 'VERIFIED' } : i)));
-    addAuditLog('Smart Invoices', `Verified invoice ${target.invNo} (${target.party}).`);
+    addAuditLog('Invoices', `Verified invoice ${target.invNo} (${target.party}).`);
   };
 
   const handleToggleInvoicePaid = async (invId: string) => {
@@ -442,7 +446,7 @@ export default function App() {
     const nextPaid = !target.paid;
     await orbyteApi.toggleBackendInvoicePaid(invId, nextPaid, userSession?.userID || 'M067');
     setInvoices((p) => p.map((i) => (i.id === invId ? { ...i, paid: nextPaid } : i)));
-    addAuditLog('Payment Status', `Marked invoice ${target.invNo} as ${nextPaid ? 'PAID' : 'UNPAID'}.`);
+    addAuditLog('Invoices', `Marked invoice ${target.invNo} as ${nextPaid ? 'PAID' : 'UNPAID'}.`);
   };
 
   const handleAddValidatedInvoice = async (createdInv: InvoiceItem) => {
@@ -451,11 +455,11 @@ export default function App() {
       invNo: createdInv.invNo, aiCategory: createdInv.aiCategory,
     });
     setInvoices((p) => [backendInv ?? createdInv, ...p]);
-    addAuditLog('Invoice Uploaded', `Uploaded & AI-classified ${createdInv.invNo} -> ${createdInv.aiCategory}.`);
-    pushToast('success', `Uploaded & classified invoice ${createdInv.invNo}.`);
+    addAuditLog('Invoices', `Added invoice ${createdInv.invNo} (${createdInv.aiCategory}).`);
+    pushToast('success', `Saved invoice ${createdInv.invNo}.`);
   };
 
-  if (isValidatingRefreshSession) return <LoadingScreen isOpen={true} message="Validating active Vyte session..." />;
+  if (isValidatingRefreshSession) return <LoadingScreen isOpen={true} message="Restoring workspace session..." />;
   if (!userSession) return <LoginPage onAuthenticated={handleAuthenticated} />;
   if (!splashDone) return <SplashScreen onComplete={() => setSplashDone(true)} />;
 
@@ -499,15 +503,15 @@ export default function App() {
                               key={sub} type="button" onClick={() => { setActiveTab('mod1'); setInventorySubTab(sub); }}
                               className={`px-3.5 py-1.5 rounded-lg transition cursor-pointer ${inventorySubTab === sub ? 'bg-amber-100 text-amber-900 font-bold shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}
                           >
-                            {sub === 'restock' ? `Auto Restock & Catalog (${pendingRestockCount} Pending)` : `Customer Orders & NLP (${pendingCustomerOrderCount})`}
+                            {sub === 'restock' ? `Inventory & Restock (${pendingRestockCount} Pending)` : `Customer Orders (${pendingCustomerOrderCount})`}
                           </button>
                       ))}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-xl border border-slate-200/90 shadow-2xs text-xs">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1.5">SME Industry Profile:</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1.5">Industry Filter:</span>
                       {[
-                        { id: 'ALL', label: 'All Templates', activeCls: 'bg-slate-900 text-white font-bold', dot: null },
+                        { id: 'ALL', label: 'All Items', activeCls: 'bg-slate-900 text-white font-bold', dot: null },
                         { id: 'FNB_PERISHABLE', label: 'F&B / Perishable', activeCls: 'bg-rose-100 text-rose-800 font-bold border border-rose-200', dot: 'bg-rose-500' },
                         { id: 'RETAIL_VARIANT', label: 'Retail & Variants', activeCls: 'bg-blue-100 text-blue-800 font-bold border border-blue-200', dot: 'bg-blue-500' },
                         { id: 'B2B_RAW_MATERIAL', label: 'B2B & Packaging', activeCls: 'bg-emerald-100 text-emerald-900 font-bold border border-emerald-200', dot: 'bg-emerald-500' },
@@ -557,7 +561,7 @@ export default function App() {
                     qcAlerts={qcAlerts} products={products} role={role} currency={currency} exchangeRate={activeExchangeRate}
                     onDispatchToHrStaff={handleDispatchQCToHrStaff} onEscalateOverdueToHr={handleEscalateOverdueToHr}
                     onCompleteHrTask={handleCompleteHrQcTask} onTriggerScan={handleTriggerQCScan}
-                    onAddCustomQCAlert={(a) => { setQcAlerts((p) => [a, ...p]); addAuditLog('Quality & Expiry', `Reported issue for ${a.productName}.`); pushToast('info', `Logged QC batch alert for ${a.productName}.`); }}
+                    onAddCustomQCAlert={(a) => { setQcAlerts((p) => [a, ...p]); addAuditLog('Quality Control', `Logged batch issue for ${a.productName}.`); pushToast('info', `Logged batch alert for ${a.productName}.`); }}
                 />
             )}
 

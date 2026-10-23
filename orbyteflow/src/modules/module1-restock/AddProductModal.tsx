@@ -41,7 +41,7 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, curren
         const v = val.trim();
         switch (f) {
             case 'name': return !v ? 'Product name is required.' : v.length < 3 ? 'Product name must be at least 3 characters.' : '';
-            case 'sku': return v && !/^[A-Za-z0-9-_]{3,20}$/.test(v) ? 'SKU must be 3–20 alphanumeric characters (e.g., FNB-4886).' : '';
+            case 'sku': return v && !/^[A-Za-z0-9-_]{3,20}$/.test(v) ? 'SKU must be 3-20 alphanumeric characters (e.g., FNB-4886).' : '';
             case 'priceRM': return !v ? 'Selling price is required.' : v.startsWith('0') ? 'Selling price cannot start with 0.' : !/^[1-9]\d*(\.\d{1,2})?$/.test(v) ? 'Enter a valid price greater than 0 (e.g., 45.00).' : Number(v) > 1000000 ? `Selling price cannot exceed ${sym} 1,000,000.` : '';
             case 'stock': return !v ? 'Initial current stock is required.' : !/^\d+$/.test(v) ? 'Initial stock must be whole numbers (0-9).' : Number(v) > 999999 ? 'Initial stock cannot exceed 999,999.' : '';
             case 'minThreshold': return !v ? 'Alert threshold (min stock) is required.' : v.startsWith('0') || !/^[1-9]\d*$/.test(v) ? 'Alert threshold cannot start with 0 and must be at least 1.' : Number(v) > 99999 ? 'Alert threshold cannot exceed 99,999.' : '';
@@ -71,7 +71,7 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, curren
         if (Object.keys(nextErrs).length > 0) return;
 
         const extraAttr = draft.industry === 'FNB_PERISHABLE'
-            ? `Batch: ${draft.batchNo.trim()} • Exp: ${draft.expiryDate.trim()} • Storage: ${draft.storageCondition}`
+            ? `Batch: ${draft.batchNo.trim()} | Exp: ${draft.expiryDate.trim()} | Storage: ${draft.storageCondition}`
             : draft.industry === 'RETAIL_VARIANT' ? draft.variantSpec.trim() : draft.b2bMoq.trim();
 
         onSaveProduct({
@@ -92,10 +92,10 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, curren
     return (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
             <form onSubmit={handleSubmit} noValidate className="bg-white text-slate-900 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-slate-200 my-8">
-                <div className="border-b border-slate-100 pb-3"><h3 className="text-lg font-bold text-slate-900">Add Universal Product</h3></div>
+                <div className="border-b border-slate-100 pb-3"><h3 className="text-lg font-bold text-slate-900">Add New Product</h3></div>
                 <div className="grid grid-cols-2 gap-3 text-xs">
                     <div className="col-span-2">
-                        <label className="font-semibold text-slate-700 block mb-1">Target SME Industry Profile</label>
+                        <label className="font-semibold text-slate-700 block mb-1">Industry Profile</label>
                         <VyteDropdown<IndustryProfile>
                             variant="light" value={draft.industry}
                             onChange={(ind) => {
@@ -187,8 +187,8 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, curren
                                     variant="light" value={draft.storageCondition} onChange={(v) => setDraft({ ...draft, storageCondition: v })}
                                     options={[
                                         { label: 'Ambient / Room Temperature', value: 'Ambient' },
-                                        { label: 'Chilled (2°C - 4°C)', value: 'Chilled' },
-                                        { label: 'Frozen (-18°C)', value: 'Frozen' },
+                                        { label: 'Chilled (2\u00B0C - 4\u00B0C)', value: 'Chilled' },
+                                        { label: 'Frozen (-18\u00B0C)', value: 'Frozen' },
                                     ]}
                                 />
                             </div>
@@ -199,7 +199,7 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, curren
                         <>
                             <div className="col-span-2">
                                 <label className="font-semibold text-slate-700 block mb-1">Variant Specification *</label>
-                                <input type="text" placeholder="e.g., Size: L • Color: Matte Black" value={draft.variantSpec} onChange={(e) => handleChange('variantSpec', e.target.value)} className={inputCls('variantSpec')} />
+                                <input type="text" placeholder="e.g., Size: L | Color: Matte Black" value={draft.variantSpec} onChange={(e) => handleChange('variantSpec', e.target.value)} className={inputCls('variantSpec')} />
                                 {errEl('variantSpec')}
                             </div>
                             <div className="col-span-2">
@@ -212,7 +212,7 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, curren
                     {draft.industry === 'B2B_RAW_MATERIAL' && (
                         <div className="col-span-2">
                             <label className="font-semibold text-slate-700 block mb-1">B2B Order Constraints *</label>
-                            <input type="text" placeholder="e.g., MOQ: 20 Boxes • Lead Time: 3 Days" value={draft.b2bMoq} onChange={(e) => handleChange('b2bMoq', e.target.value)} className={inputCls('b2bMoq')} />
+                            <input type="text" placeholder="e.g., MOQ: 20 Boxes | Lead Time: 3 Days" value={draft.b2bMoq} onChange={(e) => handleChange('b2bMoq', e.target.value)} className={inputCls('b2bMoq')} />
                             {errEl('b2bMoq')}
                         </div>
                     )}

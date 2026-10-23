@@ -41,25 +41,25 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
 
     const titles: Record<ActiveTab, { title: string; subtitle: string }> = {
         mod1: inventorySubTab === 'orders'
-            ? { title: 'Order Status & NLP Customer Fulfillment', subtitle: 'NLP customer order verification & live inventory reservation' }
-            : { title: 'Auto Restock & Universal Inventory', subtitle: 'Threshold monitoring, spreadsheet import & supplier PO approval' },
-        mod2: { title: 'Sales Analytics & AI Procurement Review', subtitle: 'Holding cost optimization & AI restock forecasting' },
-        mod3: { title: 'Order Status & NLP Customer Fulfillment', subtitle: 'NLP customer order verification & live inventory reservation' },
-        mod4: { title: 'Quality & Expiry Guardian (Orbyte HR Integrated)', subtitle: 'Batch expiry table, click-in AI SOPs & Orbyte HR staff task dispatch' },
-        mod5: { title: 'Smart Invoices & AI Categorization', subtitle: 'Photo OCR / Excel upload, supplier bills & customer receivable verification' },
-        mod6: { title: 'Business License & Compliance Renewal', subtitle: 'Real-time SSM lookup, centralized document vault & concierge/RPA PBT renewal filing' },
-        logs: { title: 'History Log', subtitle: 'Centralized immutable audit trail across all modules and role permissions' },
+            ? { title: 'Customer Orders & Fulfillment', subtitle: 'Order parsing, stock availability check & invoice generation' }
+            : { title: 'Inventory & Supplier Restock', subtitle: 'Stock threshold monitoring, bulk import & purchase order dispatch' },
+        mod2: { title: 'Sales Review & Procurement Forecast', subtitle: 'Period revenue breakdown, holding cost analysis & reorder planning' },
+        mod3: { title: 'Customer Orders & Fulfillment', subtitle: 'Order parsing, stock availability check & invoice generation' },
+        mod4: { title: 'Batch Quality & Expiry Control', subtitle: 'Perishable shelf-life monitoring, clearance actions & HR task assignment' },
+        mod5: { title: 'Invoices & Accounts Payable / Receivable', subtitle: 'Supplier bills, customer receivables & receipt classification' },
+        mod6: { title: 'Business License & Compliance Renewal', subtitle: 'SSM registry lookup, document vault & PBT council renewal tracking' },
+        logs: { title: 'Activity & Audit Log', subtitle: 'Timestamped operational events across all workspace roles' },
     };
 
     const totalAlerts = pendingRestocks + pendingOrders + pendingQcBatches + pendingInvoices;
     const unreadBadgeCount = Math.max(0, totalAlerts - acknowledgedCount);
 
     const notificationItems = [
-        { id: 'notif-skus', label: 'Active Universal SKUs', value: `${totalSkus} Items`, subtext: 'F&B, Retail & B2B Ready', subtextColor: 'text-emerald-600 font-semibold', valueColor: 'text-slate-900', iconBg: 'bg-blue-500', icon: Layers, onClick: () => onNavigateFromNotification('mod1', 'restock') },
-        { id: 'notif-restock', label: 'Auto-Restock Triggers', value: `${pendingRestocks} Pending`, subtext: 'Awaiting Owner Approval', subtextColor: 'text-amber-700 font-semibold', valueColor: 'text-orange-600', iconBg: 'bg-orange-500', icon: RefreshCw, onClick: () => onNavigateFromNotification('mod1', 'restock') },
-        { id: 'notif-orders', label: 'Customer Orders (NLP)', value: `${pendingOrders} Pending`, subtext: 'Open Order Sub-Tab', subtextColor: 'text-purple-600 font-semibold', valueColor: 'text-purple-700', iconBg: 'bg-purple-600', icon: MessageSquare, onClick: () => onNavigateFromNotification('mod1', 'orders') },
-        { id: 'notif-qc', label: 'Quality / Expiry Risks', value: `${pendingQcBatches} Batches`, subtext: `${currencySymbol} ${(762 * exchangeRate).toFixed(0)} loss preventable • Assign HR`, subtextColor: 'text-rose-600 font-semibold', valueColor: 'text-rose-600', iconBg: 'bg-rose-500', icon: AlertTriangle, onClick: () => onNavigateFromNotification('mod4') },
-        { id: 'notif-invoices', label: 'AI Categorized Invoices', value: `${totalInvoices} Docs`, subtext: `${pendingInvoices} Pending Review`, subtextColor: 'text-emerald-700 font-semibold', valueColor: 'text-emerald-600', iconBg: 'bg-emerald-500', icon: FileText, onClick: () => onNavigateFromNotification('mod5') },
+        { id: 'notif-skus', label: 'Catalog SKUs', value: `${totalSkus} Items`, subtext: 'F&B, Retail & B2B active', subtextColor: 'text-emerald-600 font-semibold', valueColor: 'text-slate-900', iconBg: 'bg-blue-500', icon: Layers, onClick: () => onNavigateFromNotification('mod1', 'restock') },
+        { id: 'notif-restock', label: 'Restock Triggers', value: `${pendingRestocks} Pending`, subtext: 'Awaiting PO approval', subtextColor: 'text-amber-700 font-semibold', valueColor: 'text-orange-600', iconBg: 'bg-orange-500', icon: RefreshCw, onClick: () => onNavigateFromNotification('mod1', 'restock') },
+        { id: 'notif-orders', label: 'Customer Orders', value: `${pendingOrders} Pending`, subtext: 'Open order queue', subtextColor: 'text-purple-600 font-semibold', valueColor: 'text-purple-700', iconBg: 'bg-purple-600', icon: MessageSquare, onClick: () => onNavigateFromNotification('mod1', 'orders') },
+        { id: 'notif-qc', label: 'Quality & Expiry Risks', value: `${pendingQcBatches} Batches`, subtext: `${currencySymbol} ${(762 * exchangeRate).toFixed(0)} at-risk stock`, subtextColor: 'text-rose-600 font-semibold', valueColor: 'text-rose-600', iconBg: 'bg-rose-500', icon: AlertTriangle, onClick: () => onNavigateFromNotification('mod4') },
+        { id: 'notif-invoices', label: 'Invoices & Bills', value: `${totalInvoices} Docs`, subtext: `${pendingInvoices} pending verification`, subtextColor: 'text-emerald-700 font-semibold', valueColor: 'text-emerald-600', iconBg: 'bg-emerald-500', icon: FileText, onClick: () => onNavigateFromNotification('mod5') },
     ];
 
     return (
@@ -71,11 +71,11 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
 
             <div className="flex items-center gap-3.5">
                 <button
-                    type="button" onClick={onRefreshRates} title={`${rateSourceLabel} (Click to refresh live FX rate)`}
+                    type="button" onClick={onRefreshRates} title={`${rateSourceLabel} (Click to refresh FX rate)`}
                     className="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50/90 hover:bg-emerald-100 border border-emerald-200 text-[11px] font-bold text-emerald-800 transition cursor-pointer"
                 >
                     <Globe className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>{currency} ({currencySymbol}){currency !== 'MYR' ? ` • 1 RM = ${exchangeRate.toFixed(3)} ${currency}` : ' • Base Currency'}</span>
+                    <span>{currency} ({currencySymbol}){currency !== 'MYR' ? ` \u2022 1 RM = ${exchangeRate.toFixed(3)} ${currency}` : ' \u2022 Base Currency'}</span>
                 </button>
 
                 {userSession && (
@@ -89,7 +89,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
 
                 <div ref={bellRef} className="relative pl-3 border-l border-slate-200">
                     <button
-                        type="button" onClick={() => setIsBellOpen((p) => !p)} title="Workspace Notifications & Live KPIs"
+                        type="button" onClick={() => setIsBellOpen((p) => !p)} title="Notifications & Summary"
                         className={`relative p-2 rounded-xl border transition cursor-pointer flex items-center justify-center ${isBellOpen ? 'bg-emerald-50 border-[#2BB656] text-emerald-700 shadow-2xs' : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'}`}
                     >
                         <Bell className="w-4 h-4" />
@@ -102,8 +102,8 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                         <div className="absolute right-0 mt-2 w-72 bg-white rounded-xl border border-slate-200 shadow-xl overflow-hidden z-50 select-none">
                             <div className="px-3.5 py-2.5 bg-slate-900 text-white flex items-center justify-between">
                                 <div>
-                                    <h4 className="text-[11px] font-bold leading-tight">Live Hub Alerts &amp; KPIs</h4>
-                                    <p className="text-[9px] text-slate-400">Click any item to jump to module</p>
+                                    <h4 className="text-[11px] font-bold leading-tight">Workspace Alerts</h4>
+                                    <p className="text-[9px] text-slate-400">Select an item to view details</p>
                                 </div>
                                 <button type="button" onClick={() => setAcknowledgedCount(totalAlerts)} className="px-2 py-0.5 rounded-md bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold flex items-center gap-1 cursor-pointer transition">
                                     <CheckCheck className="w-3 h-3" /> Mark Read

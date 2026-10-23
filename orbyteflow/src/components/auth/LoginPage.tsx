@@ -1,22 +1,11 @@
 // src/components/auth/LoginPage.tsx
-import React, { useState, useEffect } from 'react';
-import {
-    Eye,
-    EyeOff,
-    Layers,
-    CheckCircle2,
-    TrendingUp,
-    Box,
-    AlertCircle,
-    Loader2,
-    KeyRound,
-    X,
-} from 'lucide-react';
-import type { UserRole, UserSession } from '../../types/vyte.ts';
-import { VyteLogo } from '../common/VyteLogo';
-import { VyteDropdown } from '../common/VyteDropdown';
-import { TermsAndConditionsModal } from './TermsAndConditionsModal';
-import { orbyteApi } from '../../services/api';
+import React, {useEffect, useState} from 'react';
+import {AlertCircle, Box, CheckCircle2, Eye, EyeOff, KeyRound, Layers, Loader2, TrendingUp, X,} from 'lucide-react';
+import type {UserRole, UserSession} from '../../types/vyte.ts';
+import {VyteLogo} from '../common/VyteLogo';
+import {VyteDropdown} from '../common/VyteDropdown';
+import {TermsAndConditionsModal} from './TermsAndConditionsModal';
+import {orbyteApi} from '../../services/api';
 
 interface LoginPageProps {
     onAuthenticated: (session: UserSession, accessToken?: string) => void;
@@ -100,7 +89,7 @@ const validatePasswordField = (value: string, isRegister: boolean): string | und
     return undefined;
 };
 
-export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
+export const LoginPage: React.FC<LoginPageProps> = ({onAuthenticated}) => {
     const [mode, setMode] = useState<'register' | 'login'>('register');
 
     const [registerForm, setRegisterForm] = useState<RegisterFormState>(() => {
@@ -212,10 +201,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
         field: K,
         value: RegisterFormState[K]
     ) => {
-        setRegisterForm((prev) => ({ ...prev, [field]: value }));
+        setRegisterForm((prev) => ({...prev, [field]: value}));
 
         setRegisterErrors((prev) => {
-            const next = { ...prev };
+            const next = {...prev};
             if (field === 'firstName') {
                 next.firstName = validatePersonName(String(value), 'First name');
             } else if (field === 'lastName') {
@@ -239,10 +228,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
         field: K,
         value: LoginFormState[K]
     ) => {
-        setLoginForm((prev) => ({ ...prev, [field]: value }));
+        setLoginForm((prev) => ({...prev, [field]: value}));
 
         setLoginErrors((prev) => {
-            const next = { ...prev };
+            const next = {...prev};
             if (field === 'email') {
                 next.email = validateEmailField(String(value));
             } else if (field === 'password') {
@@ -327,7 +316,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
 
                 localStorage.removeItem(REG_DRAFT_STORAGE_KEY);
 
-                // Requirement 2: Immediately auto-login with the registered email & account!
                 onAuthenticated(
                     {
                         userID:
@@ -464,13 +452,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
         e.preventDefault();
         const emailErr = validateEmailField(forgotEmail);
         if (emailErr) {
-            setForgotErrors({ email: emailErr });
+            setForgotErrors({email: emailErr});
             return;
         }
 
         setIsForgotLoading(true);
         try {
-            const res = await orbyteApi.requestPasswordReset({ email: forgotEmail.trim() });
+            const res = await orbyteApi.requestPasswordReset({email: forgotEmail.trim()});
             setGeneratedResetToken(res.data.resetToken);
             setForgotTokenInput(res.data.resetToken);
             setForgotErrors({});
@@ -535,7 +523,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
             setNewResetPassword('');
             setConfirmResetPassword('');
             setMode('login');
-            setLoginForm((prev) => ({ ...prev, email: forgotEmail.trim(), password: '' }));
+            setLoginForm((prev) => ({...prev, email: forgotEmail.trim(), password: ''}));
             setStatusBanner(res.data.message);
         } finally {
             setIsForgotLoading(false);
@@ -545,19 +533,23 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
     const renderFieldError = (msg?: string) =>
         msg ? (
             <p className="text-[11px] text-rose-400 font-semibold mt-1 flex items-center gap-1">
-                <AlertCircle className="w-3 h-3 shrink-0" />
+                <AlertCircle className="w-3 h-3 shrink-0"/>
                 <span>{msg}</span>
             </p>
         ) : null;
 
     return (
         <div className="min-h-screen bg-[#0B0C0E] flex items-center justify-center p-4 md:p-8 font-sans select-none">
-            <div className="fixed w-[580px] h-[580px] rounded-full bg-[#2BB656]/10 blur-[130px] pointer-events-none -top-24 -left-24" />
-            <div className="fixed w-[520px] h-[520px] rounded-full bg-[#2BB656]/10 blur-[140px] pointer-events-none bottom-0 right-0" />
+            <div
+                className="fixed w-[580px] h-[580px] rounded-full bg-[#2BB656]/10 blur-[130px] pointer-events-none -top-24 -left-24"/>
+            <div
+                className="fixed w-[520px] h-[520px] rounded-full bg-[#2BB656]/10 blur-[140px] pointer-events-none bottom-0 right-0"/>
 
-            <div className="w-full max-w-[1080px] bg-[#14181D] border border-slate-800/90 rounded-[28px] p-4 md:p-5 shadow-2xl grid grid-cols-1 lg:grid-cols-12 gap-6 relative z-10">
+            <div
+                className="w-full max-w-[1080px] bg-[#14181D] border border-slate-800/90 rounded-[28px] p-4 md:p-5 shadow-2xl grid grid-cols-1 lg:grid-cols-12 gap-6 relative z-10">
                 {/* LEFT SHOWCASE PANEL */}
-                <div className="lg:col-span-6 relative rounded-[22px] overflow-hidden min-h-[500px] lg:min-h-[620px] flex flex-col justify-between p-8 bg-gradient-to-br from-[#0F291E] via-[#0B1913] to-[#080B0E] border border-[#2BB656]/25">
+                <div
+                    className="lg:col-span-6 relative rounded-[22px] overflow-hidden min-h-[500px] lg:min-h-[620px] flex flex-col justify-between p-8 bg-gradient-to-br from-[#0F291E] via-[#0B1913] to-[#080B0E] border border-[#2BB656]/25">
                     <svg
                         viewBox="0 0 600 700"
                         preserveAspectRatio="none"
@@ -565,19 +557,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                     >
                         <defs>
                             <radialGradient id="vyte-spot" cx="50%" cy="28%" r="60%">
-                                <stop offset="0%" stopColor="#2BB656" stopOpacity="0.24" />
-                                <stop offset="100%" stopColor="#080B0E" stopOpacity="0" />
+                                <stop offset="0%" stopColor="#2BB656" stopOpacity="0.24"/>
+                                <stop offset="100%" stopColor="#080B0E" stopOpacity="0"/>
                             </radialGradient>
                             <linearGradient id="vyte-wave-1" x1="0%" y1="0%" x2="100%" y2="100%">
-                                <stop offset="0%" stopColor="#2BB656" stopOpacity="0.35" />
-                                <stop offset="100%" stopColor="#0A1812" stopOpacity="0.95" />
+                                <stop offset="0%" stopColor="#2BB656" stopOpacity="0.35"/>
+                                <stop offset="100%" stopColor="#0A1812" stopOpacity="0.95"/>
                             </linearGradient>
                             <linearGradient id="vyte-wave-2" x1="100%" y1="0%" x2="0%" y2="100%">
-                                <stop offset="0%" stopColor="#10B981" stopOpacity="0.22" />
-                                <stop offset="100%" stopColor="#07090B" stopOpacity="0.98" />
+                                <stop offset="0%" stopColor="#10B981" stopOpacity="0.22"/>
+                                <stop offset="100%" stopColor="#07090B" stopOpacity="0.98"/>
                             </linearGradient>
                         </defs>
-                        <rect width="600" height="700" fill="url(#vyte-spot)" />
+                        <rect width="600" height="700" fill="url(#vyte-spot)"/>
                         <path
                             d="M -40 410 Q 180 270 360 355 T 640 315 L 640 700 L -40 700 Z"
                             fill="url(#vyte-wave-1)"
@@ -589,15 +581,18 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                     </svg>
 
                     <div className="relative z-10 flex flex-col items-center pt-4">
-                        <div className="bg-[#F6F7F4] px-7 py-5 rounded-2xl shadow-xl border border-white/80 flex items-center justify-center">
-                            <VyteLogo variant="dark-text" showSubtitle={true} className="h-24 w-auto" />
+                        <div
+                            className="bg-[#F6F7F4] px-7 py-5 rounded-2xl shadow-xl border border-white/80 flex items-center justify-center">
+                            <VyteLogo variant="dark-text" showSubtitle={true} className="h-24 w-auto"/>
                         </div>
                     </div>
 
                     <div className="relative z-10 grid grid-cols-2 gap-3.5 my-auto py-6">
-                        <div className="p-4 rounded-2xl bg-white/[0.06] backdrop-blur-md border border-white/10 space-y-1.5">
-                            <div className="w-8 h-8 rounded-lg bg-[#2BB656]/20 text-[#2BB656] flex items-center justify-center">
-                                <Box className="w-4 h-4" />
+                        <div
+                            className="p-4 rounded-2xl bg-white/[0.06] backdrop-blur-md border border-white/10 space-y-1.5">
+                            <div
+                                className="w-8 h-8 rounded-lg bg-[#2BB656]/20 text-[#2BB656] flex items-center justify-center">
+                                <Box className="w-4 h-4"/>
                             </div>
                             <p className="text-xs font-bold text-white">Autonomous Restock</p>
                             <p className="text-[11px] text-slate-300/80 leading-relaxed">
@@ -605,9 +600,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                             </p>
                         </div>
 
-                        <div className="p-4 rounded-2xl bg-white/[0.06] backdrop-blur-md border border-white/10 space-y-1.5">
-                            <div className="w-8 h-8 rounded-lg bg-[#2BB656]/20 text-[#2BB656] flex items-center justify-center">
-                                <TrendingUp className="w-4 h-4" />
+                        <div
+                            className="p-4 rounded-2xl bg-white/[0.06] backdrop-blur-md border border-white/10 space-y-1.5">
+                            <div
+                                className="w-8 h-8 rounded-lg bg-[#2BB656]/20 text-[#2BB656] flex items-center justify-center">
+                                <TrendingUp className="w-4 h-4"/>
                             </div>
                             <p className="text-xs font-bold text-white">AI Sales &amp; Expiry</p>
                             <p className="text-[11px] text-slate-300/80 leading-relaxed">
@@ -621,7 +618,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                             Smart Inventory, Zero Stockouts
                         </h2>
                         <p className="text-xs text-slate-300/80 max-w-sm mx-auto leading-relaxed">
-                            Unified stock automation, AI procurement reviews, and supplier orchestration built for growing businesses.
+                            Unified stock automation, AI procurement reviews, and supplier orchestration built for
+                            growing businesses.
                         </p>
                     </div>
                 </div>
@@ -650,8 +648,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                         </div>
 
                         {statusBanner && (
-                            <div className="p-3.5 rounded-xl bg-emerald-950/70 border border-[#2BB656]/50 text-emerald-200 text-xs font-medium flex items-start gap-2.5">
-                                <CheckCircle2 className="w-4 h-4 text-[#2BB656] shrink-0 mt-0.5" />
+                            <div
+                                className="p-3.5 rounded-xl bg-emerald-950/70 border border-[#2BB656]/50 text-emerald-200 text-xs font-medium flex items-start gap-2.5">
+                                <CheckCircle2 className="w-4 h-4 text-[#2BB656] shrink-0 mt-0.5"/>
                                 <span>{statusBanner}</span>
                             </div>
                         )}
@@ -740,9 +739,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                                             value={registerForm.userType}
                                             onChange={(val) => updateRegisterField('userType', val)}
                                             options={[
-                                                { label: 'Role: Owner (CEO)', value: 'CEO' },
-                                                { label: 'Role: Manager', value: 'Manager' },
-                                                { label: 'Role: Ops Staff', value: 'Staff' },
+                                                {label: 'Role: Owner (CEO)', value: 'CEO'},
+                                                {label: 'Role: Manager', value: 'Manager'},
+                                                {label: 'Role: Ops Staff', value: 'Staff'},
                                             ]}
                                         />
                                     </div>
@@ -774,9 +773,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                                             className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition cursor-pointer p-1"
                                         >
                                             {showRegisterPassword ? (
-                                                <EyeOff className="w-4 h-4 text-[#2BB656]" />
+                                                <EyeOff className="w-4 h-4 text-[#2BB656]"/>
                                             ) : (
-                                                <Eye className="w-4 h-4" />
+                                                <Eye className="w-4 h-4"/>
                                             )}
                                         </button>
                                     </div>
@@ -807,8 +806,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                                             </button>
                                         </div>
 
-                                        <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3" /> Auto-Sign In Enabled
+                                        <span
+                                            className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3"/> Auto-Sign In Enabled
                     </span>
                                     </div>
                                     {renderFieldError(registerErrors.agreeTerms)}
@@ -819,7 +819,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                                     disabled={isSubmittingMain}
                                     className="w-full py-3.5 rounded-xl bg-[#2BB656] hover:bg-[#249e49] disabled:opacity-60 active:scale-[0.99] text-[#0B0C0E] font-bold text-sm shadow-lg shadow-emerald-500/20 transition cursor-pointer flex items-center justify-center gap-2"
                                 >
-                                    {isSubmittingMain && <Loader2 className="w-4 h-4 animate-spin" />}
+                                    {isSubmittingMain && <Loader2 className="w-4 h-4 animate-spin"/>}
                                     <span>
                     {isSubmittingMain
                         ? 'Creating account & signing in...'
@@ -860,9 +860,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                                             value={loginForm.userType}
                                             onChange={(val) => updateLoginField('userType', val)}
                                             options={[
-                                                { label: 'Role: Owner (CEO)', value: 'CEO' },
-                                                { label: 'Role: Manager', value: 'Manager' },
-                                                { label: 'Role: Ops Staff', value: 'Staff' },
+                                                {label: 'Role: Owner (CEO)', value: 'CEO'},
+                                                {label: 'Role: Manager', value: 'Manager'},
+                                                {label: 'Role: Ops Staff', value: 'Staff'},
                                             ]}
                                         />
                                     </div>
@@ -894,9 +894,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                                             className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition cursor-pointer p-1"
                                         >
                                             {showLoginPassword ? (
-                                                <EyeOff className="w-4 h-4 text-[#2BB656]" />
+                                                <EyeOff className="w-4 h-4 text-[#2BB656]"/>
                                             ) : (
-                                                <Eye className="w-4 h-4" />
+                                                <Eye className="w-4 h-4"/>
                                             )}
                                         </button>
                                     </div>
@@ -931,7 +931,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                                     disabled={isSubmittingMain}
                                     className="w-full py-3.5 rounded-xl bg-[#2BB656] hover:bg-[#249e49] disabled:opacity-60 active:scale-[0.99] text-[#0B0C0E] font-bold text-sm shadow-lg shadow-emerald-500/20 transition cursor-pointer flex items-center justify-center gap-2"
                                 >
-                                    {isSubmittingMain && <Loader2 className="w-4 h-4 animate-spin" />}
+                                    {isSubmittingMain && <Loader2 className="w-4 h-4 animate-spin"/>}
                                     <span>
                     {isSubmittingMain ? 'Signing in...' : 'Log in to Vyte'}
                   </span>
@@ -955,7 +955,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                                 className="flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl border border-slate-700/80 hover:border-slate-600 disabled:opacity-50 bg-[#1A1F26] hover:bg-[#222831] text-white text-xs font-semibold transition cursor-pointer"
                             >
                                 {ssoLoadingProvider === 'Google' ? (
-                                    <Loader2 className="w-4 h-4 animate-spin text-[#2BB656]" />
+                                    <Loader2 className="w-4 h-4 animate-spin text-[#2BB656]"/>
                                 ) : (
                                     <svg className="w-4 h-4" viewBox="0 0 24 24">
                                         <path
@@ -986,9 +986,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                                 className="flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl border border-slate-700/80 hover:border-slate-600 disabled:opacity-50 bg-[#1A1F26] hover:bg-[#222831] text-white text-xs font-semibold transition cursor-pointer"
                             >
                                 {ssoLoadingProvider === 'SSO' ? (
-                                    <Loader2 className="w-4 h-4 animate-spin text-[#2BB656]" />
+                                    <Loader2 className="w-4 h-4 animate-spin text-[#2BB656]"/>
                                 ) : (
-                                    <Layers className="w-4 h-4 text-slate-200" />
+                                    <Layers className="w-4 h-4 text-slate-200"/>
                                 )}
                                 Enterprise SSO
                             </button>
@@ -1000,11 +1000,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
             {/* FORGOT PASSWORD MODAL */}
             {showForgotModal && (
                 <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-                    <div className="w-full max-w-md bg-[#14181D] border border-slate-800 rounded-[24px] overflow-hidden shadow-2xl">
-                        <div className="px-6 py-4 bg-gradient-to-r from-[#0F291E] via-[#0B1913] to-[#080B0E] border-b border-[#2BB656]/30 flex items-center justify-between">
+                    <div
+                        className="w-full max-w-md bg-[#14181D] border border-slate-800 rounded-[24px] overflow-hidden shadow-2xl">
+                        <div
+                            className="px-6 py-4 bg-gradient-to-r from-[#0F291E] via-[#0B1913] to-[#080B0E] border-b border-[#2BB656]/30 flex items-center justify-between">
                             <div className="flex items-center gap-2.5">
-                                <div className="w-8 h-8 rounded-lg bg-[#2BB656]/20 text-[#2BB656] flex items-center justify-center">
-                                    <KeyRound className="w-4 h-4" />
+                                <div
+                                    className="w-8 h-8 rounded-lg bg-[#2BB656]/20 text-[#2BB656] flex items-center justify-center">
+                                    <KeyRound className="w-4 h-4"/>
                                 </div>
                                 <div>
                                     <h3 className="text-sm font-bold text-white">
@@ -1022,7 +1025,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                                 onClick={() => setShowForgotModal(false)}
                                 className="text-slate-400 hover:text-white p-1 cursor-pointer"
                             >
-                                <X className="w-4 h-4" />
+                                <X className="w-4 h-4"/>
                             </button>
                         </div>
 
@@ -1033,7 +1036,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                                 className="p-6 space-y-4"
                             >
                                 <p className="text-xs text-slate-300 leading-relaxed">
-                                    Enter the work email associated with your Vyte account and we will generate a verification reset code.
+                                    Enter the work email associated with your Vyte account and we will generate a
+                                    verification reset code.
                                 </p>
                                 <div>
                                     <input
@@ -1064,7 +1068,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                                         className="px-4 py-2.5 rounded-xl bg-[#2BB656] hover:bg-[#249e49] text-[#0B0C0E] font-bold text-xs flex items-center gap-1.5 cursor-pointer"
                                     >
                                         {isForgotLoading && (
-                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin"/>
                                         )}
                                         Send Reset Code
                                     </button>
@@ -1076,7 +1080,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                                 noValidate
                                 className="p-6 space-y-4"
                             >
-                                <div className="p-3 rounded-xl bg-emerald-950/60 border border-[#2BB656]/40 text-xs text-emerald-200">
+                                <div
+                                    className="p-3 rounded-xl bg-emerald-950/60 border border-[#2BB656]/40 text-xs text-emerald-200">
                                     Verification code for <strong>{forgotEmail}</strong>:{' '}
                                     <span className="font-mono font-bold text-[#2BB656]">
                     {generatedResetToken}
@@ -1129,9 +1134,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                                             className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
                                         >
                                             {showNewResetPassword ? (
-                                                <EyeOff className="w-3.5 h-3.5 text-[#2BB656]" />
+                                                <EyeOff className="w-3.5 h-3.5 text-[#2BB656]"/>
                                             ) : (
-                                                <Eye className="w-3.5 h-3.5" />
+                                                <Eye className="w-3.5 h-3.5"/>
                                             )}
                                         </button>
                                     </div>
@@ -1175,7 +1180,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated }) => {
                                         className="px-4 py-2.5 rounded-xl bg-[#2BB656] hover:bg-[#249e49] text-[#0B0C0E] font-bold text-xs flex items-center gap-1.5 cursor-pointer"
                                     >
                                         {isForgotLoading && (
-                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin"/>
                                         )}
                                         Update Password
                                     </button>

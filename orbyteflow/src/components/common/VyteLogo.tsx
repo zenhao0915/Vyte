@@ -9,7 +9,6 @@ interface VyteLogoProps {
     className?: string;
 }
 
-/** @Composable */
 export const VyteLogo: React.FC<VyteLogoProps> = ({
                                                       variant = 'dark-text',
                                                       showSubtitle = true,

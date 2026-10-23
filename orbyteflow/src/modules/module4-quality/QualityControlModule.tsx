@@ -55,6 +55,11 @@ export const QualityControlModule: React.FC<QualityControlModuleProps> = ({
     const [copiedPayload, setCopiedPayload] = useState(false);
 
     const [selectedProductId, setSelectedProductId] = useState(products[0]?.id || '');
+    useEffect(() => {
+        if (products.length > 0 && !products.some((p) => p.id === selectedProductId)) {
+            setSelectedProductId(products[0].id);
+        }
+    }, [products, selectedProductId]);
     const [batchNo, setBatchNo] = useState('');
     const [qtyAffectedInput, setQtyAffectedInput] = useState('');
     const [daysLeftInput, setDaysLeftInput] = useState('');
@@ -260,7 +265,7 @@ export const QualityControlModule: React.FC<QualityControlModuleProps> = ({
                         <th className="py-3 px-4">Batch &amp; SKU</th>
                         <th className="py-3 px-2.5">Risk Level</th>
                         <th className="py-3 px-2.5">Product &amp; Trigger Reason</th>
-                        <th className="py-3 px-2.5">AI Recommendation (Click-In)</th>
+                        <th className="py-3 px-2.5">AI Recommendation (View SOP)</th>
                         <th className="py-3 px-2.5">Loss Preventable ({currency})</th>
                         <th className="py-3 px-2.5">Orbyte HR Assignee</th>
                         <th className="py-3 px-2.5">Task Due Date &amp; SLA</th>
