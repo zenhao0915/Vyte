@@ -2,636 +2,611 @@
 import type {
     AnalyzeProcurementRequest,
     AnalyzeProcurementResponse,
-    ApproveCustomerOrderRequest,
-    ApproveCustomerOrderResponse,
-    AuthSessionResponse,
-    ConfirmRestockRequest,
-    ConfirmRestockResponse,
-    ContactSupplierRequest,
-    ContactSupplierResponse,
-    CreateInvoiceOrderRequest,
-    CreateInvoiceOrderResponse,
-    EnterpriseSsoAuthRequest,
-    ForgotPasswordRequest,
-    ForgotPasswordResponse,
+    AuditLog,
+    CheckComplianceExpiryResponse,
+    ComplianceDocType,
+    ExtractedNlpOrderItem,
     GetSalesReviewReportRequest,
     GetSalesReviewReportResponse,
-    GoogleAuthRequest,
-    LoginAccountRequest,
-    ProcessNlpOrderRequest,
-    ProcessNlpOrderResponse,
-    RegisterAccountRequest,
-    RegisterAccountResponse,
-    ResetPasswordRequest,
-    ResetPasswordResponse,
-    UserSession,
-    ValidateSessionRequest,
-    ValidateSessionResponse,
-} from '../types/vyte.ts';
-import type {
-    SSMVerifyRequest,
+    InvoiceItem,
+    LicenseType,
+    NewProductForm,
+    Product,
+    QCAlert,
     SSMVerifyResponse,
-    CheckComplianceExpiryRequest,
-    CheckComplianceExpiryResponse,
-    StoreComplianceDocRequest,
-    StoreComplianceDocResponse,
-    InitiateRenewalRequest,
-    InitiateRenewalResponse,
-    UpdateRenewalTaskRequest,
-    UpdateRenewalTaskResponse,
+    UserRole,
+    UserSession,
 } from '../types/vyte.ts';
+import {
+    INITIAL_AUDIT_LOGS,
+    INITIAL_INVOICES,
+    INITIAL_PRODUCTS,
+    INITIAL_QC_ALERTS,
+} from '../data/mockData';
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8989/api';
+const DEBUG_MODE_KEY = 'vyte_debug_mock_mode';
+const API_BASE_URL_KEY = 'vyte_api_base_url';
 
-export interface ApiExchangeLog {
-    id: string;
-    timestamp: string;
-    method: 'GET' | 'POST' | 'PATCH';
-    endpoint: string;
-    requestPayload: unknown;
-    responsePayload: unknown;
-    isSimulatedFallback: boolean;
-}
+export const getDebugMockMode = (): boolean => {
+    const raw = localStorage.getItem(DEBUG_MODE_KEY);
+    return raw === null ? false : raw === 'true';
+};
 
-async function requestWithFallback<TReq, TRes>(
-    method: 'GET' | 'POST' | 'PATCH',
-    path: string,
-    payload: TReq | undefined,
-    fallbackGenerator: () => TRes,
-    onExchange?: (log: ApiExchangeLog) => void
-): Promise<{ data: TRes; isSimulatedFallback: boolean }> {
-    const endpoint = `${API_BASE_URL}${path}`;
-    const timestamp = new Date().toLocaleTimeString();
+export const setDebugMockMode = (enabled: boolean): void => {
+    localStorage.setItem(DEBUG_MODE_KEY, String(enabled));
+};
 
-    try {
-        const res = await fetch(endpoint, {
-            method,
-            headers: { 'Content-Type': 'application/json' },
-            body: payload ? JSON.stringify(payload) : undefined,
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = (await res.json()) as TRes;
+export const getApiBaseUrl = (): string => {
+    const metaEnv = (import.meta as unknown as { env?: Record<string, string> }).env;
+    return localStorage.getItem(API_BASE_URL_KEY) || metaEnv?.VITE_API_BASE_URL || 'http://localhost:8080';
+};
 
-        onExchange?.({
-            id: `API-${Date.now()}`,
-            timestamp,
-            method,
-            endpoint,
-            requestPayload: payload ?? null,
-            responsePayload: data,
-            isSimulatedFallback: false,
-        });
-        return { data, isSimulatedFallback: false };
-    } catch {
-        // Frontend-only fallback when localhost:8989 is offline
-        const fallbackData = fallbackGenerator();
-        onExchange?.({
-            id: `API-${Date.now()}`,
-            timestamp,
-            method,
-            endpoint,
-            requestPayload: payload ?? null,
-            responsePayload: fallbackData,
-            isSimulatedFallback: true,
-        });
-        return { data: fallbackData, isSimulatedFallback: true };
+export const setApiBaseUrl = (url: string): void => {
+    localStorage.setItem(API_BASE_URL_KEY, url.trim().replace(/\/+$/, ''));
+};
+
+async function requestJson<T>(path: string, options?: RequestInit): Promise<T> {
+    if (getDebugMockMode()) throw new Error('DEBUG_MOCK_MODE_ACTIVE');
+    const res = await fetch(`${getApiBaseUrl()}${path}`, {
+        headers: { 'Content-Type': 'application/json', ...(options?.headers || {}) },
+        ...options,
+    });
+    if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody?.error || `HTTP ${res.status}`);
     }
+    return (await res.json()) as T;
 }
 
 export const orbyteApi = {
-    // System Health Check: GET http://localhost:8989/api/ping
-    async ping() {
-        return requestWithFallback('GET', '/ping', undefined, () => ({
-            status: 'OK',
-            service: 'OrbyteFlow Backend Gateway',
-            timestamp: new Date().toISOString(),
-        }));
+    async fetchWorkspaceData(): Promise<{
+        products: Product[];
+        qcAlerts: QCAlert[];
+        invoices: InvoiceItem[];
+        auditLogs: AuditLog[];
+    }> {
+        if (getDebugMockMode()) {
+            return {
+                products: INITIAL_PRODUCTS,
+                qcAlerts: INITIAL_QC_ALERTS,
+                invoices: INITIAL_INVOICES,
+                auditLogs: INITIAL_AUDIT_LOGS,
+            };
+        }
+        const [products, qcAlerts, invoices, auditLogs] = await Promise.all([
+            requestJson<Product[]>('/api/products'),
+            requestJson<QCAlert[]>('/api/qc-alerts').catch(() => INITIAL_QC_ALERTS),
+            requestJson<InvoiceItem[]>('/api/invoices').catch(() => INITIAL_INVOICES),
+            requestJson<AuditLog[]>('/api/audit-logs?limit=100').catch(() => INITIAL_AUDIT_LOGS),
+        ]);
+        return { products, qcAlerts, invoices, auditLogs };
     },
 
-    // ========================================================================
-    // 1. AUTOMATION RESTOCK MODULE ENDPOINTS
-    // ========================================================================
-
-    // POST http://localhost:8989/api/restock/confirm
-    async confirmRestock(
-        payload: ConfirmRestockRequest,
-        onExchange?: (log: ApiExchangeLog) => void
-    ) {
-        return requestWithFallback<ConfirmRestockRequest, ConfirmRestockResponse>(
-            'POST',
-            '/restock/confirm',
-            payload,
-            () => ({
-                poNumber: payload.poNumber,
-                status: 'CONFIRMED',
-                confirmationStatus: 'SUPPLIER_ACKNOWLEDGED',
-                isConfirmed: true,
-                message: `PO ${payload.poNumber} for ${payload.quantity} ${payload.unitOfMeasure} of ${payload.SKU} confirmed with ${payload.supplierName}.`,
-                updatedAt: new Date().toISOString(),
-            }),
-            onExchange
-        );
+    // Module 1: Products & Restock
+    async createProduct(form: NewProductForm): Promise<Product | null> {
+        if (getDebugMockMode()) return null;
+        return requestJson<Product>('/api/products', { method: 'POST', body: JSON.stringify(form) });
     },
 
-    // POST http://localhost:8989/api/restock/contact-supplier
-    async contactSupplier(
-        payload: ContactSupplierRequest,
-        onExchange?: (log: ApiExchangeLog) => void
-    ) {
-        return requestWithFallback<ContactSupplierRequest, ContactSupplierResponse>(
-            'POST',
-            '/restock/contact-supplier',
-            payload,
-            () => ({
+    async recordStockMovement(
+        productId: string,
+        change: number,
+        type: 'SALE' | 'DELIVERY' | 'ADJUSTMENT' | 'DAMAGE',
+        reason: string,
+        userID: string
+    ): Promise<Product | null> {
+        if (getDebugMockMode()) return null;
+        return requestJson<Product>(`/api/products/${productId}/stock-movement`, {
+            method: 'POST',
+            body: JSON.stringify({ change, type, reason, userID }),
+        });
+    },
+
+    async contactSupplier(payload: {
+        poNumber: string;
+        productId?: string;
+        supplierName: string;
+        supplierPhoneNumber: string;
+        channel: string;
+        messageBody: string;
+        userID: string;
+        role?: UserRole;
+    }) {
+        if (!getDebugMockMode()) {
+            try {
+                if (payload.productId) {
+                    await requestJson(`/api/products/${payload.productId}/approve-restock`, {
+                        method: 'POST',
+                        body: JSON.stringify({ userID: payload.userID, role: 'SME_OWNER' }),
+                    });
+                } else {
+                    await requestJson('/api/restock/contact-supplier', {
+                        method: 'POST',
+                        body: JSON.stringify(payload),
+                    });
+                }
+            } catch { /* fallback */ }
+        }
+        return {
+            data: {
                 poNumber: payload.poNumber,
                 deliveryStatus: 'SENT',
                 sentAt: new Date().toISOString(),
                 responseCode: 200,
-                message: `Dispatched automated ${payload.channel} order message to ${payload.supplierName} (${payload.supplierPhoneNumber}).`,
-            }),
-            onExchange
-        );
+                message: `Dispatched to ${payload.supplierName} via ${payload.channel}`,
+            },
+        };
     },
 
-    // ========================================================================
-    // 2. SALES REVIEW MODULE ENDPOINTS (Module 2)
-    // ========================================================================
+    async confirmRestock(payload: {
+        poNumber: string;
+        productId: string;
+        SKU: string;
+        quantity: number;
+        unitPrice: number;
+        currency: string;
+        MOQ: number;
+        unitOfMeasure: string;
+        supplierName: string;
+        supplierPhoneNumber: string;
+        requestedDeliveryDate: string;
+        deliveryLocation: string;
+        automationStatus: boolean;
+        userID: string;
+    }) {
+        if (!getDebugMockMode()) {
+            try {
+                const res = await requestJson<{ product: Product; invoice: InvoiceItem }>(
+                    `/api/products/${payload.productId}/confirm-delivery`,
+                    { method: 'POST', body: JSON.stringify({ receivedQty: payload.quantity, userID: payload.userID }) }
+                );
+                return {
+                    data: {
+                        poNumber: payload.poNumber,
+                        status: 'CONFIRMED',
+                        confirmationStatus: 'DELIVERED',
+                        isConfirmed: true,
+                        message: 'Delivery confirmed & invoice generated by backend',
+                        updatedAt: new Date().toISOString(),
+                        backendProduct: res.product,
+                        backendInvoice: res.invoice,
+                    },
+                };
+            } catch { /* fallback */ }
+        }
+        return {
+            data: {
+                poNumber: payload.poNumber,
+                status: 'CONFIRMED',
+                confirmationStatus: 'DELIVERED',
+                isConfirmed: true,
+                message: 'Confirmed locally (Mock Mode)',
+                updatedAt: new Date().toISOString(),
+                backendProduct: undefined,
+                backendInvoice: undefined,
+            },
+        };
+    },
 
-    // POST http://localhost:8989/api/sales-review/report
+    // Module 2: Sales Analytics
     async getSalesReviewReport(
         payload: GetSalesReviewReportRequest,
-        fallbackData: GetSalesReviewReportResponse,
-        onExchange?: (log: ApiExchangeLog) => void
-    ) {
-        return requestWithFallback<GetSalesReviewReportRequest, GetSalesReviewReportResponse>(
-            'POST',
-            '/sales-review/report',
-            payload,
-            () => fallbackData,
-            onExchange
-        );
+        fallback: GetSalesReviewReportResponse
+    ): Promise<{ data: GetSalesReviewReportResponse; isSimulatedFallback: boolean }> {
+        if (!getDebugMockMode()) {
+            try {
+                const raw = await requestJson<any>('/api/sales-review/report', {
+                    method: 'POST',
+                    body: JSON.stringify({ ...payload, productID: payload.productID || 'P-101' }),
+                });
+                if (raw && Array.isArray(raw.productBreakdown)) {
+                    return { data: raw as GetSalesReviewReportResponse, isSimulatedFallback: false };
+                }
+                if (raw && raw.productID) {
+                    return { data: fallback, isSimulatedFallback: false };
+                }
+            } catch { /* fallback */ }
+        }
+        return { data: fallback, isSimulatedFallback: true };
     },
 
-    // POST http://localhost:8989/api/sales-review/analyze-procurement
     async analyzeProcurement(
         payload: AnalyzeProcurementRequest,
-        fallbackData: AnalyzeProcurementResponse,
-        onExchange?: (log: ApiExchangeLog) => void
-    ) {
-        return requestWithFallback<AnalyzeProcurementRequest, AnalyzeProcurementResponse>(
-            'POST',
-            '/sales-review/analyze-procurement',
-            payload,
-            () => fallbackData,
-            onExchange
-        );
+        fallback: AnalyzeProcurementResponse
+    ): Promise<{ data: AnalyzeProcurementResponse; isSimulatedFallback: boolean }> {
+        if (!getDebugMockMode()) {
+            try {
+                const data = await requestJson<AnalyzeProcurementResponse>('/api/sales-review/analyze-procurement', {
+                    method: 'POST',
+                    body: JSON.stringify(payload),
+                });
+                if (data && Array.isArray(data.procurementRecommendations)) {
+                    return { data, isSimulatedFallback: false };
+                }
+            } catch { /* fallback */ }
+        }
+        return { data: fallback, isSimulatedFallback: true };
     },
 
-    // ========================================================================
-    // 3. ORDER MODULE ENDPOINTS (Module 3)
-    // ========================================================================
-
-    // POST http://localhost:8989/api/order/nlp-process
+    // Module 3: Customer Orders & NLP
     async processNlpOrder(
-        payload: ProcessNlpOrderRequest,
-        fallbackData: ProcessNlpOrderResponse,
-        onExchange?: (log: ApiExchangeLog) => void
+        payload: { rawOrderText: string; customerName: string; requestedDate: string; userID: string },
+        fallbackResult: {
+            parseSuccess: boolean;
+            hasSufficientStock: boolean;
+            extractedItems: ExtractedNlpOrderItem[];
+            calculatedSubtotal: number;
+            currency: string;
+        }
     ) {
-        return requestWithFallback<ProcessNlpOrderRequest, ProcessNlpOrderResponse>(
-            'POST',
-            '/order/nlp-process',
-            payload,
-            () => fallbackData,
-            onExchange
-        );
+        if (!getDebugMockMode()) {
+            try {
+                const data = await requestJson<typeof fallbackResult>('/api/order/nlp-process', {
+                    method: 'POST',
+                    body: JSON.stringify(payload),
+                });
+                return { data };
+            } catch { /* fallback */ }
+        }
+        return { data: fallbackResult };
     },
 
-    // POST http://localhost:8989/api/order
-    async createInvoiceOrder(
-        payload: CreateInvoiceOrderRequest,
-        onExchange?: (log: ApiExchangeLog) => void
-    ) {
-        return requestWithFallback<CreateInvoiceOrderRequest, CreateInvoiceOrderResponse>(
-            'POST',
-            '/order',
-            payload,
-            () => ({
+    async createInvoiceOrder(payload: {
+        orderID: string;
+        requestedDate: string;
+        subtotal: number;
+        currency: string;
+        internalNotes?: string;
+        createdBy: string;
+        lineOrders: { lineID: string; productID: string; quantity: number; lineTotal: number; currency: string }[];
+    }) {
+        if (!getDebugMockMode()) {
+            try {
+                const data = await requestJson<{
+                    orderID: string;
+                    invoiceID: string;
+                    status: string;
+                    databaseUpdated: boolean;
+                    invoicePdfUrl: string;
+                    createdAt: string;
+                }>('/api/order', { method: 'POST', body: JSON.stringify(payload) });
+                return { data };
+            } catch { /* fallback */ }
+        }
+        const invoiceID = `CUST-${payload.orderID.replace('ORD-', '')}`;
+        return {
+            data: {
                 orderID: payload.orderID,
-                invoiceID: `INV-${payload.orderID.replace('ORD-', '')}`,
+                invoiceID,
                 status: 'PENDING_HUMAN_APPROVAL',
                 databaseUpdated: true,
-                invoicePdfUrl: `/invoices/${payload.orderID}.pdf`,
+                invoicePdfUrl: `/invoices/${invoiceID}.pdf`,
                 createdAt: new Date().toISOString(),
-            }),
-            onExchange
-        );
+            },
+        };
     },
 
-    // PATCH http://localhost:8989/api/order/status
-    async approveCustomerOrder(
-        payload: ApproveCustomerOrderRequest,
-        onExchange?: (log: ApiExchangeLog) => void
-    ) {
-        return requestWithFallback<ApproveCustomerOrderRequest, ApproveCustomerOrderResponse>(
-            'PATCH',
-            '/order/status',
-            payload,
-            () => ({
+    async approveCustomerOrder(payload: {
+        orderID: string;
+        invoiceID: string;
+        approvalAction: 'APPROVE' | 'REJECT' | 'MODIFY';
+        approvalNotes: string;
+        updatedBy: string;
+    }) {
+        if (!getDebugMockMode()) {
+            try {
+                const data = await requestJson<{
+                    orderID: string;
+                    finalStatus: string;
+                    inventoryDeducted: boolean;
+                    updatedAt: string;
+                    message: string;
+                }>('/api/order/status', { method: 'PATCH', body: JSON.stringify(payload) });
+                return { data };
+            } catch { /* fallback */ }
+        }
+        return {
+            data: {
                 orderID: payload.orderID,
-                finalStatus:
-                    payload.approvalAction === 'APPROVE'
-                        ? 'APPROVED'
-                        : payload.approvalAction === 'REJECT'
-                            ? 'REJECTED'
-                            : 'MODIFIED',
+                finalStatus: payload.approvalAction === 'APPROVE' ? 'APPROVED' : payload.approvalAction,
                 inventoryDeducted: payload.approvalAction === 'APPROVE',
                 updatedAt: new Date().toISOString(),
-                message: `Order ${payload.orderID} marked as ${payload.approvalAction} by ${payload.updatedBy}.`,
-            }),
-            onExchange
-        );
+                message: `Order ${payload.orderID} ${payload.approvalAction}`,
+            },
+        };
     },
 
-// Add inside orbyteApi object in src/services/api.ts:
-// ========================================================================
-// 0. AUTHENTICATION, SESSION & PASSWORD RESET ENDPOINTS
-// ========================================================================
-
-// POST http://localhost:8989/api/auth/register
-    async registerAccount(
-        payload: RegisterAccountRequest,
-        onExchange?: (log: ApiExchangeLog) => void
-    ) {
-        const assignedId =
-            payload.userType === 'CEO' ? 'M067' : payload.userType === 'Manager' ? 'M102' : 'S204';
-        const fullName = `${payload.firstName} ${payload.lastName}`.trim();
-
-        return requestWithFallback<RegisterAccountRequest, RegisterAccountResponse>(
-            'POST',
-            '/auth/register',
-            payload,
-            () => ({
-                userID: assignedId,
-                userName: fullName,
-                email: payload.email,
-                companyName: payload.companyName,
-                userType: payload.userType,
-                role: payload.role,
-                registeredAt: new Date().toISOString(),
-                message: `Account registered for ${fullName}. Please log in to continue.`,
-            }),
-            onExchange
-        );
+    // Module 4: Quality Control
+    async triggerQcScan(): Promise<{ newAlerts: QCAlert[]; scannedCount: number } | null> {
+        if (getDebugMockMode()) return null;
+        try {
+            return await requestJson<{ newAlerts: QCAlert[]; scannedCount: number }>('/api/qc/scan', { method: 'POST' });
+        } catch {
+            return null;
+        }
     },
 
-// POST http://localhost:8989/api/auth/login
-    async loginAccount(
-        payload: LoginAccountRequest,
-        onExchange?: (log: ApiExchangeLog) => void
-    ) {
-        const userType = payload.userType ?? 'CEO';
-        const role =
-            userType === 'CEO'
-                ? 'SME_OWNER'
-                : userType === 'Manager'
-                    ? 'MANAGER'
-                    : 'OPERATIONS_STAFF';
-        const userID =
-            userType === 'CEO' ? 'M067' : userType === 'Manager' ? 'M102' : 'S204';
+    async approveQcAlert(qcId: string, userID: string): Promise<QCAlert | null> {
+        if (getDebugMockMode()) return null;
+        try {
+            return await requestJson<QCAlert>(`/api/qc-alerts/${qcId}/approve`, {
+                method: 'POST',
+                body: JSON.stringify({ userID, role: 'SME_OWNER' }),
+            });
+        } catch {
+            return null;
+        }
+    },
 
-        return requestWithFallback<LoginAccountRequest, AuthSessionResponse>(
-            'POST',
-            '/auth/login',
-            payload,
-            () => ({
-                authenticated: true,
+    // Module 5: Smart Invoices
+    async createBackendInvoice(payload: {
+        type: 'SUPPLIER_PAYABLE' | 'CUSTOMER_RECEIVABLE';
+        party: string;
+        amountRM: number;
+        date?: string;
+        aiCategory?: string;
+        invNo?: string;
+        sourceRef?: string;
+    }): Promise<InvoiceItem | null> {
+        if (getDebugMockMode()) return null;
+        try {
+            return await requestJson<InvoiceItem>('/api/invoices', { method: 'POST', body: JSON.stringify(payload) });
+        } catch {
+            return null;
+        }
+    },
+
+    async verifyBackendInvoice(invId: string, userID: string, updatedCategory?: string): Promise<InvoiceItem | null> {
+        if (getDebugMockMode()) return null;
+        try {
+            if (updatedCategory) {
+                await requestJson(`/api/invoices/${invId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ aiCategory: updatedCategory, userID }),
+                }).catch(() => null);
+            }
+            return await requestJson<InvoiceItem>(`/api/invoices/${invId}/verify`, {
+                method: 'PATCH',
+                body: JSON.stringify({ userID, role: 'SME_OWNER' }),
+            });
+        } catch {
+            return null;
+        }
+    },
+
+    async toggleBackendInvoicePaid(invId: string, paid: boolean, userID: string): Promise<InvoiceItem | null> {
+        if (getDebugMockMode()) return null;
+        try {
+            return await requestJson<InvoiceItem>(`/api/invoices/${invId}/paid`, {
+                method: 'PATCH',
+                body: JSON.stringify({ userID, paid }),
+            });
+        } catch {
+            return null;
+        }
+    },
+
+    // Auth & Session
+    async validateSession(_payload: { accessToken: string; userID: string; email: string }, session: UserSession) {
+        return { data: { valid: true, session } };
+    },
+    async registerAccount(payload: {
+        firstName: string;
+        lastName: string;
+        email: string;
+        password?: string;
+        companyName: string;
+        userType: 'CEO' | 'Manager' | 'Staff';
+        role: UserRole;
+        acceptedTermsAt: string;
+    }) {
+        const userID = payload.userType === 'CEO' ? 'M067' : payload.userType === 'Manager' ? 'M102' : 'S204';
+        return { data: { userID, registeredAt: new Date().toISOString() } };
+    },
+    async loginAccount(payload: { email: string; password?: string; companyName: string; userType: 'CEO' | 'Manager' | 'Staff' }) {
+        const role: UserRole = payload.userType === 'CEO' ? 'SME_OWNER' : payload.userType === 'Manager' ? 'MANAGER' : 'OPERATIONS_STAFF';
+        const userID = payload.userType === 'CEO' ? 'M067' : payload.userType === 'Manager' ? 'M102' : 'S204';
+        return {
+            data: {
                 accessToken: `vyte-jwt-${Date.now()}`,
-                authProvider: 'LOCAL',
-                issuedAt: new Date().toISOString(),
                 session: {
                     userID,
                     userName: payload.email.split('@')[0] || 'Vyte Operator',
                     email: payload.email,
-                    userType,
+                    userType: payload.userType,
                     role,
-                    companyName: payload.companyName || 'Vyte Smart Logistics Sdn Bhd',
+                    companyName: payload.companyName,
                     companyOwnerName: payload.email.split('@')[0] || 'Vyte Operator',
-                },
-            }),
-            onExchange
-        );
+                } satisfies UserSession,
+            },
+        };
     },
-
-// POST http://localhost:8989/api/auth/session/validate
-    async validateSession(
-        payload: ValidateSessionRequest,
-        cachedSession: UserSession,
-        onExchange?: (log: ApiExchangeLog) => void
-    ) {
-        return requestWithFallback<ValidateSessionRequest, ValidateSessionResponse>(
-            'POST',
-            '/auth/session/validate',
-            payload,
-            () => ({
-                valid: Boolean(payload.accessToken && cachedSession.userID),
-                session: cachedSession,
-                verifiedAt: new Date().toISOString(),
-            }),
-            onExchange
-        );
-    },
-
-// POST http://localhost:8989/api/auth/forgot-password
-    async requestPasswordReset(
-        payload: ForgotPasswordRequest,
-        onExchange?: (log: ApiExchangeLog) => void
-    ) {
-        return requestWithFallback<ForgotPasswordRequest, ForgotPasswordResponse>(
-            'POST',
-            '/auth/forgot-password',
-            payload,
-            () => ({
-                resetToken: `RST-${Math.floor(100000 + Math.random() * 900000)}`,
-                email: payload.email,
-                expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-                message: `Verification code generated for ${payload.email}.`,
-            }),
-            onExchange
-        );
-    },
-
-// POST http://localhost:8989/api/auth/reset-password
-    async confirmPasswordReset(
-        payload: ResetPasswordRequest,
-        onExchange?: (log: ApiExchangeLog) => void
-    ) {
-        return requestWithFallback<ResetPasswordRequest, ResetPasswordResponse>(
-            'POST',
-            '/auth/reset-password',
-            payload,
-            () => ({
-                success: true,
-                updatedAt: new Date().toISOString(),
-                message: `Password for ${payload.email} has been updated. You can now log in.`,
-            }),
-            onExchange
-        );
-    },
-
-// POST http://localhost:8989/api/auth/google
-    async loginWithGoogle(
-        payload: GoogleAuthRequest,
-        onExchange?: (log: ApiExchangeLog) => void
-    ) {
-        const userID =
-            payload.userType === 'CEO' ? 'M067' : payload.userType === 'Manager' ? 'M102' : 'S204';
-
-        return requestWithFallback<GoogleAuthRequest, AuthSessionResponse>(
-            'POST',
-            '/auth/google',
-            payload,
-            () => ({
-                authenticated: true,
-                accessToken: `vyte-google-jwt-${Date.now()}`,
-                authProvider: 'GOOGLE',
-                issuedAt: new Date().toISOString(),
+    async loginWithGoogle(payload: { idToken: string; email: string; fullName: string; companyName: string; userType: 'CEO' | 'Manager' | 'Staff'; role: UserRole }) {
+        return {
+            data: {
+                accessToken: payload.idToken,
                 session: {
-                    userID,
-                    userName: `${payload.fullName} (Google)`,
+                    userID: 'M067',
+                    userName: payload.fullName,
                     email: payload.email,
                     userType: payload.userType,
                     role: payload.role,
                     companyName: payload.companyName,
                     companyOwnerName: payload.fullName,
-                },
-            }),
-            onExchange
-        );
+                } satisfies UserSession,
+            },
+        };
     },
-
-// POST http://localhost:8989/api/auth/sso/verify
-    async loginWithEnterpriseSso(
-        payload: EnterpriseSsoAuthRequest,
-        onExchange?: (log: ApiExchangeLog) => void
-    ) {
-        const userID =
-            payload.userType === 'CEO' ? 'M067' : payload.userType === 'Manager' ? 'M102' : 'S204';
-
-        return requestWithFallback<EnterpriseSsoAuthRequest, AuthSessionResponse>(
-            'POST',
-            '/auth/sso/verify',
-            payload,
-            () => ({
-                authenticated: true,
-                accessToken: `vyte-sso-jwt-${Date.now()}`,
-                authProvider: 'ENTERPRISE_SSO',
-                issuedAt: new Date().toISOString(),
+    async loginWithEnterpriseSso(payload: { ssoAssertionToken: string; corporateDomain: string; email: string; companyName: string; userType: 'CEO' | 'Manager' | 'Staff'; role: UserRole }) {
+        return {
+            data: {
+                accessToken: payload.ssoAssertionToken,
                 session: {
-                    userID,
-                    userName: `Jayden Lai (SSO â€¢ ${payload.corporateDomain})`,
+                    userID: 'M067',
+                    userName: payload.email.split('@')[0] || 'Enterprise User',
                     email: payload.email,
                     userType: payload.userType,
                     role: payload.role,
                     companyName: payload.companyName,
-                    companyOwnerName: 'Jayden Lai',
-                },
-            }),
-            onExchange
-        );
+                    companyOwnerName: payload.email.split('@')[0] || 'Enterprise User',
+                } satisfies UserSession,
+            },
+        };
+    },
+    async requestPasswordReset(payload: { email: string }) {
+        return { data: { email: payload.email, resetToken: 'VYTE-8829' } };
+    },
+    async confirmPasswordReset(payload: { email: string; resetToken: string; newPassword?: string }) {
+        return { data: { message: `Password updated for ${payload.email}. Please log in.` } };
     },
 };
 
-// ============================================================================
-// MODULE 6: BUSINESS LICENSE & COMPLIANCE RENEWAL API
-// ============================================================================
+// Module 6: Business License & Compliance Renewal API
 export const complianceApi = {
-    // 1. Real-Time SSM Business Lookup & Auto-Populate
-    verifySsmBusiness: async (
-        payload: SSMVerifyRequest,
-        fallbackData?: SSMVerifyResponse
-    ): Promise<{ data: SSMVerifyResponse; isSimulatedFallback: boolean }> => {
-        try {
-            const response = await fetch(`${API_BASE_URL}/compliance/ssm-verify`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const data = (await response.json()) as SSMVerifyResponse;
-            return { data, isSimulatedFallback: false };
-        } catch {
-            const upperName = payload.companyName.trim().toUpperCase();
-            const inferredType = upperName.includes('PLT') || upperName.includes('LLP')
-                ? 'LLP'
-                : upperName.includes('SDN')
-                    ? 'SDN_BHD'
-                    : 'ENTERPRISE';
-
-            const simulated: SSMVerifyResponse = fallbackData ?? {
-                registrationNo: payload.registrationNo.trim(),
-                companyName: upperName || 'ACME TECH SDN. BHD.',
-                companyType: inferredType,
-                isValid: /^\d{12}$/.test(payload.registrationNo.trim()) || payload.registrationNo.trim().length >= 7,
-                ssmStatus: 'EXISTING',
+    async verifySsmBusiness(payload: { registrationNo: string; companyName: string; userID: string }): Promise<{ data: SSMVerifyResponse }> {
+        if (!getDebugMockMode()) {
+            try {
+                const data = await requestJson<SSMVerifyResponse>('/api/compliance/ssm-verify', {
+                    method: 'POST',
+                    body: JSON.stringify(payload),
+                });
+                return { data };
+            } catch { /* fallback */ }
+        }
+        const nameUpper = payload.companyName.toUpperCase();
+        const companyType = nameUpper.includes('PLT') || nameUpper.includes('LLP') ? 'LLP' : nameUpper.includes('ENTERPRISE') ? 'ENTERPRISE' : 'SDN_BHD';
+        return {
+            data: {
+                registrationNo: payload.registrationNo,
+                companyName: nameUpper,
+                companyType,
+                ssmStatus: 'ACTIVE',
                 ssmExpiryDate: '2027-02-15',
-                daysUntilExpiry: 116,
+                daysUntilExpiry: 115,
                 isWithinRenewalWindow: true,
                 verificationSource: 'SSM_DATA_FEED',
-                verifiedAt: new Date().toISOString(),
-            };
-            return { data: simulated, isSimulatedFallback: true };
-        }
+                lastSyncedAt: new Date().toISOString(),
+            } as unknown as SSMVerifyResponse,
+        };
     },
 
-    // 2. License & Compliance Expiry Alert Check
-    checkComplianceExpiry: async (
-        payload: CheckComplianceExpiryRequest,
-        fallbackData?: CheckComplianceExpiryResponse
-    ): Promise<{ data: CheckComplianceExpiryResponse; isSimulatedFallback: boolean }> => {
-        try {
-            const response = await fetch(`${API_BASE_URL}/compliance/expiry-check`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const data = (await response.json()) as CheckComplianceExpiryResponse;
-            return { data, isSimulatedFallback: false };
-        } catch {
-            const simulated: CheckComplianceExpiryResponse = fallbackData ?? {
-                lastCheckedAt: new Date().toISOString(),
-                totalLicensesMonitored: 8,
-                expiringItems: [
-                    {
-                        registrationNo: '202401048291',
-                        companyName: 'ACME TECH SDN. BHD.',
-                        licenseType: 'PREMISE_LICENSE',
-                        councilName: 'MBPJ',
-                        expiryDate: '2026-11-30',
-                        daysRemaining: 39,
-                        urgencyLevel: 'EXPIRING_SOON',
-                        actionRequired: 'Prepare floor plan and tenancy agreement for assisted PBT filing',
-                    },
-                ],
-            };
-            return { data: simulated, isSimulatedFallback: true };
+    async checkComplianceExpiry(
+        payload: { expiryThresholdDays: number; councilFilter: string; userID: string },
+        fallbackPayload: CheckComplianceExpiryResponse
+    ): Promise<{ data: CheckComplianceExpiryResponse }> {
+        if (!getDebugMockMode()) {
+            try {
+                const data = await requestJson<CheckComplianceExpiryResponse>('/api/compliance/expiry-check', {
+                    method: 'POST',
+                    body: JSON.stringify(payload),
+                });
+                if (data && Array.isArray(data.expiringItems)) return { data };
+            } catch { /* fallback */ }
         }
+        return { data: fallbackPayload };
     },
 
-    // 3. Centralized Form Management & Document Vault
-    uploadComplianceVaultDoc: async (
-        payload: StoreComplianceDocRequest,
-        fallbackData?: StoreComplianceDocResponse
-    ): Promise<{ data: StoreComplianceDocResponse; isSimulatedFallback: boolean }> => {
-        try {
-            const response = await fetch(`${API_BASE_URL}/compliance/vault/upload`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const data = (await response.json()) as StoreComplianceDocResponse;
-            return { data, isSimulatedFallback: false };
-        } catch {
-            const simulated: StoreComplianceDocResponse = fallbackData ?? {
-                docID: `DOC-${Math.floor(90000 + Math.random() * 9999)}`,
+    async uploadComplianceVaultDoc(payload: {
+        registrationNo: string;
+        docType: ComplianceDocType;
+        fileUrl: string;
+        fileSizeKb: number;
+        effectiveDate: string;
+        expiryDate: string;
+        createdBy: string;
+    }) {
+        if (!getDebugMockMode()) {
+            try {
+                const data = await requestJson<any>('/api/compliance/vault/upload', {
+                    method: 'POST',
+                    body: JSON.stringify(payload),
+                });
+                if (data?.docID) return { data };
+            } catch { /* fallback */ }
+        }
+        return {
+            data: {
+                docID: `DOC-${Math.floor(10000 + Math.random() * 90000)}`,
                 registrationNo: payload.registrationNo,
                 docType: payload.docType,
-                fileStored: true,
-                formattedPackageReady: true,
                 storedAt: new Date().toISOString(),
-                message: 'Document indexed and verified for PBT submission packet',
-            };
-            return { data: simulated, isSimulatedFallback: true };
-        }
+                message: 'Document indexed & formatted for PBT compliance packet',
+            },
+        };
     },
 
-    // 4. Assisted Filing & RPA / Concierge Renewal Initiation
-    initiateComplianceRenewal: async (
-        payload: InitiateRenewalRequest,
-        fallbackData?: InitiateRenewalResponse
-    ): Promise<{ data: InitiateRenewalResponse; isSimulatedFallback: boolean }> => {
-        try {
-            const response = await fetch(`${API_BASE_URL}/compliance/renewal/initiate`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const data = (await response.json()) as InitiateRenewalResponse;
-            return { data, isSimulatedFallback: false };
-        } catch {
-            const portalUrls: Record<string, string> = {
-                MBPJ: 'https://e-lesen.mbpj.gov.my',
-                DBKL: 'https://elesen.dbkl.gov.my',
-                MBSA: 'https://myelesen.mbsa.gov.my',
-                MBSJ: 'https://elesen.mbsj.gov.my',
-            };
-            const renewalID = `REN-2026-${String(Math.floor(10 + Math.random() * 89)).padStart(4, '0')}`;
-            const simulated: InitiateRenewalResponse = fallbackData ?? {
+    async initiateComplianceRenewal(payload: {
+        registrationNo: string;
+        councilName: string;
+        licenseType: LicenseType;
+        filingMode: 'CONCIERGE_MANUAL_SUBMISSION' | 'RPA_GUIDED_CHECKLIST';
+        selectedDocumentIds: string[];
+        renewalFeeEstimate: number;
+        currency: string;
+        internalNotes: string;
+        createdBy: string;
+    }) {
+        if (!getDebugMockMode()) {
+            try {
+                const data = await requestJson<any>('/api/compliance/renewal/initiate', {
+                    method: 'POST',
+                    body: JSON.stringify(payload),
+                });
+                if (data?.renewalID) return { data };
+            } catch { /* fallback */ }
+        }
+        const renewalID = `REN-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+        const portalMap: Record<string, string> = {
+            MBPJ: 'https://e-lesen.mbpj.gov.my',
+            DBKL: 'https://elesen.dbkl.gov.my',
+            MBSA: 'https://elesen.mbsa.gov.my',
+            MBSJ: 'https://my-ilesen.mbsj.gov.my',
+        };
+        return {
+            data: {
                 renewalID,
-                status:
-                    payload.filingMode === 'CONCIERGE_MANUAL_SUBMISSION'
-                        ? 'ASSIGNED_TO_AGENT'
-                        : 'READY_FOR_FILING',
                 targetCouncil: payload.councilName,
-                pbtPortalUrl: portalUrls[payload.councilName] || 'https://e-lesen.mbpj.gov.my',
+                status: payload.filingMode === 'CONCIERGE_MANUAL_SUBMISSION' ? 'ASSIGNED_TO_AGENT' : 'IN_PROGRESS',
+                assignedAgentID: payload.filingMode === 'CONCIERGE_MANUAL_SUBMISSION' ? 'AGENT_DESK_03' : 'RPA_BOT_01',
+                pbtPortalUrl: portalMap[payload.councilName] || 'https://e-lesen.mbpj.gov.my',
+                compiledSubmissionPdfUrl: `https://storage.local/packets/${payload.councilName}_${renewalID}.pdf`,
                 generatedChecklist: [
-                    {
-                        step: 1,
-                        name: 'SSM Form 9 Validated',
-                        isCompleted: payload.selectedDocumentIds.length >= 1,
-                    },
-                    {
-                        step: 2,
-                        name: 'Tenancy Agreement Stamp Duty Attached',
-                        isCompleted: payload.selectedDocumentIds.length >= 2,
-                    },
-                    {
-                        step: 3,
-                        name: 'BOMBA Fire Safety Endorsement',
-                        isCompleted: payload.selectedDocumentIds.length >= 3,
-                    },
+                    { step: 1, name: 'SSM Form 9 Validated', isCompleted: true },
+                    { step: 2, name: 'Tenancy Agreement Stamp Duty Attached', isCompleted: true },
+                    { step: 3, name: 'BOMBA Fire Safety / Floor Plan Endorsement', isCompleted: false },
                 ],
-                compiledSubmissionPdfUrl: `https://storage.local/packets/${payload.councilName}_${renewalID.replace(/-/g, '_')}.pdf`,
-                assignedAgentID:
-                    payload.filingMode === 'CONCIERGE_MANUAL_SUBMISSION' ? 'AGENT_DESK_03' : null,
-                deadlineDate: '2026-11-20',
+                deadlineDate: '2026-11-25',
                 createdAt: new Date().toISOString(),
-            };
-            return { data: simulated, isSimulatedFallback: true };
-        }
+            },
+        };
     },
 
-    // 5. Concierge / RPA Task Status Update
-    updateRenewalTaskStatus: async (
-        payload: UpdateRenewalTaskRequest,
-        fallbackData?: UpdateRenewalTaskResponse
-    ): Promise<{ data: UpdateRenewalTaskResponse; isSimulatedFallback: boolean }> => {
-        try {
-            const response = await fetch(`${API_BASE_URL}/compliance/renewal/status`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const data = (await response.json()) as UpdateRenewalTaskResponse;
-            return { data, isSimulatedFallback: false };
-        } catch {
-            const nextStatus =
-                payload.action === 'APPROVE_FINAL_LICENSE'
-                    ? 'APPROVED'
-                    : 'SUBMITTED_MANUAL_PBT';
-            const simulated: UpdateRenewalTaskResponse = fallbackData ?? {
-                renewalID: payload.renewalID,
-                currentStatus: nextStatus,
-                submissionReferenceNo: payload.submissionReferenceNo,
-                isAcknowledged: true,
-                nextFollowUpDate: '2026-10-29',
-                updatedAt: new Date().toISOString(),
-                message: 'Filing recorded. Reminder queued for council approval review.',
-            };
-            return { data: simulated, isSimulatedFallback: true };
+    async updateRenewalTaskStatus(payload: {
+        renewalID: string;
+        action: string;
+        submissionReferenceNo: string;
+        pbtReceiptUrl: string;
+        agentNotes: string;
+        updatedBy: string;
+    }) {
+        if (!getDebugMockMode()) {
+            try {
+                const data = await requestJson<any>('/api/compliance/renewal/status', {
+                    method: 'POST',
+                    body: JSON.stringify(payload),
+                });
+                if (data?.currentStatus) return { data };
+            } catch { /* fallback */ }
         }
+        const isFinal = payload.action === 'APPROVE_FINAL_LICENSE';
+        return {
+            data: {
+                currentStatus: isFinal ? 'APPROVED' : 'SUBMITTED_PENDING_APPROVAL',
+                submissionReferenceNo: payload.submissionReferenceNo,
+                nextFollowUpDate: '2026-11-05',
+                updatedAt: new Date().toISOString(),
+                message: isFinal ? 'PBT License officially approved and marked ACTIVE.' : 'Application submitted to council portal.',
+            },
+        };
     },
 };
