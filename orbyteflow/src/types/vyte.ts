@@ -466,12 +466,10 @@ export type ComplianceDocType =
     | 'PREVIOUS_LICENSE';
 
 export type RenewalTaskStatus =
-    | 'DRAFT'
-    | 'DOCUMENT_CHECKLIST_PENDING'
-    | 'READY_FOR_FILING'
     | 'ASSIGNED_TO_AGENT'
-    | 'SUBMITTED_MANUAL_PBT'
-    | 'APPROVED';
+    | 'SUBMITTED_TO_PBT'
+    | 'APPROVED_RENEWED'
+    | 'REJECTED';
 
 export interface BusinessComplianceProfile {
     registrationNo: string;
@@ -508,25 +506,20 @@ export interface RenewalTask {
     registrationNo: string;
     companyName: string;
     councilName: string;
-    licenseType: LicenseType | string;
+    licenseType: string;
     filingMode: string;
     status: RenewalTaskStatus;
-    assignedAgentID: string | null;
+    assignedAgentID: string;
     pbtPortalUrl: string;
     submissionReferenceNo: string | null;
-    pbtReceiptUrl?: string;
-    compiledSubmissionPdfUrl?: string;
-    generatedChecklist: RenewalChecklistStep[];
-    targetDeadline: string; // ISO Date YYYY-MM-DD
+    compiledSubmissionPdfUrl: string;
+    generatedChecklist: { step: number; name: string; isCompleted: boolean }[];
+    targetDeadline: string;
     renewalFee: number;
     currency: string;
     internalNotes?: string;
-    agentNotes?: string;
-    nextFollowUpDate?: string;
     createdAt?: string;
-    updatedAt?: string;
 }
-
 // 1. Real-Time SSM Business Lookup & Auto-Populate
 export interface SSMVerifyRequest {
     registrationNo: string;

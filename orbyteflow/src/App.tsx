@@ -485,12 +485,22 @@ export default function App() {
 
         <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden gap-3">
           <HeaderBar
-              activeTab={activeTab} inventorySubTab={inventorySubTab} userSession={userSession}
-              currency={currency} exchangeRate={activeExchangeRate} rateSourceLabel={rateSourceLabel}
-              onRefreshRates={() => void fetchLiveExchangeRates(true)} totalSkus={products.length}
-              pendingRestocks={pendingRestockCount} pendingOrders={pendingCustomerOrderCount}
-              pendingQcBatches={pendingQcCount} totalInvoices={invoices.length}
-              pendingInvoices={pendingInvoiceCount} onNavigateFromNotification={handleNavigateFromNotification}
+              activeTab={activeTab}
+              inventorySubTab={inventorySubTab}
+              userSession={userSession}
+              currency={currency}
+              exchangeRate={activeExchangeRate}
+              rateSourceLabel={rateSourceLabel}
+              onRefreshRates={() => void fetchLiveExchangeRates(true)}
+              totalSkus={products.length}
+              pendingRestocks={pendingRestockCount}
+              pendingOrders={pendingCustomerOrderCount}
+              pendingQcBatches={pendingQcCount}
+              totalInvoices={invoices.length}
+              pendingInvoices={pendingInvoiceCount}
+              totalComplianceProfiles={complianceProfiles.length}
+              pendingCompliance={pendingComplianceCount}
+              onNavigateFromNotification={handleNavigateFromNotification}
           />
 
           <main className="flex-1 overflow-y-auto pr-1 space-y-4">
