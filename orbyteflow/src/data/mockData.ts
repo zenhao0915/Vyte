@@ -93,7 +93,7 @@ export const INITIAL_SUPPLIER_QUOTATIONS: SupplierQuotationBid[] = [
     {
         quotationNo: '8000000009', rfqNo: '7000000003', productId: 'P5', sku: 'B2B-3310',
         productName: 'Industrial Vacuum Seal Pouch (1000s)', orderQty: 25, uom: 'box',
-        supplierCode: '1009450', supplierName: ' NipponFlex Food Grade Packaging', supplierContact: '+6012-9081122',
+        supplierCode: '1009450', supplierName: 'NipponFlex Food Grade Packaging', supplierContact: '+6012-9081122',
         address: '9 Jalan Hi-Tech 4, Semenyih 43500, Malaysia', status: 'Submitted',
         unitPriceRM: 58.0, totalNetValueRM: 1450.0, quotationDate: '2026-10-21', deliveryLeadDays: 2,
         fullyQuotedItems: '1/1', bestPricedItems: '0/1', pastOrdersCount: 9, pastDefectRatePct: 0.2,
@@ -151,14 +151,14 @@ export const INITIAL_PRODUCTS: Product[] = [
 export const INITIAL_QC_ALERTS: QCAlert[] = [
     {
         id: 'QC-101', productName: 'Fresh Hokkaido Milk Batch #42', sku: 'FNB-1092',
-        batchNo: 'BATCH-2610', expiryDate: '2026-10-23', daysLeft: 3, qtyAffected: '24 L',
-        triggerReason: 'Expires in 72 hours (Threshold: 5 days)',
+        batchNo: 'BATCH-2610', expiryDate: '2026-10-28', daysLeft: 4, qtyAffected: '18 L',
+        triggerReason: 'Expires in 96 hours (Threshold: 5 days)',
         aiSuggestion: 'Launch "Buy 1 Free 1 Latte Upgrade" promo & reduce Friday supplier restock by 15 L.',
         actionLabel: 'Approve Promo & Adjust PO', savedRM: 312.0, status: 'PENDING_APPROVAL',
     },
     {
         id: 'QC-102', productName: 'Vacuum Seal Pouch (Batch Defect)', sku: 'B2B-3310',
-        batchNo: 'LOT-88B', expiryDate: '2027-08-01', daysLeft: 285, qtyAffected: '500 pcs',
+        batchNo: 'LOT-88B', expiryDate: '2027-08-01', daysLeft: 281, qtyAffected: '500 pcs',
         triggerReason: 'Seal integrity failure rate > 8% logged by staff',
         aiSuggestion: 'Quarantine LOT-88B immediately & auto-generate Supplier Replacement Claim with invoice ref.',
         actionLabel: 'Approve Quarantine & Claim', savedRM: 450.0, status: 'PENDING_APPROVAL',
@@ -247,7 +247,7 @@ export const INITIAL_COMPLIANCE_PROFILES: BusinessComplianceProfile[] = [
     {
         registrationNo: 'SOFT-ACAD-8002', companyName: 'Autodesk AutoCAD Architecture (Facilities)', companyType: 'SDN_BHD',
         councilName: 'Autodesk', licenseType: 'SOFTWARE_SUBSCRIPTION',
-        licenseExpiryDate: '2026-12-10', ssmExpiryDate: '2027-12-31', complianceStatus: 'COMPLIANT',
+        licenseExpiryDate: '2026-12-10', ssmExpiryDate: '2027-12-31', complianceStatus: 'EXPIRING_SOON',
         autoAlertEnabled: true, assetCategory: 'SOFTWARE_LICENSE', annualFeeRM: 18500, fiveYearDiscountPct: 20, selectedRenewalTermYears: 1,
     },
     {
@@ -388,8 +388,8 @@ export const INITIAL_RENEWAL_TASKS: RenewalTask[] = [
             { step: 2, name: 'Tenancy Agreement Stamp Duty Attached', isCompleted: true },
             { step: 3, name: 'BOMBA Fire Safety Endorsement', isCompleted: false },
         ],
-        targetDeadline: '2026-11-20', renewalFee: 1755.0, renewalTermYears: 5, savedDiscountRM: 1095.0,
-        currency: 'MYR', internalNotes: '5-Year Bundle Selected (-22% multi-year discount applied). Premise floor plan attached.',
+        targetDeadline: '2026-11-20', renewalFee: 1755.0, renewalTermYears: 5, savedDiscountRM: 495.0,
+        currency: 'MYR', internalNotes: '5-Year Bundle Selected (-22% multi-year discount applied: RM 2,250 gross -> RM 1,755 net). Premise floor plan attached.',
         createdAt: '2026-10-22T19:57:00Z',
     },
 ];

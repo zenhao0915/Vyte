@@ -180,6 +180,9 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
         };
     }, [products, selectedCategory, periodMultiplier, filterMonth, filterQuarter, holdingCostPercentage, targetTurnoverDays, fallbackSalesReport, currencySymbol, exchangeRate]);
 
+    const activeReport = reportData ?? fallbackSalesReport;
+    const activeProcurement = procurementData ?? fallbackProcurementAnalysis;
+
     const cashFlowRunway = useMemo(() => {
         let currentStockLocked = 0, restockPurchaseCost = 0, totalHoldingCost = 0, maxSellOffCycleDays = 21, totalExpectedRevenueBack = 0;
         const perSkuCashNeeded: Record<string, number> = {};
@@ -296,8 +299,6 @@ export const SalesAnalyticsModule: React.FC<SalesAnalyticsModuleProps> = ({
     };
 
     const categories = useMemo(() => ['ALL', ...Array.from(new Set(products.map((p) => p.category)))], [products]);
-    const activeReport = fallbackSalesReport;
-    const activeProcurement = fallbackProcurementAnalysis;
 
     const displayedBreakdown = useMemo(() => {
         const q = tableSearch.trim().toLowerCase();

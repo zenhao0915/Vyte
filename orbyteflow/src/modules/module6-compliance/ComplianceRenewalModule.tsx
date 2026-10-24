@@ -248,6 +248,11 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
         const matchedProfile = profiles.find((p) => p.registrationNo === filingRegNo) || profiles[0];
         const renId = `REN-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
+        const baseFeeRM = Number((feeNum / exchangeRate).toFixed(2));
+        const annualRM = matchedProfile.annualFeeRM ?? baseFeeRM / selectedTermYears;
+        const discPct = selectedTermYears === 5 ? (matchedProfile.fiveYearDiscountPct ?? 22) : selectedTermYears === 3 ? 12 : 0;
+        const savedDiscountRM = Number((annualRM * selectedTermYears * (discPct / 100)).toFixed(2));
+
         const createdTask: RenewalTask = {
             renewalID: renId,
             registrationNo: matchedProfile.registrationNo,
@@ -267,9 +272,9 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                 { step: 4, name: 'Manager / Owner Statutory Sign-off', isCompleted: false },
             ],
             targetDeadline: filingDeadline,
-            renewalFee: feeNum,
+            renewalFee: baseFeeRM,
             renewalTermYears: selectedTermYears,
-            savedDiscountRM: selectedTermYears > 1 ? 500 : 0,
+            savedDiscountRM,
             currency: 'MYR',
             internalNotes: filingNotes.trim(),
             createdAt: new Date().toISOString(),
@@ -285,16 +290,36 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
         const nextStatus: RenewalTaskStatus = task.status === 'ASSIGNED_TO_AGENT' ? 'SUBMITTED_TO_PBT' : 'APPROVED_RENEWED';
         const refNo = task.submissionReferenceNo || `REF-${Math.floor(100000 + Math.random() * 900000)}`;
 
-        setRenewalTasks((prev) => prev.map((t) => t.renewalID === task.renewalID ? {
-            ...t, status: nextStatus, submissionReferenceNo: refNo,
-            generatedChecklist: t.generatedChecklist.map((c) => ({ ...c, isCompleted: true })),
-        } : t));
+        setRenewalTasks((prev) =>
+            prev.map((t) =>
+                t.renewalID === task.renewalID
+                    ? {
+                        ...t,
+                        status: nextStatus,
+                        submissionReferenceNo: refNo,
+                        generatedChecklist: t.generatedChecklist.map((c) => ({ ...c, isCompleted: true })),
+                    }
+                    : t
+            )
+        );
 
         if (nextStatus === 'APPROVED_RENEWED') {
-            const expYear = new Date().getFullYear() + (task.renewalTermYears ?? 1);
-            setProfiles((prev) => prev.map((p) => p.registrationNo === task.registrationNo ? {
-                ...p, complianceStatus: 'COMPLIANT', licenseExpiryDate: `${expYear}-12-31`,
-            } : p));
+            const termYears = task.renewalTermYears ?? 1;
+            setProfiles((prev) =>
+                prev.map((p) => {
+                    if (p.registrationNo !== task.registrationNo) return p;
+                    const baseDate = new Date(p.licenseExpiryDate);
+                    const startYear = isNaN(baseDate.getTime()) || baseDate.getFullYear() < new Date().getFullYear()
+                        ? new Date().getFullYear()
+                        : baseDate.getFullYear();
+                    const monthDay = /^\d{4}-\d{2}-\d{2}$/.test(p.licenseExpiryDate) ? p.licenseExpiryDate.slice(4) : '-12-31';
+                    return {
+                        ...p,
+                        complianceStatus: 'COMPLIANT',
+                        licenseExpiryDate: `${startYear + termYears}${monthDay}`,
+                    };
+                })
+            );
         }
     };
 
@@ -715,8 +740,31 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                     <div>
                                         <label className="font-bold text-slate-700 block mb-1.5">Target Asset / Listing *</label>
-                                        <select value={filingRegNo} onChange={(e) => setFilingRegNo(e.target.value)} className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-semibold text-slate-900">
-                                            {profiles.map((p) => <option key={p.registrationNo} value={p.registrationNo}>{p.companyName} ({p.registrationNo})</option>)}
+                                        <select
+                                            value={filingRegNo}
+                                            onChange={(e) => {
+                                                const nextReg = e.target.value;
+                                                setFilingRegNo(nextReg);
+                                                const prof = profiles.find((p) => p.registrationNo === nextReg);
+                                                if (prof) {
+                                                    const term: 1 | 3 | 5 =
+                                                        prof.selectedRenewalTermYears === 1 || prof.selectedRenewalTermYears === 3
+                                                            ? prof.selectedRenewalTermYears
+                                                            : 5;
+                                                    const annual = prof.annualFeeRM ?? 450;
+                                                    const disc = term === 5 ? (prof.fiveYearDiscountPct ?? 22) : term === 3 ? 12 : 0;
+                                                    const calcFee = Number((annual * term * (1 - disc / 100) * exchangeRate).toFixed(2));
+                                                    setSelectedTermYears(term);
+                                                    setFilingFeeInput(String(calcFee));
+                                                }
+                                            }}
+                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-semibold text-slate-900"
+                                        >
+                                            {profiles.map((p) => (
+                                                <option key={p.registrationNo} value={p.registrationNo}>
+                                                    {p.companyName} ({p.registrationNo})
+                                                </option>
+                                            ))}
                                         </select>
                                     </div>
                                     <div>

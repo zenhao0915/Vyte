@@ -142,18 +142,23 @@ export const QualityControlModule: React.FC<QualityControlModuleProps> = ({
 
         const qtyNum = Number(qtyAffectedInput);
         const daysNum = Number(daysLeftInput);
+        const computedExpDate = new Date();
+        computedExpDate.setDate(computedExpDate.getDate() + daysNum);
+        const dynamicExpiryIso = computedExpDate.toISOString().slice(0, 10);
+
         onAddCustomQCAlert({
             id: `QC-${Date.now()}`,
             productName: prod?.name || 'Inspecting Batch Item',
             sku: prod?.sku || 'SKU-QC',
             batchNo: batchNo.trim().toUpperCase(),
-            expiryDate: '2026-10-28',
+            expiryDate: dynamicExpiryIso,
             daysLeft: daysNum,
             qtyAffected: `${qtyNum} ${prod?.uom || 'units'}`,
             triggerReason: triggerReason.trim(),
-            aiSuggestion: daysNum <= 5
-                ? `Assign warehouse staff to apply 25% clearance bundle on ${qtyNum} ${prod?.uom || 'units'} & move to front chiller.`
-                : `Assign warehouse staff to quarantine ${batchNo.trim().toUpperCase()} immediately & schedule supplier return pickup.`,
+            aiSuggestion:
+                daysNum <= 5
+                    ? `Assign warehouse staff to apply 25% clearance bundle on ${qtyNum} ${prod?.uom || 'units'} & move to front chiller.`
+                    : `Assign warehouse staff to quarantine ${batchNo.trim().toUpperCase()} immediately & schedule supplier return pickup.`,
             actionLabel: daysNum <= 5 ? 'Clearance & Relabel' : 'Quarantine & Return',
             savedRM: Number(((prod?.priceRM || 35) * qtyNum * 0.8).toFixed(2)),
             status: 'PENDING_APPROVAL',

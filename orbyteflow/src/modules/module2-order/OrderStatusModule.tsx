@@ -422,27 +422,76 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
 
         try {
             const approvalNotes = (orderNotesMap[order.orderID] || '').trim() || `${action} by ${userID}`;
-            const updatedItems = action === 'MODIFY'
+            const useEditedQuantities = action === 'MODIFY' || modifyingOrderId === order.orderID;
+            const updatedItems = useEditedQuantities
                 ? order.items.map((item) => {
                     const modQty = modifiedQuantities[`${order.orderID}:${item.productID}`] ?? item.requestedQty;
                     const avail = products.find((p) => p.id === item.productID)?.stock ?? item.availableStock;
-                    return { ...item, requestedQty: modQty, availableStock: avail, isStockEnough: avail >= modQty, lineTotal: Number((modQty * item.sellingPrice).toFixed(2)) };
+                    return {
+                        ...item,
+                        requestedQty: modQty,
+                        availableStock: avail,
+                        isStockEnough: avail >= modQty,
+                        lineTotal: Number((modQty * item.sellingPrice).toFixed(2)),
+                    };
                 })
                 : order.items;
             const updatedSubtotal = Number(updatedItems.reduce((sum, i) => sum + i.lineTotal, 0).toFixed(2));
-            const res = await orbyteApi.approveCustomerOrder({ orderID: order.orderID, invoiceID: order.invoiceID, approvalAction: action, approvalNotes, updatedBy: userID });
+            const res = await orbyteApi.approveCustomerOrder({
+                orderID: order.orderID,
+                invoiceID: order.invoiceID,
+                approvalAction: action,
+                approvalNotes,
+                updatedBy: userID,
+            });
 
             if (action === 'APPROVE') {
-                setCustomerOrders((p) => p.map((o) => (o.orderID === order.orderID ? { ...o, status: 'APPROVED_AWAITING_DELIVERY', approvalNotes, inventoryDeducted: res.data.inventoryDeducted, updatedAt: res.data.updatedAt } : o)));
+                setCustomerOrders((p) =>
+                    p.map((o) =>
+                        o.orderID === order.orderID
+                            ? {
+                                ...o,
+                                items: updatedItems,
+                                subtotal: updatedSubtotal,
+                                status: 'APPROVED_AWAITING_DELIVERY',
+                                approvalNotes,
+                                inventoryDeducted: res.data.inventoryDeducted,
+                                updatedAt: res.data.updatedAt,
+                            }
+                            : o
+                    )
+                );
+                setModifyingOrderId(null);
                 onApproveCustomerOrder(updatedItems, order.customerName, order.orderID, order.invoiceID, res.data.inventoryDeducted);
                 notify('success', `Order ${order.orderID} approved and invoiced.`);
             } else if (action === 'MODIFY') {
-                setCustomerOrders((p) => p.map((o) => (o.orderID === order.orderID ? { ...o, items: updatedItems, subtotal: updatedSubtotal, status: 'MODIFIED', approvalNotes, inventoryDeducted: res.data.inventoryDeducted, updatedAt: res.data.updatedAt } : o)));
+                setCustomerOrders((p) =>
+                    p.map((o) =>
+                        o.orderID === order.orderID
+                            ? {
+                                ...o,
+                                items: updatedItems,
+                                subtotal: updatedSubtotal,
+                                status: 'MODIFIED',
+                                approvalNotes,
+                                inventoryDeducted: res.data.inventoryDeducted,
+                                updatedAt: res.data.updatedAt,
+                            }
+                            : o
+                    )
+                );
                 setModifyingOrderId(null);
-                onLogAction('Orders', `Modified order ${order.orderID} (${order.customerName}) \u2022 New Total: ${sym} ${(updatedSubtotal * exchangeRate).toFixed(2)}.`);
+                onLogAction('Orders', `Modified order ${order.orderID} (${order.customerName}) • New Total: ${sym} ${(updatedSubtotal * exchangeRate).toFixed(2)}.`);
                 notify('info', `Order ${order.orderID} updated.`);
             } else {
-                setCustomerOrders((p) => p.map((o) => (o.orderID === order.orderID ? { ...o, status: 'REJECTED', approvalNotes, inventoryDeducted: res.data.inventoryDeducted, updatedAt: res.data.updatedAt } : o)));
+                setCustomerOrders((p) =>
+                    p.map((o) =>
+                        o.orderID === order.orderID
+                            ? { ...o, status: 'REJECTED', approvalNotes, inventoryDeducted: res.data.inventoryDeducted, updatedAt: res.data.updatedAt }
+                            : o
+                    )
+                );
+                setModifyingOrderId(null);
                 onLogAction('Orders', `Rejected order ${order.orderID} (${order.customerName}).`);
                 notify('warning', `Order ${order.orderID} rejected.`);
             }
@@ -708,6 +757,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                             });
 
                             const allEnoughLive = liveItems.every((i) => i.isStockEnough);
+                            const liveOrderSubtotal = Number(liveItems.reduce((sum, i) => sum + i.lineTotal, 0).toFixed(2));
 
                             return (
                                 <div key={co.orderID} className={`rounded-2xl border overflow-hidden transition ${isPendingOrModified ? (allEnoughLive ? 'bg-white border-slate-200' : 'bg-rose-50/20 border-rose-200') : co.status === 'APPROVED_AWAITING_DELIVERY' ? 'bg-blue-50/15 border-blue-200' : co.status === 'DELIVERED_COMPLETED' ? 'bg-emerald-50/15 border-emerald-200' : 'bg-slate-50 border-slate-200 opacity-75'}`}>
@@ -734,7 +784,9 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                             <button type="button" onClick={() => setSelectedDetailOrder(co)} className="px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"><Eye className="w-3.5 h-3.5" /> Details</button>
                                             <div className="text-right mr-1">
                                                 <span className="text-[10px] uppercase font-bold text-slate-400 block">Order Total</span>
-                                                <span className="text-base font-extrabold text-slate-900 whitespace-nowrap">{sym} {fmtMoney(co.subtotal * exchangeRate)}</span>
+                                                <span className="text-base font-extrabold text-slate-900 whitespace-nowrap">
+                                                    {sym} {fmtMoney(liveOrderSubtotal * exchangeRate)}
+                                                </span>
                                             </div>
 
                                             {isPendingOrModified && (
