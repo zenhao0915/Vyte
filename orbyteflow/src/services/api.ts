@@ -26,6 +26,7 @@ import {
 const DEBUG_MODE_KEY = 'vyte_debug_mock_mode';
 const API_BASE_URL_KEY = 'vyte_api_base_url';
 const WORKSPACE_ID_KEY = 'vyte_isolated_workspace_id';
+const AUTH_TOKEN_KEY = 'vyte_auth_token';
 
 const MOCK_CACHE_KEYS = [
     'vyte_state_products_v2',
@@ -38,6 +39,12 @@ const MOCK_CACHE_KEYS = [
     'vyte_customer_orders_list_v2',
     'vyte_order_parsed_step2_draft_v2',
 ];
+
+export const getAuthToken = (): string | null => localStorage.getItem(AUTH_TOKEN_KEY);
+export const setAuthToken = (token: string | null): void => {
+    if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
+    else localStorage.removeItem(AUTH_TOKEN_KEY);
+};
 
 export const getDebugMockMode = (): boolean => {
     const raw = localStorage.getItem(DEBUG_MODE_KEY);
@@ -68,19 +75,28 @@ const getWorkspaceId = (): string => {
 };
 
 async function requestJson<T>(path: string, options?: RequestInit): Promise<T> {
-    if (getDebugMockMode()) throw new Error('DEBUG_MOCK_MODE_ACTIVE');
+    if (getDebugMockMode()) {
+        throw new Error(`DEBUG_MOCK_MODE_ACTIVE: ${path}`);
+    }
+
+    const token = getAuthToken();
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'X-Workspace-ID': getWorkspaceId(),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options?.headers as Record<string, string> || {}),
+    };
+
     const res = await fetch(`${getApiBaseUrl()}${path}`, {
-        headers: {
-            'Content-Type': 'application/json',
-            'X-Workspace-ID': getWorkspaceId(),
-            ...(options?.headers || {}),
-        },
         ...options,
+        headers,
     });
+
     if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
-        throw new Error(errBody?.error || `HTTP ${res.status}`);
+        throw new Error(errBody?.error || `HTTP ${res.status}: ${res.statusText}`);
     }
+
     return (await res.json()) as T;
 }
 
@@ -259,16 +275,21 @@ export const orbyteApi = {
     },
 
     async getSalesReviewReport(
-        payload: GetSalesReviewReportRequest, fallback: GetSalesReviewReportResponse
+        payload: GetSalesReviewReportRequest,
+        fallback: GetSalesReviewReportResponse
     ): Promise<{ data: GetSalesReviewReportResponse; isSimulatedFallback: boolean }> {
         if (!getDebugMockMode()) {
             try {
                 const raw = await requestJson<any>('/api/sales-review/report', {
-                    method: 'POST', body: JSON.stringify({ ...payload, productID: payload.productID || 'P-101' }),
+                    method: 'POST',
+                    body: JSON.stringify({ ...payload, productID: payload.productID || 'P-101' }),
                 });
-                if (raw && Array.isArray(raw.productBreakdown)) return { data: raw as GetSalesReviewReportResponse, isSimulatedFallback: false };
-                if (raw?.productID) return { data: fallback, isSimulatedFallback: false };
-            } catch { /* fallback */ }
+                if (raw?.productBreakdown) {
+                    return { data: raw as GetSalesReviewReportResponse, isSimulatedFallback: false };
+                }
+            } catch (err) {
+                console.warn('[OrbyteApi] Falling back to simulated sales review report:', err);
+            }
         }
         return { data: fallback, isSimulatedFallback: true };
     },
@@ -365,8 +386,12 @@ export const orbyteApi = {
             if (payload.party) fd.append('party', payload.party);
             if (payload.amountRM) fd.append('amountRM', payload.amountRM);
             if (payload.invNo) fd.append('invNo', payload.invNo);
+            const headers: Record<string, string> = {
+                'X-Workspace-ID': getWorkspaceId(),
+                ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}),
+            };
             const res = await fetch(`${getApiBaseUrl()}/api/invoices/upload`, {
-                method: 'POST', headers: { 'X-Workspace-ID': getWorkspaceId() }, body: fd,
+                method: 'POST', headers, body: fd,
             });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
