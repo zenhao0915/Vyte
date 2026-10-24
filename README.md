@@ -183,11 +183,11 @@ curl -X POST https://api.runpod.ai/v2/$RUNPOD_ENDPOINT_ID/runsync \
 
 | Name | Role | GitHub |
 | :--- | :--- | :--- |
-| **Yau Zen Hao** | Team Lead / Backend & System Architecture & RunPod GPU Workloads & Replit Deployment | [@zenhao0915](https://github.com/zenhao0915) |
-| **Ng Zi Yun** | Frontend Lead / UI/UX & Module Integration & Documentation | [@NGZIYUN](https://github.com/NGZIYUN) |
+| **Yau Zen Hao** | Team Lead / Backend & System Architecture / RunPod GPU Workloads / Replit Deployment | [@zenhao0915](https://github.com/zenhao0915) |
+| **Ng Zi Yun** | Frontend Lead / UI/UX / Module Integration & Documentation | [@NGZIYUN](https://github.com/NGZIYUN) |
 | **Lee Yan Ting** | Documentation | [@lyting0211](https://github.com/lyting0211) |
-| **Jayden Lai Quan Qing** | AI Engineering & Frontend Architecture & Video Pitching  | [@Joaedes](https://github.com/Joaedes) |
-| **Lew Xiao Hui** | Backend & Documentation | [@xiaohuilew1](https://github.com/xiaohuilew1) |
+| **Jayden Lai Quan Qing** | AI Engineering / Frontend Architecture / Video Pitching  | [@Joaedes](https://github.com/Joaedes) |
+| **Lew Xiao Hui** | Backend / Documentation | [@xiaohuilew1](https://github.com/xiaohuilew1) |
 
 ---
 
