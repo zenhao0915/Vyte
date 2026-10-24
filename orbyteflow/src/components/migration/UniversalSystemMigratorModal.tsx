@@ -55,10 +55,12 @@ export const UniversalSystemMigratorModal: React.FC<UniversalSystemMigratorModal
         try {
             const ext = file.name.split('.').pop()?.toLowerCase() || 'unknown';
             const rawContent = await readFileContentSafely(file, ext);
+            // 真实调用 AI 接口解析
             const parsedResult = await orbyteApi.parseLegacySystemFile(file, rawContent);
             setPreview(parsedResult);
         } catch (err) {
-            setErrorMsg(err instanceof Error ? err.message : 'Failed to parse file.');
+            setErrorMsg(err instanceof Error ? err.message : '解析文件失败，未能连接到后端。');
+            setPreview(null);
         } finally {
             setIsAnalyzing(false);
             e.target.value = '';
@@ -85,31 +87,50 @@ export const UniversalSystemMigratorModal: React.FC<UniversalSystemMigratorModal
                     }
                     resolve(extractedStrings || `SQLite Database (${file.name})`);
                 };
-                reader.onerror = () => reject(new Error('Failed to read database file.'));
+                reader.onerror = () => reject(new Error('无法读取数据库文件。'));
                 reader.readAsArrayBuffer(file);
             } else {
                 reader.onload = () => resolve(String(reader.result || '').slice(0, 50000));
-                reader.onerror = () => reject(new Error('Failed to read file text.'));
+                reader.onerror = () => reject(new Error('无法读取文件文本。'));
                 reader.readAsText(file);
             }
         });
     };
 
+    // 关键修复：真实持久化至后端 SQLite 数据库
     const handleConfirmMigration = async () => {
         if (!preview || !selectedFile) return;
         setIsImporting(true);
-        await new Promise((r) => setTimeout(r, 650));
-        onImportSuccess({
-            products: preview.products,
-            invoices: preview.invoices,
-            complianceProfiles: preview.complianceProfiles,
-            sourceFileName: selectedFile.name,
-            transitionMode,
-        });
-        setIsImporting(false);
-        setPreview(null);
-        setSelectedFile(null);
-        onClose();
+        setErrorMsg(null);
+
+        try {
+            // 真实发送 Commit 请求给后端
+            const commitRes = await orbyteApi.commitMigration({
+                sourceFileName: selectedFile.name,
+                transitionMode,
+                products: preview.products,
+                invoices: preview.invoices,
+                complianceProfiles: preview.complianceProfiles,
+            });
+
+            // 只有后端成功写入数据库后，才允许向前端应用同步数据
+            onImportSuccess({
+                products: commitRes.importedProducts || preview.products,
+                invoices: commitRes.importedInvoices || preview.invoices,
+                complianceProfiles: commitRes.importedComplianceProfiles || preview.complianceProfiles,
+                sourceFileName: selectedFile.name,
+                transitionMode,
+            });
+
+            setPreview(null);
+            setSelectedFile(null);
+            onClose();
+        } catch (err: any) {
+            // 后端连不上或保存失败，直接阻止操作，展示错误红框
+            setErrorMsg(`导入阻断: ${err.message || '后端未响应，已取消保存'}`);
+        } finally {
+            setIsImporting(false);
+        }
     };
 
     return (
@@ -204,7 +225,7 @@ export const UniversalSystemMigratorModal: React.FC<UniversalSystemMigratorModal
                 </div>
 
                 {errorMsg && (
-                    <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
+                    <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
                         <AlertCircle className="w-4 h-4 shrink-0" />
                         <span>{errorMsg}</span>
                     </div>
@@ -283,7 +304,7 @@ export const UniversalSystemMigratorModal: React.FC<UniversalSystemMigratorModal
                             className="px-5 py-2 rounded-xl bg-[#2BB656] hover:bg-emerald-600 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
                         >
                             {isImporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                            <span>{isImporting ? 'Importing...' : 'Import Data'}</span>
+                            <span>{isImporting ? 'Saving to Database...' : 'Import Data'}</span>
                         </button>
                     </div>
                 </div>

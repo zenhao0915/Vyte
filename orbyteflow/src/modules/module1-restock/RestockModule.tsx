@@ -12,6 +12,7 @@ import {
     type SupplierQuotationBid,
     type UserRole,
 } from '../../types/vyte.ts';
+import { orbyteApi, getDebugMockMode } from '../../services/api';
 import { INITIAL_SUPPLIER_QUOTATIONS } from '../../data/mockData';
 
 interface RestockModuleProps {
@@ -196,38 +197,46 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
         setNewBidSupplierName(''); setNewBidUnitPrice(''); setNewBidComment(''); setShowNewBidModal(false);
     };
 
-    const handleSpreadsheetImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleSpreadsheetImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !onBatchImportProducts) return;
-        const reader = new FileReader();
-        reader.onload = () => {
-            const lines = String(reader.result || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-            const imported: Product[] = [];
-            lines.forEach((line, idx) => {
-                if (idx === 0 && line.toLowerCase().includes('sku')) return;
-                const cols = line.split(',').map((c) => c.trim().replace(/^"|"$/g, ''));
-                if (cols.length >= 4) {
-                    const stockNum = Number(cols[2]) || 8, minNum = Number(cols[3]) || 15;
-                    imported.push({
-                        id: `P-XLS-${Date.now()}-${idx}`, sku: cols[0] || `XLS-${1000 + idx}`, name: cols[1] || `Imported SKU #${idx + 1}`,
-                        category: cols[4] || 'F&B Raw Ingredient', industry: 'FNB_PERISHABLE', uom: cols[5] || 'kg',
-                        stock: stockNum, minThreshold: minNum, reorderQty: Number(cols[6]) || 30, priceRM: Number(cols[7]) || 52.0,
-                        unitCostRM: 31.0, dailyDepletionRate: 3.5, leadTimeDays: 2, moq: 10,
-                        supplierName: cols[8] || 'Verified Supplier MY', supplierContact: cols[9] || '+6012-8899221',
-                        performance: 'Good', visibility: true, batchNo: `B-2026-X${idx}`, expiryDate: '2026-11-20',
-                        restockStatus: stockNum <= minNum ? 'TRIGGERED_PENDING_APPROVAL' : 'HEALTHY',
-                    });
-                }
+
+        try {
+            const text = await file.text();
+            const parsed = await orbyteApi.parseLegacySystemFile(file, text);
+            if (!parsed?.products || parsed.products.length === 0) {
+                throw new Error('Invalid CSV!');
+            }
+
+            // 提交至后端 SQLite 数据库
+            const commitRes = await orbyteApi.commitMigration({
+                sourceFileName: file.name,
+                transitionMode: 'COPILOT',
+                products: parsed.products,
+                invoices: parsed.invoices || [],
+                complianceProfiles: parsed.complianceProfiles || []
             });
-            if (imported.length > 0) onBatchImportProducts(imported);
+
+            onBatchImportProducts(commitRes.importedProducts || parsed.products);
+        } catch (err: any) {
+            console.error('Import failed:', err);
+            alert(`Error: ${err.message || 'Backend Not Connected! Adding Product Is Disabled!'}`);
+        } finally {
             e.target.value = '';
-        };
-        reader.readAsText(file);
+        }
     };
 
-    const handleShelfPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleShelfPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !onBatchImportProducts) return;
+        if (!getDebugMockMode()) {
+            const isOnline = await orbyteApi.checkBackendHealth();
+            if (!isOnline) {
+                alert('后端数据库未连接，禁止添加物品！');
+                e.target.value = '';
+                return;
+            }
+        }
         const reader = new FileReader();
         reader.onload = () => {
             onBatchImportProducts([{
