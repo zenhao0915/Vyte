@@ -101,6 +101,15 @@ async function requestJson<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const orbyteApi = {
+    async checkBackendHealth(): Promise<boolean> {
+        try {
+            const res = await fetch(`${getApiBaseUrl()}/api/ping`, { method: 'GET' });
+            return res.ok;
+        } catch {
+            return false;
+        }
+    },
+
     async fetchWorkspaceData() {
         if (getDebugMockMode()) {
             return {
@@ -127,89 +136,79 @@ export const orbyteApi = {
         return requestJson<any[]>('/api/order').catch(() => []);
     },
 
-    async parseLegacySystemFile(file: File, extractedRawText: string) {
-        const ext = file.name.split('.').pop()?.toLowerCase() || 'dat';
-        if (!getDebugMockMode()) {
-            try {
-                const formData = new FormData();
-                formData.append('file', file);
-                formData.append('rawPreview', extractedRawText.slice(0, 15000));
-                const res = await fetch(`${getApiBaseUrl()}/api/v1/migration/ai-parse`, { method: 'POST', body: formData });
-                if (res.ok) return await res.json();
-            } catch { /* Fallback to local parser */ }
-        }
-
-        const systemMap: Record<string, string> = {
-            db: 'SQLite3 Legacy POS / Inventory Database (.db)',
-            sqlite: 'SQLite Embedded ERP Database (.sqlite)',
-            md: 'Notion / Markdown Inventory & Operations Notes (.md)',
-            sql: 'MySQL / SQL Accounting Dump (.sql)',
-            json: 'Legacy Cloud POS JSON Export (.json)',
-            csv: 'AutoCount / Excel Legacy Export (.csv)',
-        };
-
-        const lines = extractedRawText
-            .split(/\r?\n/)
-            .map((l) => l.replace(/^[|\-*#>\s]+|[|\s]+$/g, '').trim())
-            .filter((l) => l.length > 4 && !/^(create|insert|table|sqlite|---)/i.test(l));
-
-        const parsedProducts: Product[] = lines.slice(0, 4).map((line, idx) => {
-            const numMatch = line.match(/\b(\d{1,4})\b/);
-            const stockVal = numMatch ? Math.max(3, Number(numMatch[1])) : 9;
-            const cleanName = line.split(/[|,;:\t]/)[0]?.slice(0, 36).trim() || `Legacy Item #${idx + 1}`;
-            return {
-                id: `P-MIG-${Date.now()}-${idx}`,
-                sku: `LEG-${ext.toUpperCase()}-${100 + idx}`,
-                name: cleanName.length > 2 ? cleanName : `${file.name.replace(/\.[^.]+$/, '')} SKU #${idx + 1}`,
-                category: 'Migrated Legacy SKU',
-                industry: idx % 2 === 0 ? 'FNB_PERISHABLE' : 'B2B_RAW_MATERIAL',
-                uom: 'units', stock: stockVal, minThreshold: 12, reorderQty: 35,
-                priceRM: 48.0 + idx * 10, unitCostRM: 29.0 + idx * 6, dailyDepletionRate: 3.2, leadTimeDays: 2, moq: 10,
-                supplierName: 'Migrated Legacy Supplier Sdn Bhd', supplierContact: '+6012-3998877',
-                performance: 'Good', visibility: true, variantSpec: `Migrated from ${file.name}`,
-                restockStatus: stockVal <= 12 ? 'TRIGGERED_PENDING_APPROVAL' : 'HEALTHY',
+    async fileToBase64(file: File): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const result = reader.result as string;
+                const base64 = result.includes(',') ? result.split(',')[1] : result;
+                resolve(base64);
             };
+            reader.onerror = (error) => reject(error);
+            reader.readAsDataURL(file);
         });
+    },
 
-        if (!parsedProducts.length) {
-            parsedProducts.push({
-                id: `P-MIG-${Date.now()}`,
-                sku: `DB-${Math.floor(1000 + Math.random() * 9000)}`,
-                name: `Imported SKU (${file.name})`,
-                category: 'Migrated Catalog', industry: 'RETAIL_VARIANT', uom: 'pcs',
-                stock: 8, minThreshold: 15, reorderQty: 40, priceRM: 65.0, unitCostRM: 38.0,
-                dailyDepletionRate: 2.8, leadTimeDays: 2, moq: 10,
-                supplierName: 'Legacy ERP Supplier MY', supplierContact: '+6012-8889900',
-                performance: 'Good', visibility: true, restockStatus: 'TRIGGERED_PENDING_APPROVAL',
+    async parseLegacySystemFile(file: File, extractedRawText: string) {
+        try {
+            const isBinaryDb = /\.(db|sqlite|sqlite3)$/i.test(file.name);
+            const fileBase64 = isBinaryDb ? await this.fileToBase64(file) : undefined;
+
+            const payload = {
+                fileName: file.name,
+                rawContent: extractedRawText,
+                fileBase64: fileBase64
+            };
+
+            const res = await fetch(`${getApiBaseUrl()}/api/migration/parse`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(payload),
             });
-        }
 
-        return {
-            detectedSystem: systemMap[ext] || `Custom Legacy SME System (.${ext})`,
-            fileFormat: `.${ext.toUpperCase()}`,
-            aiConfidence: 97,
-            fieldMappings: [
-                { sourceField: ext === 'db' ? 'tbl_stock.item_code' : 'item_id / heading', targetVyteField: 'Product.sku', sampleValue: parsedProducts[0].sku },
-                { sourceField: ext === 'db' ? 'tbl_stock.qty_on_hand' : 'qty / balance', targetVyteField: 'Product.stock', sampleValue: String(parsedProducts[0].stock) },
-                { sourceField: ext === 'db' ? 'tbl_ar.outstanding_rm' : 'unpaid_balance', targetVyteField: 'InvoiceItem.amountRM', sampleValue: 'RM 1,850.00' },
-                { sourceField: ext === 'db' ? 'tbl_assets.warranty_exp' : 'expiry_date', targetVyteField: 'Compliance.licenseExpiryDate', sampleValue: '2026-11-15' },
-            ],
-            products: parsedProducts,
-            invoices: [{
-                id: `INV-MIG-${Date.now()}`, invNo: `OLD-AR-${Math.floor(1000 + Math.random() * 9000)}`,
-                type: 'CUSTOMER_RECEIVABLE' as const, party: `Legacy Customer (${file.name})`,
-                date: '10 Oct 2026', amountRM: 1850.0, aiCategory: `Migrated Receivable from ${file.name}`,
-                aiConfidence: 96, paid: false, status: 'NEEDS_REVIEW' as const,
-            }],
-            complianceProfiles: [{
-                registrationNo: `FLEET-W-${Math.floor(1000 + Math.random() * 9000)}`,
-                companyName: 'COLD-CHAIN LORRY WXY 8821 (JPJ & WARRANTY)', companyType: 'SDN_BHD' as const,
-                ssmExpiryDate: '2026-11-12', councilName: 'JPJ / PUSPAKOM & Chiller Warranty',
-                licenseType: 'PREMISE_LICENSE' as const, licenseExpiryDate: '2026-11-05',
-                complianceStatus: 'EXPIRING_SOON' as const, autoAlertEnabled: true,
-            }],
-            aiSummary: `Successfully parsed "${file.name}" (${(file.size / 1024).toFixed(1)} KB). AI normalized ${parsedProducts.length} inventory SKUs, 1 outstanding customer receivable invoice, and 1 commercial vehicle/warranty record into Vyte's unified schema.`,
-        };
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.error || `Analyze Error (HTTP ${res.status})`);
+            }
+
+            return await res.json();
+        } catch (err: any) {
+            console.error('Migration parse failed:', err);
+            return null;
+        }
+    },
+
+    async commitMigration(payload: {
+        sourceFileName: string;
+        transitionMode: 'SHADOW' | 'COPILOT' | 'AUTOPILOT';
+        products: any[];
+        invoices: any[];
+        complianceProfiles: any[];
+    }) {
+        const isDebug = getDebugMockMode();
+
+        try {
+            const res = await fetch(`${getApiBaseUrl()}/api/migration/commit`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.error || `Backend Connection Error (HTTP ${res.status})`);
+            }
+
+            return await res.json();
+        } catch (err: any) {
+            console.error('[API] commitMigration error:', err);
+            if (!isDebug) {
+                throw new Error(`Error: ${err.message}`);
+            }
+            throw err;
+        }
     },
 
     async createProduct(form: NewProductForm): Promise<Product | null> {
