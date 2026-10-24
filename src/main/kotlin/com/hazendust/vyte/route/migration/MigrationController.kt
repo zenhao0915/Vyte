@@ -10,7 +10,6 @@ import com.hazendust.vyte.route.invoice.CreateInvoiceRequest
 import com.hazendust.vyte.route.invoice.InvoiceItem
 import com.hazendust.vyte.route.invoice.InvoiceResult
 import com.hazendust.vyte.route.invoice.InvoiceService
-import com.hazendust.vyte.route.product.NewProductForm
 import com.hazendust.vyte.route.product.Product
 import com.hazendust.vyte.route.product.ProductResult
 import com.hazendust.vyte.route.product.ProductService
@@ -39,7 +38,6 @@ object MigrationController : BaseRouteController {
 
     override fun register(route: Route) {
         route.route("/api/migration") {
-            // 1. AI 解析任意旧系统文件 (.db, .sqlite, .sql, .csv, .json, .md, .txt)
             post("/parse") {
                 val req = call.receiveOrNull<ParseMigrationRequest>()
                     ?: return@post call.respondError(HttpStatusCode.BadRequest, "Invalid JSON body")
@@ -71,7 +69,6 @@ object MigrationController : BaseRouteController {
                 call.respond(HttpStatusCode.OK, preview)
             }
 
-            // 2. 确认导入并持久化到后端 (非破坏性合并 Upsert)
             post("/commit") {
                 val req = call.receiveOrNull<CommitMigrationRequest>()
                     ?: return@post call.respondError(HttpStatusCode.BadRequest, "Invalid JSON body")
@@ -117,28 +114,27 @@ object MigrationController : BaseRouteController {
                     }
                 }
 
-                // 2.2 导入或合并发票 (按 invNo + party 防重)
-                for (inv in req.invoices) {
-                    val date = inv.date?.let { InvoiceService.parseDate(it) } ?: InvoiceService.today()
-                    val dueDate = inv.dueDate?.let { InvoiceService.parseDate(it) }
+                for ((invNo, type, party, date1, dueDate1, amountRM, aiCategory, _, paid, status) in req.invoices) {
+                    val date = date1?.let { InvoiceService.parseDate(it) } ?: InvoiceService.today()
+                    val dueDate = dueDate1?.let { InvoiceService.parseDate(it) }
                     val createReq = CreateInvoiceRequest(
-                        type = if (inv.type in InvoiceService.TYPES) inv.type else InvoiceService.RECEIVABLE,
-                        party = inv.party.ifBlank { "Migrated Partner" },
-                        amountRM = inv.amountRM.coerceAtLeast(0.0),
+                        type = if (type in InvoiceService.TYPES) type else InvoiceService.RECEIVABLE,
+                        party = party.ifBlank { "Migrated Partner" },
+                        amountRM = amountRM.coerceAtLeast(0.0),
                         date = date.toString(),
                         dueDate = dueDate?.toString(),
-                        aiCategory = inv.aiCategory.ifBlank { "Migrated Legacy Invoice" },
-                        invNo = inv.invNo,
+                        aiCategory = aiCategory.ifBlank { "Migrated Legacy Invoice" },
+                        invNo = invNo,
                         sourceRef = "MIGRATED:${req.sourceFileName}",
                         notes = "Migrated from ${req.sourceFileName} (${req.transitionMode} mode)"
                     )
                     when (val res = InvoiceService.createFromRequest(createReq, date, dueDate)) {
                         is InvoiceResult.Ok -> {
                             var item = res.invoice
-                            if (inv.paid) {
+                            if (paid) {
                                 (InvoiceService.setPaid(item.id, true) as? InvoiceResult.Ok)?.let { item = it.invoice }
                             }
-                            if (inv.status == "VERIFIED") {
+                            if (status == "VERIFIED") {
                                 (InvoiceService.verify(item.id) as? InvoiceResult.Ok)?.let { item = it.invoice }
                             }
                             savedInvoices.add(item)
@@ -147,7 +143,6 @@ object MigrationController : BaseRouteController {
                     }
                 }
 
-                // 2.3 导入或合并合规证照/保修档案
                 val savedCompliance = mutableListOf<ComplianceProfileDto>()
                 for (comp in req.complianceProfiles) {
                     ws.complianceProfiles.removeIf { it.registrationNo.equals(comp.registrationNo, ignoreCase = true) }
@@ -175,7 +170,6 @@ object MigrationController : BaseRouteController {
                 )
             }
 
-            // 获取当前工作区的合规档案
             get("/compliance") {
                 call.respond(WorkspaceContext.current().complianceProfiles.toList())
             }

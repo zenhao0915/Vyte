@@ -18,11 +18,13 @@ object ProductController : BaseRouteController {
     private suspend fun ApplicationCall.respondError(status: HttpStatusCode, message: String) =
         respond(status, mapOf("error" to message))
 
-    private suspend fun ApplicationCall.respondResult(result: ProductResult, okStatus: HttpStatusCode = HttpStatusCode.OK) =
-        when (result) {
-            is ProductResult.Ok -> respond(okStatus, result.product)
-            is ProductResult.Fail -> respondError(result.status, result.error)
-        }
+    private suspend fun ApplicationCall.respondResult(
+        result: ProductResult,
+        okStatus: HttpStatusCode = HttpStatusCode.OK
+    ) = when (result) {
+        is ProductResult.Ok -> respond(okStatus, result.product)
+        is ProductResult.Fail -> respondError(result.status, result.error)
+    }
 
     private fun rm(amount: Double) = "RM ${"%.2f".format(amount)}"
 
@@ -45,8 +47,13 @@ object ProductController : BaseRouteController {
         req.name != null && req.name.isBlank() -> "name must not be empty"
         req.category != null && req.category.isBlank() -> "category must not be empty"
         listOfNotNull(req.priceRM, req.unitCostRM).any { it < 0 } -> "priceRM and unitCostRM must be >= 0"
-        listOfNotNull(req.minThreshold, req.reorderQty, req.leadTimeDays, req.moq).any { it < 0 } ->
-            "minThreshold, reorderQty, leadTimeDays and moq must be >= 0"
+        listOfNotNull(
+            req.minThreshold,
+            req.reorderQty,
+            req.leadTimeDays,
+            req.moq
+        ).any { it < 0 } -> "minThreshold, reorderQty, leadTimeDays and moq must be >= 0"
+
         else -> null
     }
 
@@ -74,20 +81,46 @@ object ProductController : BaseRouteController {
         req.supplierContact?.let { "supplier contact" },
         req.visibility?.let { if (it) "visible" else "hidden" },
         req.leadTimeDays?.let { "lead time $it days" },
-        req.moq?.let { "MOQ $it" }
-    ).joinToString(", ").ifEmpty { "no changes" }
+        req.moq?.let { "MOQ $it" }).joinToString(", ").ifEmpty { "no changes" }
 
     override fun register(route: Route) {
         ProductService.init()
 
         route.route("/api/products") {
-            // GET http://localhost:8989/api/products?industry=ALL&search=milk&includeArchived=false
+            post {
+                val form = call.receiveOrNull<NewProductForm>() ?: return@post call.respondError(
+                    HttpStatusCode.BadRequest,
+                    "Invalid JSON body"
+                )
+
+                val safeIndustry = form.industry?.takeIf { it in ProductService.INDUSTRIES } ?: when {
+                    form.category?.contains("Dairy", true) == true || form.category?.contains(
+                        "Milk",
+                        true
+                    ) == true || form.category?.contains("Food", true) == true || form.category?.contains(
+                        "Beverage",
+                        true
+                    ) == true -> "FNB_PERISHABLE"
+
+                    form.category?.contains("Box", true) == true || form.category?.contains(
+                        "Packaging",
+                        true
+                    ) == true -> "B2B_RAW_MATERIAL"
+
+                    else -> "RETAIL_VARIANT"
+                }
+                val safeForm = form.copy(industry = safeIndustry)
+                validate(safeForm)?.let { return@post call.respondError(HttpStatusCode.BadRequest, it) }
+
+                val result = ProductService.create(safeForm)
+                call.respondResult(result, HttpStatusCode.Created)
+            }
+
             get {
                 val industry = call.request.queryParameters["industry"]?.ifBlank { null }
                 if (industry != null && industry != "ALL" && industry !in ProductService.INDUSTRIES) {
                     return@get call.respondError(
-                        HttpStatusCode.BadRequest,
-                        "industry must be ALL or one of ${ProductService.INDUSTRIES}"
+                        HttpStatusCode.BadRequest, "industry must be ALL or one of ${ProductService.INDUSTRIES}"
                     )
                 }
                 val includeArchived = call.request.queryParameters["includeArchived"].toBoolean()
@@ -97,8 +130,10 @@ object ProductController : BaseRouteController {
             // GET http://localhost:8989/api/products/{id}
             get("/{id}") {
                 val id = call.parameters["id"].orEmpty()
-                val product = ProductService.find(id)
-                    ?: return@get call.respondError(HttpStatusCode.NotFound, "Product $id not found")
+                val product = ProductService.find(id) ?: return@get call.respondError(
+                    HttpStatusCode.NotFound,
+                    "Product $id not found"
+                )
                 call.respond(product)
             }
 
@@ -108,30 +143,16 @@ object ProductController : BaseRouteController {
                 val rawLimit = call.request.queryParameters["limit"]
                 val limit = if (rawLimit.isNullOrBlank()) DEFAULT_MOVEMENT_LIMIT else rawLimit.toIntOrNull()
                 if (limit == null || limit !in 1..MAX_MOVEMENT_LIMIT) {
-                    return@get call.respondError(HttpStatusCode.BadRequest, "limit must be a number between 1 and $MAX_MOVEMENT_LIMIT")
-                }
-                val movements = ProductService.movements(id, limit)
-                    ?: return@get call.respondError(HttpStatusCode.NotFound, "Product $id not found")
-                call.respond(movements)
-            }
-
-            // POST http://localhost:8989/api/products
-            post {
-                val form = call.receiveOrNull<NewProductForm>()
-                    ?: return@post call.respondError(HttpStatusCode.BadRequest, "Invalid JSON body")
-                validate(form)?.let { return@post call.respondError(HttpStatusCode.BadRequest, it) }
-
-                val result = ProductService.create(form)
-                if (result is ProductResult.Ok) {
-                    val product = result.product
-                    AuditService.log(
-                        module = AuditService.PRODUCTS,
-                        role = AuditService.OPERATIONS_STAFF,
-                        detail = "Added new SKU ${product.sku} (${product.name}) with ${product.stock} ${product.uom} in stock." +
-                            if (product.restockStatus == "TRIGGERED_PENDING_APPROVAL") " Auto-restock triggered (at or below min ${product.minThreshold})." else ""
+                    return@get call.respondError(
+                        HttpStatusCode.BadRequest,
+                        "limit must be a number between 1 and $MAX_MOVEMENT_LIMIT"
                     )
                 }
-                call.respondResult(result, HttpStatusCode.Created)
+                val movements = ProductService.movements(id, limit) ?: return@get call.respondError(
+                    HttpStatusCode.NotFound,
+                    "Product $id not found"
+                )
+                call.respond(movements)
             }
 
             // PATCH http://localhost:8989/api/products/{id}
@@ -157,10 +178,8 @@ object ProductController : BaseRouteController {
                 val id = call.parameters["id"].orEmpty()
                 val req = call.receiveOrNull<OwnerActionRequest>()
                 // 优先从 Header 或 QueryParam 获取角色，没有则默认 SME_OWNER
-                val role = req?.role?.ifBlank { null }
-                    ?: call.request.queryParameters["role"]
-                    ?: call.request.headers["X-User-Role"]
-                    ?: AuditService.SME_OWNER
+                val role = req?.role?.ifBlank { null } ?: call.request.queryParameters["role"]
+                ?: call.request.headers["X-User-Role"] ?: AuditService.SME_OWNER
 
                 val result = ProductService.archive(id)
                 if (result is ProductResult.Ok) {
@@ -175,25 +194,6 @@ object ProductController : BaseRouteController {
                 val role = req?.role?.ifBlank { null } ?: AuditService.SME_OWNER
                 val result = ProductService.approveRestock(id)
                 call.respondResult(result)
-            }
-
-            post {
-                val form = call.receiveOrNull<NewProductForm>()
-                    ?: return@post call.respondError(HttpStatusCode.BadRequest, "Invalid JSON body")
-
-                // 以前端为最高优先级：若前端未传 industry，根据 category 智能自动推断
-                val safeIndustry = form.industry?.takeIf { it in ProductService.INDUSTRIES }
-                    ?: when {
-                        form.category?.contains("Dairy", true) == true || form.category?.contains("Milk", true) == true ||
-                                form.category?.contains("Food", true) == true || form.category?.contains("Beverage", true) == true -> "FNB_PERISHABLE"
-                        form.category?.contains("Box", true) == true || form.category?.contains("Packaging", true) == true -> "B2B_RAW_MATERIAL"
-                        else -> "RETAIL_VARIANT"
-                    }
-                val safeForm = form.copy(industry = safeIndustry)
-                validate(safeForm)?.let { return@post call.respondError(HttpStatusCode.BadRequest, it) }
-
-                val result = ProductService.create(safeForm)
-                call.respondResult(result, HttpStatusCode.Created)
             }
 
             // POST http://localhost:8989/api/products/{id}/stock-movement
@@ -211,8 +211,10 @@ object ProductController : BaseRouteController {
             // POST http://localhost:8989/api/products/{id}/adjust
             post("/{id}/adjust") {
                 val id = call.parameters["id"].orEmpty()
-                val req = call.receiveOrNull<AdjustStockRequest>()
-                    ?: return@post call.respondError(HttpStatusCode.BadRequest, "Invalid JSON body")
+                val req = call.receiveOrNull<AdjustStockRequest>() ?: return@post call.respondError(
+                    HttpStatusCode.BadRequest,
+                    "Invalid JSON body"
+                )
                 if (req.role !in setOf(AuditService.SME_OWNER, AuditService.MANAGER)) {
                     return@post call.respondError(HttpStatusCode.Forbidden, "Only SME_OWNER can adjust stock")
                 }
@@ -244,9 +246,14 @@ object ProductController : BaseRouteController {
                         AuditService.log(
                             module = AuditService.PRODUCTS,
                             role = AuditService.OPERATIONS_STAFF,
-                            detail = "Confirmed restock of ${result.product.name}; supplier payable ${invoice.invNo} for ${invoice.party} (${rm(invoice.amountRM)}) created."
+                            detail = "Confirmed restock of ${result.product.name}; supplier payable ${invoice.invNo} for ${invoice.party} (${
+                                rm(invoice.amountRM)
+                            }) created."
                         )
-                        call.respond(HttpStatusCode.OK, ConfirmDeliveryResponse(product = result.product, invoice = invoice))
+                        call.respond(
+                            HttpStatusCode.OK,
+                            ConfirmDeliveryResponse(product = result.product, invoice = invoice)
+                        )
                     }
                 }
             }

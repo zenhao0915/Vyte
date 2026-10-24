@@ -3,7 +3,9 @@ package com.hazendust.vyte.route.order
 import com.hazendust.vyte.data.DataStore
 import com.hazendust.vyte.data.WorkspaceContext
 import com.hazendust.vyte.manager.BaseRouteController
+import com.hazendust.vyte.manager.DatabaseManager
 import com.hazendust.vyte.route.ai.AiService
+import com.hazendust.vyte.route.audit.AuditService
 import com.hazendust.vyte.route.invoice.InvoiceService
 import com.hazendust.vyte.route.product.ProductService
 import io.ktor.http.*
@@ -13,46 +15,36 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
 import java.time.LocalDate
 import java.util.Base64
 
-@Serializable
-data class OrderDetailDto(
-    val orderID: String,
-    val requestedDate: String,
-    val subtotal: Double,
-    val currency: String,
-    val internalNotes: String? = null,
-    val createdBy: String,
-    val lineOrders: List<LineOrderItemRequest>,
-    val status: String,
-    val invoiceID: String? = null
-)
-
 object OrderController : BaseRouteController {
-    private val VALID_ACTIONS = setOf("APPROVE", "REJECT", "MODIFY")
-
     private suspend inline fun <reified T : Any> ApplicationCall.receiveOrNull(): T? =
         runCatching { receive<T>() }.getOrNull()
 
+    private fun resolveRealProductId(identifier: String): String? {
+        if (identifier.isBlank()) return null
+        if (DataStore.products.containsKey(identifier)) return identifier
+        return DataStore.products.values.firstOrNull {
+            it.sku.equals(identifier, ignoreCase = true) || it.name.equals(identifier, ignoreCase = true)
+        }?.id
+    }
     override fun register(route: Route) {
-        // 同时支持单数 /api/order 与复数 /api/orders
         listOf("/api/order", "/api/orders").forEach { basePath ->
             route.route(basePath) {
                 get {
                     val ws = WorkspaceContext.current()
                     val orders = ws.savedOrders.values.map { o ->
                         OrderDetailDto(
-                            orderID = o.orderID,
+                            orderID = o.effectiveOrderId,
                             requestedDate = o.requestedDate,
                             subtotal = o.subtotal,
                             currency = o.currency,
                             internalNotes = o.internalNotes,
                             createdBy = o.createdBy,
                             lineOrders = o.lineOrders,
-                            status = ws.orderStatuses[o.orderID] ?: "PENDING_HUMAN_APPROVAL",
-                            invoiceID = ws.orderInvoiceIds[o.orderID]
+                            status = ws.orderStatuses[o.effectiveOrderId] ?: "APPROVED",
+                            invoiceID = ws.orderInvoiceIds[o.effectiveOrderId]
                         )
                     }
                     call.respond(orders)
@@ -65,15 +57,15 @@ object OrderController : BaseRouteController {
                         ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "Order $id not found"))
                     call.respond(
                         OrderDetailDto(
-                            orderID = o.orderID,
+                            orderID = o.effectiveOrderId,
                             requestedDate = o.requestedDate,
                             subtotal = o.subtotal,
                             currency = o.currency,
                             internalNotes = o.internalNotes,
                             createdBy = o.createdBy,
                             lineOrders = o.lineOrders,
-                            status = ws.orderStatuses[o.orderID] ?: "PENDING_HUMAN_APPROVAL",
-                            invoiceID = ws.orderInvoiceIds[o.orderID]
+                            status = ws.orderStatuses[o.effectiveOrderId] ?: "APPROVED",
+                            invoiceID = ws.orderInvoiceIds[o.effectiveOrderId]
                         )
                     )
                 }
@@ -109,9 +101,10 @@ object OrderController : BaseRouteController {
                         val itemsArr = aiResult.data["items"] as? kotlinx.serialization.json.JsonArray
                         itemsArr?.forEach { el ->
                             val obj = el as? kotlinx.serialization.json.JsonObject ?: return@forEach
-                            val pid = (obj["productID"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: return@forEach
+                            val rawId = (obj["productID"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: return@forEach
                             val qty = (obj["requestedQty"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull()?.coerceIn(1, 9999) ?: 1
-                            val product = ProductService.find(pid) ?: return@forEach
+                            val realId = resolveRealProductId(rawId) ?: return@forEach
+                            val product = ProductService.find(realId) ?: return@forEach
                             extractedItems.add(
                                 ExtractedOrderItem(
                                     productID = product.id,
@@ -127,7 +120,7 @@ object OrderController : BaseRouteController {
                         }
                     }
 
-                    // 兜底本地匹配
+                    // 本地规则兜底匹配
                     if (extractedItems.isEmpty()) {
                         val rawLower = req.rawOrderText.lowercase()
                         val matched = products.filter { p ->
@@ -165,30 +158,65 @@ object OrderController : BaseRouteController {
                     )
                 }
 
+                // 核心：添加订单并立即扣减库存、更新数据库
                 post {
                     val req = call.receiveOrNull<CreateInvoiceOrderRequest>()
                         ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid JSON"))
 
                     val ws = WorkspaceContext.current()
-                    val finalOrderId = req.orderID.ifBlank { "ORD-${System.currentTimeMillis() % 100000}" }
-                    ws.savedOrders[finalOrderId] = req.copy(orderID = finalOrderId)
-                    ws.orderStatuses[finalOrderId] = "PENDING_HUMAN_APPROVAL"
+                    val finalOrderId = req.effectiveOrderId
 
+                    // 1. 检查库存并扣除商品库存
+                    val normalizedLines = mutableListOf<LineOrderItemRequest>()
+                    for (line in req.lineOrders) {
+                        val realId = resolveRealProductId(line.effectiveIdentifier)
+                            ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "Product '${line.effectiveIdentifier}' not found"))
+                        val qty = line.effectiveQty
+                        if (!ProductService.checkStock(realId, qty)) {
+                            return@post call.respond(HttpStatusCode.Conflict, mapOf("error" to "Insufficient stock for $realId (requested $qty)"))
+                        }
+                        normalizedLines.add(line.copy(lineID = line.effectiveLineId, productID = realId, quantity = qty))
+                    }
+
+                    // 2. 依次扣减库存并生成出库流水
+                    for (line in normalizedLines) {
+                        ProductService.deductStock(line.productID, line.quantity, "Customer Order $finalOrderId", req.createdBy)
+                    }
+
+                    val normalizedReq = req.copy(orderID = finalOrderId, lineOrders = normalizedLines)
+                    ws.savedOrders[finalOrderId] = normalizedReq
+                    ws.orderStatuses[finalOrderId] = "APPROVED"
+
+                    // 3. 生成关联应收发票
+                    val partyName = req.internalNotes?.substringAfter("Customer:", "")?.trim()?.ifEmpty { null }
+                        ?: "Customer Order ($finalOrderId)"
                     val createdInv = InvoiceService.createReceivable(
-                        party = req.internalNotes?.substringAfter("Customer:", "")?.trim()?.ifEmpty { null } ?: "Customer Order ($finalOrderId)",
+                        party = partyName,
                         amountRM = req.subtotal,
                         category = "Wholesale Customer Order",
                         aiConfidence = 97,
                         relatedRef = finalOrderId
                     )
                     ws.orderInvoiceIds[finalOrderId] = createdInv.id
+                    InvoiceService.verify(createdInv.id)
+
+                    // 4. 立即同步到 SQLite Database
+                    if (DatabaseManager.isReady) {
+                        DatabaseManager.saveWorkspace(ws)
+                    }
+
+                    AuditService.log(
+                        "Orders",
+                        req.createdBy.ifBlank { AuditService.SME_OWNER },
+                        "Created order $finalOrderId (${normalizedLines.size} items, RM ${req.subtotal}), stock deducted and saved to DB."
+                    )
 
                     call.respond(
                         HttpStatusCode.Created,
                         CreateInvoiceOrderResponse(
                             orderID = finalOrderId,
                             invoiceID = createdInv.id,
-                            status = "PENDING_HUMAN_APPROVAL",
+                            status = "APPROVED",
                             databaseUpdated = true,
                             invoicePdfUrl = "/invoices/${createdInv.id}.pdf",
                             createdAt = LocalDate.now().toString()
@@ -200,6 +228,7 @@ object OrderController : BaseRouteController {
                     val req = call.receiveOrNull<ApproveCustomerOrderRequest>()
                         ?: return@patch call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid JSON"))
 
+                    val orderId = req.effectiveOrderId
                     val action = req.approvalAction.trim().uppercase()
                     val ws = WorkspaceContext.current()
                     val finalStatus = when (action) {
@@ -208,33 +237,47 @@ object OrderController : BaseRouteController {
                         else -> "REJECTED"
                     }
 
+                    var inventoryDeducted = false
                     if (action == "APPROVE") {
-                        val originalOrder = ws.savedOrders[req.orderID]
-                        if (originalOrder != null) {
+                        val originalOrder = ws.savedOrders[orderId]
+                        val currentStatus = ws.orderStatuses[orderId]
+                        // 如果创建时未扣减，审批时补扣
+                        if (originalOrder != null && currentStatus != "APPROVED") {
                             for (line in originalOrder.lineOrders) {
-                                if (!ProductService.checkStock(line.productID, line.quantity)) {
-                                    return@patch call.respond(HttpStatusCode.Conflict, mapOf("error" to "Insufficient stock for ${line.productID}"))
+                                val realId = resolveRealProductId(line.effectiveIdentifier) ?: line.productID
+                                val qty = line.effectiveQty
+                                if (realId.isNotBlank() && !ProductService.checkStock(realId, qty)) {
+                                    return@patch call.respond(HttpStatusCode.Conflict, mapOf("error" to "Insufficient stock for $realId"))
                                 }
                             }
                             for (line in originalOrder.lineOrders) {
-                                ProductService.deductStock(line.productID, line.quantity, "Customer Order ${req.orderID}", req.updatedBy)
+                                val realId = resolveRealProductId(line.effectiveIdentifier) ?: line.productID
+                                val qty = line.effectiveQty
+                                if (realId.isNotBlank()) {
+                                    ProductService.deductStock(realId, qty, "Customer Order $orderId", req.updatedBy)
+                                }
                             }
+                            inventoryDeducted = true
                         }
-                        ws.orderStatuses[req.orderID] = "APPROVED"
-                        val invId = req.invoiceID.ifBlank { ws.orderInvoiceIds[req.orderID].orEmpty() }
+                        ws.orderStatuses[orderId] = "APPROVED"
+                        val invId = req.effectiveInvoiceId.ifBlank { ws.orderInvoiceIds[orderId].orEmpty() }
                         if (invId.isNotBlank()) InvoiceService.verify(invId)
                     } else {
-                        ws.orderStatuses[req.orderID] = finalStatus
+                        ws.orderStatuses[orderId] = finalStatus
+                    }
+
+                    if (DatabaseManager.isReady) {
+                        DatabaseManager.saveWorkspace(ws)
                     }
 
                     call.respond(
                         HttpStatusCode.OK,
                         ApproveCustomerOrderResponse(
-                            orderID = req.orderID,
+                            orderID = orderId,
                             finalStatus = finalStatus,
-                            inventoryDeducted = action == "APPROVE",
+                            inventoryDeducted = inventoryDeducted,
                             updatedAt = LocalDate.now().toString(),
-                            message = "Order ${req.orderID} marked as $finalStatus."
+                            message = "Order $orderId marked as $finalStatus."
                         )
                     )
                 }

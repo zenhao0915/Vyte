@@ -1,79 +1,51 @@
+// FILE: src/main/kotlin/com/hazendust/vyte/route/product/ProductRepository.kt
 package com.hazendust.vyte.route.product
 
+import com.hazendust.vyte.data.WorkspaceContext
 import com.hazendust.vyte.manager.DatabaseManager
 import kotlinx.serialization.json.Json
 import java.time.OffsetDateTime
 
-/**
- * Saves products and stock movements in the project's SQLite database (vyte.db) through DatabaseManager.dbConnection.
- * Uses its own tables (product_records, stock_movements); the tables DatabaseManager creates are not touched.
- */
 object ProductRepository {
-    private val json = Json { ignoreUnknownKeys = true }
-
-    @Volatile
-    var enabled = false
-        private set
-
-    @Synchronized
-    fun init(): Boolean {
-        if (enabled) return true
-        return try {
-            DatabaseManager.dbConnection.createStatement().use { stmt ->
-                stmt.execute("""
-                    CREATE TABLE IF NOT EXISTS product_records (
-                        id TEXT PRIMARY KEY,
-                        data TEXT NOT NULL,
-                        updated_at TEXT NOT NULL
-                    );
-                """.trimIndent())
-
-                stmt.execute("""
-                    CREATE TABLE IF NOT EXISTS stock_movements (
-                        id TEXT PRIMARY KEY,
-                        product_id TEXT NOT NULL,
-                        type TEXT NOT NULL,
-                        qty_change INTEGER NOT NULL,
-                        stock_after INTEGER NOT NULL,
-                        reason TEXT NOT NULL,
-                        user_id TEXT NOT NULL,
-                        timestamp TEXT NOT NULL
-                    );
-                """.trimIndent())
-
-                stmt.execute("CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON stock_movements (product_id);")
-            }
-            enabled = true
-            true
-        } catch (e: Exception) {
-            println("[Products] SQLite unavailable, products will NOT survive a restart: ${e.message}")
-            false
-        }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
     }
 
+    val enabled: Boolean
+        get() = DatabaseManager.isReady
+
     @Synchronized
-    fun loadRecords(): List<ProductRecord> {
+    fun init(): Boolean = DatabaseManager.isReady
+
+    @Synchronized
+    fun loadRecords(tenantId: String = WorkspaceContext.currentId()): List<ProductRecord> {
         if (!enabled) return emptyList()
         val records = mutableListOf<ProductRecord>()
-        DatabaseManager.dbConnection.createStatement().use { stmt ->
-            stmt.executeQuery("SELECT id, data FROM product_records").use { rs ->
+        DatabaseManager.dbConnection.prepareStatement(
+            "SELECT id, record_json FROM tenant_products WHERE tenant_id = ?"
+        ).use { ps ->
+            ps.setString(1, tenantId)
+            ps.executeQuery().use { rs ->
                 while (rs.next()) {
-                    runCatching { json.decodeFromString(ProductRecord.serializer(), rs.getString("data")) }
+                    runCatching { json.decodeFromString(ProductRecord.serializer(), rs.getString("record_json")) }
                         .onSuccess { records.add(it) }
-                        .onFailure { println("[Products] Skipped unreadable product record ${rs.getString("id")}: ${it.message}") }
+                        .onFailure { println("[Products] Skipped unreadable product ${rs.getString("id")}: ${it.message}") }
                 }
             }
         }
         return records
     }
 
-    /** Oldest first (insertion order). */
     @Synchronized
-    fun loadMovements(): List<StockMovement> {
+    fun loadMovements(tenantId: String = WorkspaceContext.currentId()): List<StockMovement> {
         if (!enabled) return emptyList()
         val movements = mutableListOf<StockMovement>()
-        DatabaseManager.dbConnection.createStatement().use { stmt ->
-            stmt.executeQuery("SELECT * FROM stock_movements ORDER BY rowid").use { rs ->
+        DatabaseManager.dbConnection.prepareStatement(
+            "SELECT * FROM tenant_stock_movements WHERE tenant_id = ? ORDER BY rowid ASC"
+        ).use { ps ->
+            ps.setString(1, tenantId)
+            ps.executeQuery().use { rs ->
                 while (rs.next()) {
                     movements.add(
                         StockMovement(
@@ -93,46 +65,59 @@ object ProductRepository {
         return movements
     }
 
-    /**
-     * Saves the product and (optionally) its new movement in one transaction. Throws if the write fails.
-     */
     @Synchronized
     fun save(record: ProductRecord, movement: StockMovement? = null) {
         if (!enabled) return
+        val tenantId = WorkspaceContext.currentId()
         val conn = DatabaseManager.dbConnection
+        val prevAutoCommit = conn.autoCommit
         conn.autoCommit = false
         try {
-            conn.prepareStatement(
-                "INSERT OR REPLACE INTO product_records (id, data, updated_at) VALUES (?, ?, ?);"
-            ).use { ps ->
-                ps.setString(1, record.entity.id)
-                ps.setString(2, json.encodeToString(ProductRecord.serializer(), record))
-                ps.setString(3, OffsetDateTime.now().toString())
+            conn.prepareStatement("""
+                INSERT OR REPLACE INTO tenant_products
+                (tenant_id, id, sku, name, category, stock, safe_threshold, cost_price, selling_price, expiry_date, archived, record_json, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """.trimIndent()).use { ps ->
+                ps.setString(1, tenantId)
+                ps.setString(2, record.entity.id)
+                ps.setString(3, record.entity.sku)
+                ps.setString(4, record.entity.name)
+                ps.setString(5, record.entity.category)
+                ps.setInt(6, record.entity.stock)
+                ps.setInt(7, record.entity.safeThreshold)
+                ps.setDouble(8, record.entity.costPrice)
+                ps.setDouble(9, record.entity.sellingPrice)
+                ps.setString(10, record.entity.expiryDate)
+                ps.setInt(11, if (record.extras.archived) 1 else 0)
+                ps.setString(12, json.encodeToString(ProductRecord.serializer(), record))
+                ps.setString(13, OffsetDateTime.now().toString())
                 ps.executeUpdate()
             }
 
             if (movement != null) {
                 conn.prepareStatement("""
-                    INSERT INTO stock_movements (id, product_id, type, qty_change, stock_after, reason, user_id, timestamp)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                    INSERT OR REPLACE INTO tenant_stock_movements
+                    (tenant_id, id, product_id, type, qty_change, stock_after, reason, user_id, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """.trimIndent()).use { ps ->
-                    ps.setString(1, movement.id)
-                    ps.setString(2, movement.productId)
-                    ps.setString(3, movement.type)
-                    ps.setInt(4, movement.change)
-                    ps.setInt(5, movement.stockAfter)
-                    ps.setString(6, movement.reason)
-                    ps.setString(7, movement.userID)
-                    ps.setString(8, movement.timestamp)
+                    ps.setString(1, tenantId)
+                    ps.setString(2, movement.id)
+                    ps.setString(3, movement.productId)
+                    ps.setString(4, movement.type)
+                    ps.setInt(5, movement.change)
+                    ps.setInt(6, movement.stockAfter)
+                    ps.setString(7, movement.reason)
+                    ps.setString(8, movement.userID)
+                    ps.setString(9, movement.timestamp)
                     ps.executeUpdate()
                 }
             }
             conn.commit()
         } catch (e: Exception) {
-            conn.rollback()
+            runCatching { conn.rollback() }
             throw e
         } finally {
-            conn.autoCommit = true
+            runCatching { conn.autoCommit = prevAutoCommit }
         }
     }
 }

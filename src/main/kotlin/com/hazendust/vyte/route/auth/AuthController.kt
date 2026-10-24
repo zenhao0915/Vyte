@@ -11,6 +11,13 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.random.Random
 
 object AuthController : BaseRouteController {
+    fun resolveTenantFromToken(authHeader: String?): String? {
+        val token = authHeader?.removePrefix("Bearer ")?.trim().orEmpty()
+        if (token.isEmpty()) return null
+        val session = sessionsByToken[token] ?: return null
+        return session.email.ifBlank { session.userID }.ifBlank { null }
+    }
+
     private data class StoredAccount(
         var password: String,
         val session: UserSessionDto

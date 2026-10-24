@@ -118,6 +118,7 @@ data class InvoiceFilter(
  * InvoiceItem fields that DataStore.InvoiceEntity does not hold.
  * Shared fields (type, amount, category, date, relatedRef = sourceRef) stay in DataStore.invoices.
  */
+@Serializable
 data class InvoiceExtras(
     val invNo: String,
     val party: String,

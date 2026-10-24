@@ -2,19 +2,25 @@ package com.hazendust.vyte.route.order
 
 import kotlinx.serialization.Serializable
 
-// ==========================================
-// 3. Order Module
-// ==========================================
+@Serializable
+data class OrderDetailDto(
+    val orderID: String,
+    val requestedDate: String,
+    val subtotal: Double,
+    val currency: String,
+    val internalNotes: String? = null,
+    val createdBy: String,
+    val lineOrders: List<LineOrderItemRequest>,
+    val status: String,
+    val invoiceID: String? = null
+)
 
-/**
- * 3.1 NLP Customer Order & Stock Check
- */
 @Serializable
 data class ProcessNlpOrderRequest(
-    val rawOrderText: String,
-    val customerName: String,
-    val requestedDate: String,
-    val userID: String,
+    val rawOrderText: String = "",
+    val customerName: String = "Customer",
+    val requestedDate: String = "",
+    val userID: String = "",
     val imageBase64: String? = null
 )
 
@@ -36,58 +42,78 @@ data class ProcessNlpOrderResponse(
     val hasSufficientStock: Boolean,
     val extractedItems: List<ExtractedOrderItem>,
     val calculatedSubtotal: Double,
-    val currency: String
+    val currency: String = "MYR"
 )
 
-/**
- * 3.2 Generate Invoice & Update Database
- */
 @Serializable
 data class LineOrderItemRequest(
-    val lineID: String,
-    val productID: String,
-    val quantity: Int,
-    val lineTotal: Double,
-    val currency: String
-)
+    val lineID: String = "",
+    val lineId: String = "",
+    val productID: String = "",
+    val productId: String = "",
+    val sku: String = "",
+    val SKU: String = "",
+    val quantity: Int = 0,
+    val requestedQty: Int = 0,
+    val lineTotal: Double = 0.0,
+    val currency: String = "MYR"
+) {
+    val effectiveLineId: String
+        get() = lineID.ifBlank { lineId }.ifBlank { "LINE-${System.currentTimeMillis() % 100000}" }
+
+    val effectiveIdentifier: String
+        get() = productID.ifBlank { productId }.ifBlank { SKU }.ifBlank { sku }
+
+    val effectiveQty: Int
+        get() = if (quantity > 0) quantity else if (requestedQty > 0) requestedQty else 1
+}
 
 @Serializable
 data class CreateInvoiceOrderRequest(
-    val orderID: String,
-    val requestedDate: String,
-    val subtotal: Double,
-    val currency: String,
+    val orderID: String = "",
+    val orderId: String = "",
+    val requestedDate: String = "",
+    val subtotal: Double = 0.0,
+    val currency: String = "MYR",
     val internalNotes: String? = null,
-    val createdBy: String,
-    val lineOrders: List<LineOrderItemRequest>
-)
+    val createdBy: String = "SME_OWNER",
+    val lineOrders: List<LineOrderItemRequest> = emptyList(),
+    val autoDeductInventory: Boolean = true // 默认创建订单即扣减库存
+) {
+    val effectiveOrderId: String
+        get() = orderID.ifBlank { orderId }.ifBlank { "ORD-${System.currentTimeMillis() % 100000}" }
+}
 
 @Serializable
 data class CreateInvoiceOrderResponse(
     val orderID: String,
     val invoiceID: String,
-    val status: String, // e.g. "PENDING_HUMAN_APPROVAL"
+    val status: String,
     val databaseUpdated: Boolean,
     val invoicePdfUrl: String,
     val createdAt: String
 )
 
-/**
- * 3.3 Human Order Approval
- */
 @Serializable
 data class ApproveCustomerOrderRequest(
-    val orderID: String,
-    val invoiceID: String,
-    val approvalAction: String, // "APPROVE", "REJECT", "MODIFY"
-    val approvalNotes: String,
-    val updatedBy: String // userID
-)
+    val orderID: String = "",
+    val orderId: String = "",
+    val invoiceID: String = "",
+    val invoiceId: String = "",
+    val approvalAction: String = "APPROVE",
+    val approvalNotes: String = "",
+    val updatedBy: String = "SME_OWNER"
+) {
+    val effectiveOrderId: String
+        get() = orderID.ifBlank { orderId }
+    val effectiveInvoiceId: String
+        get() = invoiceID.ifBlank { invoiceId }
+}
 
 @Serializable
 data class ApproveCustomerOrderResponse(
     val orderID: String,
-    val finalStatus: String, // "APPROVED", "REJECTED"
+    val finalStatus: String,
     val inventoryDeducted: Boolean,
     val updatedAt: String,
     val message: String
