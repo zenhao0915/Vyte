@@ -762,7 +762,7 @@ export const INITIAL_COMPLIANCE_PROFILES: BusinessComplianceProfile[] = [
         selectedRenewalTermYears: 1
     },
 
-    // ================= 2. 建筑与租约 (Building & Tenancy) =================
+    // ================= 2. Building & Tenancy Contracts =================
     {
         registrationNo: "BLD-STR-KL-881",
         companyName: "Vortex Suites Tower A (Unit 23-04)",
@@ -809,7 +809,7 @@ export const INITIAL_COMPLIANCE_PROFILES: BusinessComplianceProfile[] = [
         selectedRenewalTermYears: 1
     },
 
-    // ================= 3. 软件订阅与授权 (Software Licensing) =================
+    // ================= 3. Software Licensing & Subscriptions =================
     {
         registrationNo: "SOFT-JB-9941",
         companyName: "JetBrains All Products Pack (Backend Dept)",

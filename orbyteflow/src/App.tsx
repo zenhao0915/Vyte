@@ -45,7 +45,12 @@ import { UniversalSystemMigratorModal } from './components/migration/UniversalSy
 import { CustomerSupportPortalModal } from './components/support/CustomerSupportPortalModal';
 
 const SESSION_KEY = 'vyte_active_session_v1';
-const FALLBACK_RATES: Record<CurrencyCode, number> = { MYR: 1.0, SGD: 0.313, USD: 0.244 };
+const FALLBACK_RATES: Record<CurrencyCode, number> = {
+    MYR: 1.0,
+    SGD: 0.313,
+    USD: 0.244,
+    RMB: 1.735,
+};
 
 const stripModPrefix = (t: string) =>
     t
@@ -112,8 +117,10 @@ export default function App() {
     });
     const [exchangeRates, setExchangeRates] = usePersistedState<Record<CurrencyCode, number>>(
         'vyte_live_fx_rates_v2',
-        FALLBACK_RATES
+        FALLBACK_RATES,
+        (saved) => ({ ...FALLBACK_RATES, ...saved })
     );
+
     const [rateSourceLabel, setRateSourceLabel] = useState('Syncing FX rates...');
     const [loadingOverlayMessage, setLoadingOverlayMessage] = useState<string | null>(null);
     const [showAddModal, setShowAddModal] = useState(false);
@@ -275,59 +282,64 @@ export default function App() {
         void syncWithBackend(enabled, true);
     };
 
-    const fetchLiveExchangeRates = useCallback(
-        async (notifyUser = false) => {
-            const providers = [
-                {
-                    url: 'https://open.er-api.com/v6/latest/MYR',
-                    name: 'ExchangeRate-API',
-                    parse: (d: any) =>
-                        d?.rates?.SGD && d?.rates?.USD ? { SGD: +d.rates.SGD, USD: +d.rates.USD } : null,
-                },
-                {
-                    url: 'https://api.frankfurter.dev/v1/latest?base=MYR&symbols=SGD,USD',
-                    name: 'ECB Frankfurter',
-                    parse: (d: any) =>
-                        d?.rates?.SGD && d?.rates?.USD ? { SGD: +d.rates.SGD, USD: +d.rates.USD } : null,
-                },
-                {
-                    url: 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/myr.json',
-                    name: 'Forex CDN',
-                    parse: (d: any) =>
-                        d?.myr?.sgd && d?.myr?.usd ? { SGD: +d.myr.sgd, USD: +d.myr.usd } : null,
-                },
-            ];
-            for (const p of providers) {
-                try {
-                    const res = await fetch(p.url);
-                    if (!res.ok) continue;
-                    const parsed = p.parse(await res.json());
-                    if (parsed) {
-                        const next: Record<CurrencyCode, number> = {
-                            MYR: 1.0,
-                            SGD: parsed.SGD,
-                            USD: parsed.USD,
-                        };
-                        setExchangeRates(next);
-                        setRateSourceLabel(
-                            `${p.name} • 1 RM = ${next.SGD.toFixed(3)} SGD | ${next.USD.toFixed(3)} USD`
+    const fetchLiveExchangeRates = useCallback(async (notifyUser = false) => {
+        const providers = [
+            {
+                url: 'https://open.er-api.com/v6/latest/MYR',
+                name: 'ExchangeRate-API Live',
+                parse: (d: any) =>
+                    d?.rates?.SGD && d?.rates?.USD && d?.rates?.CNY
+                        ? { SGD: +d.rates.SGD, USD: +d.rates.USD, RMB: +d.rates.CNY }
+                        : null,
+            },
+            {
+                url: 'https://api.frankfurter.dev/v1/latest?base=MYR&symbols=SGD,USD,CNY',
+                name: 'ECB Frankfurter Live',
+                parse: (d: any) =>
+                    d?.rates?.SGD && d?.rates?.USD && d?.rates?.CNY
+                        ? { SGD: +d.rates.SGD, USD: +d.rates.USD, RMB: +d.rates.CNY }
+                        : null,
+            },
+            {
+                url: 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/myr.json',
+                name: 'CDN Forex Live',
+                parse: (d: any) =>
+                    d?.myr?.sgd && d?.myr?.usd && d?.myr?.cny
+                        ? { SGD: +d.myr.sgd, USD: +d.myr.usd, RMB: +d.myr.cny }
+                        : null,
+            },
+        ];
+
+        for (const p of providers) {
+            try {
+                const res = await fetch(p.url);
+                if (!res.ok) continue;
+                const parsed = p.parse(await res.json());
+                if (parsed) {
+                    const next: Record<CurrencyCode, number> = {
+                        MYR: 1.0,
+                        SGD: parsed.SGD,
+                        USD: parsed.USD,
+                        RMB: parsed.RMB,
+                    };
+                    setExchangeRates(next);
+                    setRateSourceLabel(
+                        `${p.name} • 1 RM = ${next.SGD.toFixed(3)} SGD | ${next.USD.toFixed(3)} USD | ${next.RMB.toFixed(3)} RMB`
+                    );
+                    if (notifyUser) {
+                        pushToast(
+                            'success',
+                            `Synced live rates: 1 MYR = ${next.SGD.toFixed(3)} SGD / ${next.USD.toFixed(3)} USD / ${next.RMB.toFixed(3)} RMB`
                         );
-                        if (notifyUser) {
-                            pushToast(
-                                'success',
-                                `Updated FX rates: 1 MYR = ${next.SGD.toFixed(3)} SGD / ${next.USD.toFixed(3)} USD`
-                            );
-                        }
-                        return;
                     }
-                } catch {
-                    // try next provider
+                    return;
                 }
+            } catch {
+                /* try next provider */
             }
-            setRateSourceLabel('Cached FX Rate');
-        },
-        [pushToast, setExchangeRates]
-    );
+        }
+        setRateSourceLabel('Cached Market FX Rate Active');
+    }, [pushToast, setExchangeRates]);
 
     useEffect(() => {
         void fetchLiveExchangeRates(false);

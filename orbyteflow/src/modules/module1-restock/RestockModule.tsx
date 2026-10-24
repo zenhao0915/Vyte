@@ -724,13 +724,16 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                                                 className="w-4 h-4 accent-blue-600 cursor-pointer"
                                             />
                                         </td>
-                                        <td className="py-3.5 px-3 whitespace-nowrap">
-                        <span className="font-mono font-bold text-blue-700">
-                          {bid.quotationNo}
-                        </span>
-                                            <p className="text-[10px] text-slate-500 mt-0.5">
-                                                RFQ {bid.rfqNo} | {bid.sku} ({bid.orderQty} {bid.uom})
+                                        <td className="py-3.5 px-4 whitespace-nowrap">
+                                            <p className="font-mono font-extrabold text-blue-700">
+                                                {bid.quotationNo}
                                             </p>
+                                            <p className="font-bold text-slate-900 text-xs mt-0.5">
+                                                {bid.productName}
+                                            </p>
+                                            <span className="text-[10px] font-mono text-slate-400 block mt-0.5">
+                          RFQ {bid.rfqNo} | {bid.sku} ({bid.orderQty} {bid.uom})
+                        </span>
                                         </td>
                                         <td className="py-3.5 px-3">
                                             <p className="font-semibold text-blue-700">{bid.supplierName}</p>
@@ -1081,43 +1084,33 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                             <span className="text-[11px] text-slate-500 font-mono truncate">
                               {item.supplierContact}
                             </span>
-                                                    {!isArchived && (
+                                                    {itemBids.length > 0 && !isArchived && (
                                                         <button
                                                             type="button"
                                                             onClick={() => {
                                                                 setSelectedRfqProductId(item.id);
                                                                 setViewMode('quotations');
                                                             }}
-                                                            className="px-2 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[10px] font-bold shrink-0 cursor-pointer"
+                                                            className="px-1.5 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[10px] font-bold cursor-pointer shrink-0"
                                                         >
-                                                            Quotes ({itemBids.length})
+                                                            {itemBids.length} Quotes
                                                         </button>
                                                     )}
                                                 </div>
                                             </td>
                                             <td className="py-2.5 px-3 whitespace-nowrap font-bold text-slate-800">
                                                 {sym}{' '}
-                                                {(item.priceRM * exchangeRate).toLocaleString(
-                                                    undefined,
-                                                    {
-                                                        minimumFractionDigits: 2,
-                                                        maximumFractionDigits: 2,
-                                                    }
-                                                )}
-                                                {item.unitCostRM && (
-                                                    <span className="block text-[10px] text-slate-400 font-normal">
-                              Cost: {sym}{' '}
-                                                        {(item.unitCostRM * exchangeRate).toFixed(2)}
-                            </span>
-                                                )}
+                                                {(item.priceRM * exchangeRate).toLocaleString(undefined, {
+                                                    minimumFractionDigits: 2,
+                                                    maximumFractionDigits: 2,
+                                                })}
                                             </td>
                                             <td className="py-2.5 px-4">
                                                 {isArchived ? (
-                                                    <span className="px-2.5 py-1 bg-slate-100 text-slate-500 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1">
-                              <Lock className="w-3 h-3 text-slate-400" /> Restock Disabled
+                                                    <span className="px-2.5 py-1 bg-slate-200 text-slate-600 rounded-lg text-[11px] font-bold inline-flex items-center gap-1">
+                              <Archive className="w-3 h-3" /> Archived (History Kept)
                             </span>
-                                                ) : item.restockStatus ===
-                                                'TRIGGERED_PENDING_APPROVAL' ? (
+                                                ) : item.restockStatus === 'TRIGGERED_PENDING_APPROVAL' ? (
                                                     <div className="space-y-1.5">
                                                         <div className="flex items-center gap-1.5">
                                 <span className="text-[10px] font-semibold text-slate-500">
@@ -1166,14 +1159,15 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                                                                         <Send className="w-3 h-3 shrink-0" />
                                                                     )}
                                                                     {isApproving
-                                                                        ? 'Sending PO...'
+                                                                        ? 'Dispatching PO...'
                                                                         : `Approve & Contact (+${
                                                                             currentReorderVal || 0
                                                                         } ${item.uom})`}
                                                                 </>
                                                             ) : (
                                                                 <>
-                                                                    <Lock className="w-3 h-3 shrink-0" /> Locked: Owner Only
+                                                                    <Lock className="w-3 h-3 shrink-0" />
+                                                                    Locked: Owner Only
                                                                 </>
                                                             )}
                                                         </button>
@@ -1186,9 +1180,7 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                                                         <button
                                                             type="button"
                                                             disabled={isConfirming}
-                                                            onClick={() =>
-                                                                void handleConfirmDeliveryClick(item)
-                                                            }
+                                                            onClick={() => void handleConfirmDeliveryClick(item)}
                                                             className="w-full px-3 py-1.5 bg-[#2BB656] hover:bg-emerald-600 disabled:opacity-60 text-white rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer whitespace-nowrap"
                                                         >
                                                             {isConfirming ? (
@@ -1212,16 +1204,20 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                             </span>
                                                 )}
                                             </td>
-                                            <td className="py-2.5 px-3 text-center whitespace-nowrap">
-                                                {!isArchived && canApprove && (
+                                            <td className="py-2.5 px-3 text-center">
+                                                {!isArchived && onRemoveProduct ? (
                                                     <button
                                                         type="button"
-                                                        title="Remove / Decommission Product"
                                                         onClick={() => setPendingDecommissionProduct(item)}
-                                                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                                        title="Decommission / Remove Product (Keeps Historical Invoices & Logs)"
+                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
                                                     >
                                                         <Trash2 className="w-4 h-4" />
                                                     </button>
+                                                ) : (
+                                                    <span className="text-[10px] text-slate-400 font-mono">
+                              —
+                            </span>
                                                 )}
                                             </td>
                                         </tr>
@@ -1234,21 +1230,21 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                 </div>
             )}
 
-            {/* Modal: Confirm Product Decommission / Removal */}
+            {/* MODAL: DECOMMISSION / REMOVE PRODUCT CONFIRMATION */}
             {pendingDecommissionProduct && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
                     <div className="bg-white rounded-2xl border border-slate-200 max-w-md w-full p-6 shadow-2xl space-y-4">
                         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                             <div className="flex items-center gap-2">
                                 <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center">
-                                    <AlertTriangle className="w-4 h-4" />
+                                    <Trash2 className="w-4 h-4" />
                                 </div>
                                 <div>
                                     <h3 className="text-base font-bold text-slate-900">
-                                        Remove Product from Active Catalog
+                                        Remove &amp; Decommission Product
                                     </h3>
                                     <p className="text-[11px] text-slate-500">
-                                        Historical records are preserved
+                                        Preserves historical invoices, analytics &amp; audit logs
                                     </p>
                                 </div>
                             </div>
@@ -1261,31 +1257,15 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                             </button>
                         </div>
 
-                        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5 text-xs">
-                            <div>
-                <span className="text-slate-500 block text-[11px]">
-                  Product to be retired:
-                </span>
-                                <strong className="text-slate-900 text-sm">
-                                    {pendingDecommissionProduct.name} (
-                                    {pendingDecommissionProduct.sku})
-                                </strong>
-                            </div>
-                            <div className="p-3 bg-amber-50 rounded-lg border border-amber-200 text-amber-900 text-[11px] space-y-1">
-                                <p className="font-bold">What happens next?</p>
-                                <ul className="list-disc list-inside space-y-0.5 text-slate-700">
-                                    <li>
-                                        <strong>Past Invoices &amp; Logs:</strong> Kept intact in history.
-                                    </li>
-                                    <li>
-                                        <strong>Future Revenue &amp; Sales:</strong> Excluded from new orders and future sales projections.
-                                    </li>
-                                    <li>
-                                        <strong>Stock Actions:</strong> Restocking and manual sales deductions are disabled.
-                                    </li>
-                                </ul>
-                            </div>
-                        </div>
+                        <p className="text-xs text-slate-600 leading-relaxed">
+                            Are you sure you want to remove{' '}
+                            <strong className="text-slate-900">
+                                {pendingDecommissionProduct.name} ({pendingDecommissionProduct.sku})
+                            </strong>{' '}
+                            from active catalog operations? Past invoices, sales history, and audit
+                            records will remain intact, but this SKU will no longer be available for
+                            future sales or restocks.
+                        </p>
 
                         <div className="flex justify-end gap-2.5 pt-2 border-t border-slate-100">
                             <button
@@ -1303,29 +1283,29 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                                 }}
                                 className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer"
                             >
-                                Confirm Removal
+                                Confirm Remove Product
                             </button>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* Modal: Log Warehouse Sample Test */}
+            {/* MODAL: EDIT WAREHOUSE SAMPLE TEST & DEFECT NOTE */}
             {reviewModalBid && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
                     <form
                         onSubmit={handleSaveSampleReview}
-                        className="bg-white rounded-2xl border border-slate-200 max-w-lg w-full p-6 shadow-2xl space-y-4 text-xs"
+                        className="bg-white rounded-2xl border border-slate-200 max-w-md w-full p-6 shadow-2xl space-y-4 text-xs"
                     >
                         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                             <div>
-                <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-mono text-[10px] font-bold">
-                  Quotation {reviewModalBid.quotationNo}
-                </span>
-                                <h3 className="text-base font-bold text-slate-900 mt-1">
-                                    Warehouse Sample Test &amp; Past Defect Review (
-                                    {reviewModalBid.supplierName})
+                                <h3 className="text-base font-bold text-slate-900">
+                                    Update Sample Test &amp; Defect Memory
                                 </h3>
+                                <p className="text-[11px] text-slate-500">
+                                    Quotation {reviewModalBid.quotationNo} •{' '}
+                                    {reviewModalBid.supplierName}
+                                </p>
                             </div>
                             <button
                                 type="button"
@@ -1339,7 +1319,7 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                         <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <label className="font-bold text-slate-700 block mb-1">
-                                    Sample Test Outcome
+                                    Sample Test Status
                                 </label>
                                 <select
                                     value={sampleStatusInput}
@@ -1350,22 +1330,23 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                                     }
                                     className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 font-bold text-slate-900"
                                 >
-                                    <option value="PASSED">PASSED (Meets Quality Spec)</option>
-                                    <option value="WARNING">WARNING (Minor Issue)</option>
-                                    <option value="FAILED">FAILED (Defective Sample)</option>
+                                    <option value="PASSED">PASSED</option>
+                                    <option value="WARNING">WARNING</option>
+                                    <option value="FAILED">FAILED</option>
                                 </select>
                             </div>
+
                             <div>
                                 <label className="font-bold text-slate-700 block mb-1">
                                     Past Defect Rate (%)
                                 </label>
                                 <input
-                                    type="number"
-                                    step="0.1"
-                                    min="0"
-                                    max="100"
+                                    type="text"
+                                    inputMode="decimal"
                                     value={defectRateInput}
-                                    onChange={(e) => setDefectRateInput(e.target.value)}
+                                    onChange={(e) =>
+                                        setDefectRateInput(e.target.value.replace(/[^0-9.]/g, ''))
+                                    }
                                     className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 font-bold text-slate-900"
                                 />
                             </div>
@@ -1373,33 +1354,31 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
 
                         <div>
                             <label className="font-bold text-slate-700 block mb-1">
-                                Past Purchase / Batch Defect Memory
+                                Past Delivery Experience Note
                             </label>
                             <input
                                 type="text"
                                 value={pastExpInput}
                                 onChange={(e) => setPastExpInput(e.target.value)}
-                                placeholder="e.g., Previous batch had 8% broken seals or all 12 deliveries arrived intact"
                                 className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-800"
                             />
                         </div>
 
                         <div>
                             <label className="font-bold text-slate-700 block mb-1">
-                                Warehouse Staff Sample Testing Comment
+                                Warehouse Staff Sample Comment
                             </label>
                             <textarea
-                                rows={2}
+                                rows={3}
                                 value={staffCommentInput}
                                 onChange={(e) => setStaffCommentInput(e.target.value)}
-                                placeholder="Enter staff observation after inspecting the supplier sample..."
                                 className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-800"
                             />
                         </div>
 
                         <div>
                             <label className="font-bold text-slate-700 block mb-1">
-                                Inspected By (Warehouse Staff)
+                                Inspected By Staff
                             </label>
                             <input
                                 type="text"
@@ -1428,12 +1407,12 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                 </div>
             )}
 
-            {/* Modal: Add Supplier Quotation */}
+            {/* MODAL: ADD NEW SUPPLIER QUOTATION BID */}
             {showNewBidModal && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
                     <form
                         onSubmit={handleAddSupplierBid}
-                        className="bg-white rounded-2xl border border-slate-200 max-w-lg w-full p-6 shadow-2xl space-y-4 text-xs"
+                        className="bg-white rounded-2xl border border-slate-200 max-w-md w-full p-6 shadow-2xl space-y-4 text-xs"
                     >
                         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                             <h3 className="text-base font-bold text-slate-900">
@@ -1448,24 +1427,24 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                             </button>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-3">
-                            <div className="col-span-2">
-                                <label className="font-bold text-slate-700 block mb-1">
-                                    Target Product SKU *
-                                </label>
-                                <select
-                                    value={newBidProductId}
-                                    onChange={(e) => setNewBidProductId(e.target.value)}
-                                    className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 font-semibold text-slate-900"
-                                >
-                                    {activeProducts.map((p) => (
-                                        <option key={p.id} value={p.id}>
-                                            {p.name} ({p.sku}) — Reorder Qty: {p.reorderQty} {p.uom}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
+                        <div>
+                            <label className="font-bold text-slate-700 block mb-1">
+                                Target Product *
+                            </label>
+                            <select
+                                value={newBidProductId}
+                                onChange={(e) => setNewBidProductId(e.target.value)}
+                                className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 font-bold text-slate-900"
+                            >
+                                {activeProducts.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                        {p.name} ({p.sku})
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
 
+                        <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <label className="font-bold text-slate-700 block mb-1">
                                     Supplier Name *
@@ -1473,16 +1452,15 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                                 <input
                                     type="text"
                                     required
-                                    placeholder="e.g., Selangor Packaging Sdn Bhd"
+                                    placeholder="e.g., Summit Packaging MY"
                                     value={newBidSupplierName}
                                     onChange={(e) => setNewBidSupplierName(e.target.value)}
                                     className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-900"
                                 />
                             </div>
-
                             <div>
                                 <label className="font-bold text-slate-700 block mb-1">
-                                    Supplier Code
+                                    Vendor Code
                                 </label>
                                 <input
                                     type="text"
@@ -1491,35 +1469,42 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                                     className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 font-mono text-slate-900"
                                 />
                             </div>
+                        </div>
 
+                        <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <label className="font-bold text-slate-700 block mb-1">
                                     Quoted Unit Price ({currency}) *
                                 </label>
                                 <input
-                                    type="number"
-                                    step="0.01"
+                                    type="text"
+                                    inputMode="decimal"
                                     required
                                     placeholder="e.g., 38.00"
                                     value={newBidUnitPrice}
-                                    onChange={(e) => setNewBidUnitPrice(e.target.value)}
+                                    onChange={(e) =>
+                                        setNewBidUnitPrice(e.target.value.replace(/[^0-9.]/g, ''))
+                                    }
                                     className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 font-bold text-slate-900"
                                 />
                             </div>
-
                             <div>
                                 <label className="font-bold text-slate-700 block mb-1">
                                     Past Defect Rate (%)
                                 </label>
                                 <input
-                                    type="number"
-                                    step="0.1"
+                                    type="text"
+                                    inputMode="decimal"
                                     value={newBidDefectPct}
-                                    onChange={(e) => setNewBidDefectPct(e.target.value)}
-                                    className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-900"
+                                    onChange={(e) =>
+                                        setNewBidDefectPct(e.target.value.replace(/[^0-9.]/g, ''))
+                                    }
+                                    className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 font-bold text-slate-900"
                                 />
                             </div>
+                        </div>
 
+                        <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <label className="font-bold text-slate-700 block mb-1">
                                     Sample Test Status
@@ -1531,17 +1516,16 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                                             e.target.value as SupplierQuotationBid['sampleTestStatus']
                                         )
                                     }
-                                    className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 font-semibold text-slate-900"
+                                    className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 font-bold text-slate-900"
                                 >
                                     <option value="PASSED">PASSED</option>
                                     <option value="WARNING">WARNING</option>
                                     <option value="FAILED">FAILED</option>
                                 </select>
                             </div>
-
                             <div>
                                 <label className="font-bold text-slate-700 block mb-1">
-                                    Supplier WhatsApp
+                                    Supplier Phone
                                 </label>
                                 <input
                                     type="text"
@@ -1550,32 +1534,32 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                                     className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-900"
                                 />
                             </div>
+                        </div>
 
-                            <div className="col-span-2">
-                                <label className="font-bold text-slate-700 block mb-1">
-                                    Supplier Address
-                                </label>
-                                <input
-                                    type="text"
-                                    placeholder="e.g., 25 Jalan Perusahaan, Shah Alam"
-                                    value={newBidAddress}
-                                    onChange={(e) => setNewBidAddress(e.target.value)}
-                                    className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-900"
-                                />
-                            </div>
+                        <div>
+                            <label className="font-bold text-slate-700 block mb-1">
+                                Supplier Address
+                            </label>
+                            <input
+                                type="text"
+                                placeholder="e.g., 25 Jalan Perusahaan, Shah Alam"
+                                value={newBidAddress}
+                                onChange={(e) => setNewBidAddress(e.target.value)}
+                                className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-900"
+                            />
+                        </div>
 
-                            <div className="col-span-2">
-                                <label className="font-bold text-slate-700 block mb-1">
-                                    Staff Sample Comment
-                                </label>
-                                <input
-                                    type="text"
-                                    placeholder="e.g., Sample inspected by warehouse team; passed quality check."
-                                    value={newBidComment}
-                                    onChange={(e) => setNewBidComment(e.target.value)}
-                                    className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-900"
-                                />
-                            </div>
+                        <div>
+                            <label className="font-bold text-slate-700 block mb-1">
+                                Staff Sample Comment
+                            </label>
+                            <textarea
+                                rows={2}
+                                placeholder="Enter staff sample test notes..."
+                                value={newBidComment}
+                                onChange={(e) => setNewBidComment(e.target.value)}
+                                className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-900"
+                            />
                         </div>
 
                         <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
@@ -1590,14 +1574,14 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                                 type="submit"
                                 className="px-4 py-2 bg-[#2BB656] hover:bg-emerald-600 text-white rounded-xl font-bold cursor-pointer"
                             >
-                                Save Quotation Bid
+                                Save Quotation
                             </button>
                         </div>
                     </form>
                 </div>
             )}
 
-            {/* Modal: Confirm Stock Deduction */}
+            {/* MODAL: CONFIRM STOCK DEDUCTION & SALE */}
             {pendingSaleConfirm && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
                     <div className="bg-white rounded-2xl border border-slate-200 max-w-md w-full p-6 shadow-2xl space-y-4">
@@ -1659,7 +1643,9 @@ export const RestockModule: React.FC<RestockModuleProps> = ({
                 </span>
                             </div>
                             <div className="flex items-center justify-between border-t border-slate-200 pt-2">
-                                <span className="text-slate-500">Sales Invoice Amount:</span>
+                <span className="text-slate-500">
+                  Auto-Generated Receivable Invoice:
+                </span>
                                 <strong className="text-emerald-700 text-sm">
                                     {sym}{' '}
                                     {(

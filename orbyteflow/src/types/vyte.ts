@@ -1,11 +1,13 @@
 // src/types/vyte.ts
 
-export type CurrencyCode = 'MYR' | 'SGD' | 'USD';
+
+export type CurrencyCode = 'MYR' | 'SGD' | 'USD' | 'RMB';
 
 export const CURRENCY_SYMBOLS: Record<CurrencyCode, string> = {
     MYR: 'RM',
     SGD: 'S$',
     USD: '$',
+    RMB: '¥',
 };
 
 export type UserRole = 'SME_OWNER' | 'MANAGER' | 'OPERATIONS_STAFF';

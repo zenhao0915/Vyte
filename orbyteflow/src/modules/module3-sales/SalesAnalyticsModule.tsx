@@ -24,6 +24,7 @@ import type {
     GetSalesReviewReportRequest,
     GetSalesReviewReportResponse,
     Product,
+    QCAlert,
 } from '../../types/vyte.ts';
 import { CURRENCY_SYMBOLS } from '../../types/vyte.ts';
 import { orbyteApi } from '../../services/api.ts';
@@ -31,6 +32,7 @@ import { VyteDropdown } from '../../components/common/VyteDropdown.tsx';
 
 interface SalesAnalyticsModuleProps {
     products: Product[];
+    qcAlerts?: QCAlert[];
     userID: string;
     currency?: CurrencyCode;
     exchangeRate?: number;
