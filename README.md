@@ -8,9 +8,9 @@
 ### Quick Links
 * **Live Prototype (Replit):** [https://hazendust.replit.app](https://hazendust.replit.app)
 * **GitHub Repository:** [https://github.com/zenhao0915/Vyte](https://github.com/zenhao0915/Vyte)
-* **Preliminary Proposal PDF:** [`submission/SDC2026_Haze&Dust_Preliminary.pdf`](https://github.com/zenhao0915/Vyte/blob/submission/Submission/SDC2026_%20Haze%26Dust_Preliminary.pdf)
-* **Technical & Tools Declaration PDF:** [`submission/SDC2026_Haze&Dust_TechDeclaration.pdf`](https://github.com/zenhao0915/Vyte/blob/submission/Submission/SDC2026_Haze%26Dust_TechDeclaration.pdf)
-* **Slide Deck:** *(https://github.com/zenhao0915/Vyte/blob/submission/Slide/Vyte%20SME%20Inventory%20Management%20System%20Pitch%20Deck.pdf)*
+* **Preliminary Proposal PDF:** [`Submission/SDC2026_Haze&Dust_Preliminary.pdf`](https://github.com/zenhao0915/Vyte/blob/submission/Submission/SDC2026_%20Haze%26Dust_Preliminary.pdf)
+* **Technical & Tools Declaration PDF:** [`Submission/SDC2026_Haze&Dust_TechDeclaration.pdf`](https://github.com/zenhao0915/Vyte/blob/submission/Submission/SDC2026_Haze%26Dust_TechDeclaration.pdf)
+* **Slide Deck:** [`Slide/Vyte SME Inventory Management System Pitch Deck.pdf`](https://github.com/zenhao0915/Vyte/blob/submission/Slide/Vyte%20SME%20Inventory%20Management%20System%20Pitch%20Deck.pdf)
 * **Demo Video:** *(Insert Demo Video Link Here)*
 
 ---
