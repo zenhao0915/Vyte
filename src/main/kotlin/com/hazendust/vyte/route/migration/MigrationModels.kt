@@ -24,6 +24,11 @@ data class ComplianceProfileDto(
     val complianceStatus: String = "EXPIRING_SOON",
     val autoAlertEnabled: Boolean = true,
     val assetCategory: String = "SSM_PBT_LICENSE",
+    val rentalAddress: String? = null,
+    val landlordName: String? = null,
+    val monthlyRentRM: Double? = null,
+    val contractStartDate: String? = null,
+    val warrantyPeriodMonths: Int? = null,
     val annualFeeRM: Double = 450.0,
     val fiveYearDiscountPct: Int = 20,
     val selectedRenewalTermYears: Int = 1

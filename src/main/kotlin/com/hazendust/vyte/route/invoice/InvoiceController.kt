@@ -325,21 +325,21 @@ object InvoiceController : BaseRouteController {
                 call.respondResult(result)
             }
 
-            // PATCH http://localhost:8989/api/invoices/{id}/verify
             patch("/{id}/verify") {
                 val id = call.parameters["id"].orEmpty()
                 val req = call.receiveOrNull<VerifyInvoiceRequest>()
                     ?: return@patch call.respondError(HttpStatusCode.BadRequest, "Invalid JSON body")
-                if (req.role !in setOf(AuditService.SME_OWNER, AuditService.MANAGER)) {
-                    return@patch call.respondError(HttpStatusCode.Forbidden, "Only SME_OWNER can verify invoices")
+                val role = req.role.ifBlank { AuditService.SME_OWNER }
+                if (role !in setOf(AuditService.SME_OWNER, AuditService.MANAGER)) {
+                    return@patch call.respondError(HttpStatusCode.Forbidden, "Only SME_OWNER or MANAGER can verify invoices")
                 }
 
-                val result = InvoiceService.verify(id)
+                val result = InvoiceService.verify(id, req.aiCategory)
                 if (result is InvoiceResult.Ok) {
                     val inv = result.invoice
                     AuditService.log(
                         module = AuditService.INVOICES,
-                        role = req.role,
+                        role = role,
                         detail = "Verified ${kind(inv)} ${inv.invNo} from ${inv.party} (${rm(inv.amountRM)})."
                     )
                 }

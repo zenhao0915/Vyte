@@ -1,6 +1,8 @@
 package com.hazendust.vyte.manager
 
 import com.hazendust.vyte.route.audit.AuditController
+import com.hazendust.vyte.route.auth.AuthController
+import com.hazendust.vyte.route.compliance.ComplianceAndSupportController
 import com.hazendust.vyte.route.invoice.InvoiceController
 import com.hazendust.vyte.route.jobs.JobsController
 import com.hazendust.vyte.route.migration.MigrationController
@@ -19,6 +21,7 @@ interface BaseRouteController {
 
 object RouteManager {
     private val controllers: List<BaseRouteController> = listOf(
+        AuthController,
         OrderController,
         ProductController,
         QCController,
@@ -26,7 +29,8 @@ object RouteManager {
         AuditController,
         JobsController,
         RestockController,
-        MigrationController
+        MigrationController,
+        ComplianceAndSupportController
     )
 
     fun registerAll(route: Route) {

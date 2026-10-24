@@ -5,6 +5,7 @@ import com.hazendust.vyte.data.InvoiceEntity
 import com.hazendust.vyte.data.WorkspaceContext
 import com.hazendust.vyte.manager.BaseRouteController
 import com.hazendust.vyte.route.ai.AiService
+import com.hazendust.vyte.route.invoice.InvoiceService
 import com.hazendust.vyte.route.product.ProductService
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -147,38 +148,31 @@ object OrderController : BaseRouteController {
 
                 val ws = WorkspaceContext.current()
                 val finalOrderId = req.orderID.ifBlank { "ORD-${System.currentTimeMillis() % 100000}" }
-                val invoiceId = "INV-CUST-${System.currentTimeMillis() % 100000}"
-
                 ws.savedOrders[finalOrderId] = req.copy(orderID = finalOrderId)
                 ws.orderStatuses[finalOrderId] = "PENDING_HUMAN_APPROVAL"
 
-                DataStore.invoices.add(
-                    0,
-                    InvoiceEntity(
-                        id = invoiceId,
-                        type = "CUSTOMER",
-                        relatedRef = finalOrderId,
-                        amount = req.subtotal,
-                        category = "Wholesale Customer Order",
-                        status = "NEEDS_REVIEW",
-                        createdAt = LocalDate.now().toString()
-                    )
+                val createdInv = com.hazendust.vyte.route.invoice.InvoiceService.createReceivable(
+                    party = req.internalNotes?.substringAfter("Customer:", "")?.trim()?.ifEmpty { null } ?: "Customer Order ($finalOrderId)",
+                    amountRM = req.subtotal,
+                    category = "Wholesale Customer Order",
+                    aiConfidence = 97,
+                    relatedRef = finalOrderId
                 )
 
                 DataStore.recordAudit(
-                    role = req.createdBy.ifBlank { "User" },
+                    role = req.createdBy.ifBlank { "SME_OWNER" },
                     action = "ORDER_CREATED_PENDING_APPROVAL",
-                    details = "Order $finalOrderId created with invoice $invoiceId. Amount: ${req.currency} ${req.subtotal}."
+                    details = "Order $finalOrderId created with invoice ${createdInv.invNo}. Amount: ${req.currency} ${req.subtotal}."
                 )
 
                 call.respond(
                     HttpStatusCode.Created,
                     CreateInvoiceOrderResponse(
                         orderID = finalOrderId,
-                        invoiceID = invoiceId,
+                        invoiceID = createdInv.id,
                         status = "PENDING_HUMAN_APPROVAL",
                         databaseUpdated = true,
-                        invoicePdfUrl = "/invoices/$invoiceId.pdf",
+                        invoicePdfUrl = "/invoices/${createdInv.id}.pdf",
                         createdAt = LocalDate.now().toString()
                     )
                 )
@@ -225,6 +219,7 @@ object OrderController : BaseRouteController {
                     }
                     inventoryDeducted = true
                     ws.orderStatuses[req.orderID] = "APPROVED"
+                    InvoiceService.verify(req.invoiceID)
                     DataStore.invoices.firstOrNull { it.id == req.invoiceID }?.status = "VERIFIED"
 
                     DataStore.recordAudit(

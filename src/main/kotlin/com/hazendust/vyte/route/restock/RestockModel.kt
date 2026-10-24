@@ -35,7 +35,9 @@ data class ContactSupplierRequest(
     val messageBody: String,
     val userID: String,
     val role: String = "SME_OWNER",
-    val reorderQty: Int? = null
+    val reorderQty: Int? = null,
+    val unitCostRM: Double? = null,
+    val leadTimeDays: Int? = null
 )
 
 @Serializable

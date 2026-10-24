@@ -15,7 +15,7 @@ sealed interface QCResult {
 }
 
 object QCStore {
-    val STATUSES = setOf("PENDING_APPROVAL", "APPROVED_RESOLVED")
+    val STATUSES = setOf("PENDING_APPROVAL", "ASSIGNED_TO_STAFF", "APPROVED_RESOLVED")
     const val WRITE_OFF = "Approve Write-off"
     private const val NO_BATCH = "N/A"
     private const val ALERT_WINDOW_DAYS = 7
@@ -28,6 +28,85 @@ object QCStore {
         alerts.filter { status == null || it.status == status }
 
     fun productIdOf(alertId: String): String? = alertProductIds[alertId]
+
+    @Synchronized
+    fun addCustom(alert: QCAlert): QCAlert {
+        alerts.removeIf { it.id == alert.id }
+        alerts.add(0, alert)
+        return alert
+    }
+
+    @Synchronized
+    fun assignStaff(id: String, req: AssignQCStaffRequest): QCResult {
+        val index = alerts.indexOfFirst { it.id == id }
+        if (index < 0) return QCResult.Fail(HttpStatusCode.NotFound, "QC alert $id not found")
+        val current = alerts[index]
+        val taskId = current.hrTaskId ?: "WH-TASK-${(1000..9999).random()}"
+        val updated = current.copy(
+            status = "ASSIGNED_TO_STAFF",
+            hrTaskId = taskId,
+            assignedStaffId = req.staff.staffId,
+            assignedStaffName = req.staff.name,
+            assignedStaffDepartment = req.staff.department,
+            assignedStaffPosition = req.staff.position,
+            assignedStaffRole = "${req.staff.position} (${req.staff.department})",
+            assignedPriority = req.priority,
+            assignedDueDate = req.dueDate,
+            hrNotes = req.staffNotes.ifBlank { current.aiSuggestion },
+            assignedAt = java.time.LocalTime.now(MALAYSIA).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")),
+            hrEscalated = false,
+            hrEscalationPayload = null
+        )
+        alerts[index] = updated
+        return QCResult.Ok(updated)
+    }
+
+    @Synchronized
+    fun escalate(id: String, req: EscalateQCAlertRequest): QCResult {
+        val index = alerts.indexOfFirst { it.id == id }
+        if (index < 0) return QCResult.Fail(HttpStatusCode.NotFound, "QC alert $id not found")
+        val current = alerts[index]
+        val updated = current.copy(
+            assignedDueDate = req.simulatedPastDate ?: current.assignedDueDate,
+            hrEscalated = true,
+            hrEscalationPayload = req.payload
+        )
+        alerts[index] = updated
+        return QCResult.Ok(updated)
+    }
+
+    @Synchronized
+    fun approve(id: String, userID: String, role: String): QCResult {
+        val index = alerts.indexOfFirst { it.id == id }
+        if (index < 0) return QCResult.Fail(HttpStatusCode.NotFound, "QC alert $id not found")
+
+        val alert = alerts[index]
+        if (alert.status == "APPROVED_RESOLVED") {
+            return QCResult.Fail(HttpStatusCode.Conflict, "QC alert $id is already APPROVED_RESOLVED")
+        }
+
+        if (alert.actionLabel == WRITE_OFF) {
+            val productId = alertProductIds[id]
+            val product = productId?.let { ProductService.find(it) }
+            if (product != null && product.stock > 0) {
+                val writeOff = ProductService.changeStock(
+                    product.id, "DAMAGE", -product.stock,
+                    "QC write-off: batch ${alert.batchNo} expired ${alert.expiryDate}", userID, role
+                )
+                if (writeOff is ProductResult.Fail) return QCResult.Fail(writeOff.status, writeOff.error)
+            }
+        }
+
+        val todayIso = LocalDate.now(MALAYSIA).toString()
+        val isLate = alert.hrEscalated == true || (alert.assignedDueDate != null && alert.assignedDueDate < todayIso)
+        val resolved = alert.copy(
+            status = "APPROVED_RESOLVED",
+            completedAtDate = todayIso,
+            completedLate = isLate
+        )
+        alerts[index] = resolved
+        return QCResult.Ok(resolved)
+    }
 
     /**
      * Rule-based scan (under the lock), then AI suggestions for the new alerts (outside the lock). Logs both.
@@ -112,33 +191,6 @@ object QCStore {
         }
 
         return QCScanResponse(newAlerts = newAlerts, scannedCount = candidates.size)
-    }
-
-    @Synchronized
-    fun approve(id: String, userID: String, role: String): QCResult {
-        val index = alerts.indexOfFirst { it.id == id }
-        if (index < 0) return QCResult.Fail(HttpStatusCode.NotFound, "QC alert $id not found")
-
-        val alert = alerts[index]
-        if (alert.status != "PENDING_APPROVAL") {
-            return QCResult.Fail(HttpStatusCode.Conflict, "QC alert $id is already ${alert.status}")
-        }
-
-        if (alert.actionLabel == WRITE_OFF) {
-            val productId = alertProductIds[id]
-            val product = productId?.let { ProductService.find(it) }
-            if (product != null && product.stock > 0) {
-                val writeOff = ProductService.changeStock(
-                    product.id, "DAMAGE", -product.stock,
-                    "QC write-off: batch ${alert.batchNo} expired ${alert.expiryDate}", userID, role
-                )
-                if (writeOff is ProductResult.Fail) return QCResult.Fail(writeOff.status, writeOff.error)
-            }
-        }
-
-        val resolved = alert.copy(status = "APPROVED_RESOLVED")
-        alerts[index] = resolved
-        return QCResult.Ok(resolved)
     }
 
     fun scanSummary(result: QCScanResponse, automatic: Boolean): String {

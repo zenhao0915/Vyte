@@ -42,9 +42,17 @@ object RestockController : BaseRouteController {
                 DataStore.products.values.firstOrNull { req.messageBody.contains(it.sku) || req.messageBody.contains(it.name) }
             }
             if (prod != null) {
-                if (req.reorderQty != null && req.reorderQty > 0) {
-                    ProductService.update(prod.id, com.hazendust.vyte.route.product.UpdateProductRequest(reorderQty = req.reorderQty))
-                }
+                ProductService.update(
+                    prod.id,
+                    com.hazendust.vyte.route.product.UpdateProductRequest(
+                        reorderQty = req.reorderQty?.takeIf { it > 0 },
+                        supplierName = req.supplierName.ifBlank { null },
+                        supplierContact = req.supplierPhoneNumber.ifBlank { null },
+                        unitCostRM = req.unitCostRM,
+                        leadTimeDays = req.leadTimeDays,
+                        restockStatus = "TRIGGERED_PENDING_APPROVAL"
+                    )
+                )
                 ProductService.approveRestock(prod.id)
             }
             AuditService.log(AuditService.PRODUCTS, req.role.ifBlank { AuditService.SME_OWNER }, "Contacted ${req.supplierName} via ${req.channel} for ${req.poNumber}.")
