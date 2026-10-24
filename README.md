@@ -11,7 +11,7 @@
 * **Preliminary Proposal PDF:** [`Submission/SDC2026_Haze&Dust_Preliminary.pdf`](https://github.com/zenhao0915/Vyte/blob/submission/Submission/SDC2026_%20Haze%26Dust_Preliminary.pdf)
 * **Technical & Tools Declaration PDF:** [`Submission/SDC2026_Haze&Dust_TechDeclaration.pdf`](https://github.com/zenhao0915/Vyte/blob/submission/Submission/SDC2026_Haze%26Dust_TechDeclaration.pdf)
 * **Slide Deck:** [`Slide/Vyte SME Inventory Management System Pitch Deck.pdf`](https://github.com/zenhao0915/Vyte/blob/submission/Slide/Vyte%20SME%20Inventory%20Management%20System%20Pitch%20Deck.pdf)
-* **Demo Video:** *(https://youtu.be/9CxjuCDR_W0)*
+* **Demo Video:** *(https://youtu.be/b0MWxD9VLD4)*
 
 ---
 
