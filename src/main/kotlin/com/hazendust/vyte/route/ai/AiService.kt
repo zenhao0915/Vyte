@@ -1,3 +1,4 @@
+// FILE: src/main/kotlin/com/hazendust/vyte/route/ai/AiService.kt
 package com.hazendust.vyte.route.ai
 
 import kotlinx.serialization.json.Json
@@ -17,27 +18,23 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.util.Base64
 
-/**
- * RunPod vLLM chat completions (OpenAI-compatible) using only JDK HttpClient and kotlinx.serialization.
- * 具备 Markdown 括号清洗、大小写/下划线容错、冷启动重试机制与多模态视觉智能路由。
- */
 object AiService {
-    const val DEFAULT_TEXT_MODEL = "Qwen/Qwen2.5-Coder-7B-Instruct"
-    const val DEFAULT_IMAGE_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+    const val DEFAULT_TEXT_MODEL = "gemini-3.5-flash-lite"
+    const val DEFAULT_IMAGE_MODEL = "gemini-3.5-flash-lite"
+    private const val FALLBACK_MODEL = "gemini-3.1-flash-lite"
 
-    // 默认指向你的 RunPod Serverless 实例 (Endpoint ID: 59c1b77t92ft7p)
-    private const val DEFAULT_RUNPOD_ENDPOINT = "59c1b77t92ft7p"
-    private const val DEFAULT_RUNPOD_API_KEY = "rpa_71ETCQ89K3VQRADCD1O9V23E6V5PRK1SVKXWC2BHo5x0ny"
+    private const val DEFAULT_GEMINI_API_KEY = ""
 
-    // Serverless 冷启动加载模型需要更充裕的超时窗口 (90s)
-    private val TIMEOUT: Duration = Duration.ofSeconds(90)
+    private val TIMEOUT: Duration = Duration.ofSeconds(60)
     private const val MAX_RETRIES = 2
-    private const val MAX_RETRY_WAIT_MS = 5_000L
+    private const val MAX_RETRY_WAIT_MS = 3_000L
 
-    const val MAX_IMAGE_BYTES = 3L * 1024 * 1024
+    const val MAX_IMAGE_BYTES = 4L * 1024 * 1024
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -45,101 +42,140 @@ object AiService {
     }
 
     private val http: HttpClient = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(15))
+        .connectTimeout(Duration.ofSeconds(10))
         .build()
+
+    @Volatile
+    private var preferredGatewayIndex: Int = 0
 
     sealed interface AiResult {
         data class Success(val data: JsonObject, val model: String) : AiResult
         data class Failure(val reason: String) : AiResult
     }
 
-    private data class Settings(
-        val textApiKey: String?,
-        val textModel: String,
-        val textBaseUrl: String,
-        val imageApiKey: String?,
-        val imageModel: String,
-        val imageBaseUrl: String
-    )
+    fun isConfigured(): Boolean = resolveApiKey() != null
 
-    fun isConfigured(): Boolean = settings().textApiKey != null
-
-    /** 快速心跳检测，可用于项目启动时检验 RunPod 是否在线 */
     fun testConnection(): AiResult = chatJson(
         system = "You are a test ping agent.",
         user = "Respond with JSON: {\"status\": \"ok\"}",
-        maxTokens = 20
+        maxTokens = 64
     )
 
-    /** 文本 Prompt：模型必须返回 JSON 结构 */
     fun chatJson(system: String, user: String, maxTokens: Int): AiResult {
-        val s = settings()
-        val apiKey = s.textApiKey ?: return AiResult.Failure("RunPod API key not configured")
-        val body = requestBody(s.textModel, system, maxTokens) {
-            put("content", user)
-        }
-        return send(apiKey, s.textBaseUrl, s.textModel, body)
+        val apiKey = resolveApiKey() ?: return AiResult.Failure("Gemini API key not configured")
+        val body = buildGeminiRequestBody(
+            system = system,
+            userText = user,
+            mime = null,
+            imageBase64 = null,
+            maxTokens = maxTokens
+        )
+        return sendWithGatewayFallback(apiKey, DEFAULT_TEXT_MODEL, body)
     }
 
-    /** 视觉图片 Prompt：自动路由到 Groq（若有 Key）或默认视觉端点，避免撞向不支持视觉的纯文本 RunPod */
     fun chatJsonWithImage(system: String, userText: String, mime: String, image: ByteArray, maxTokens: Int): AiResult {
         if (image.size > MAX_IMAGE_BYTES) {
             return AiResult.Failure("image is larger than ${MAX_IMAGE_BYTES / 1024 / 1024} MB, too big for the AI image API")
         }
-        val s = settings()
-        val apiKey = s.imageApiKey ?: return AiResult.Failure(
-            "Vision model requires a valid GROQ_API_KEY (RunPod text endpoint cannot process images)"
+        val apiKey = resolveApiKey() ?: return AiResult.Failure("Gemini API key not configured")
+        val b64 = Base64.getEncoder().encodeToString(image)
+        val body = buildGeminiRequestBody(
+            system = system,
+            userText = userText,
+            mime = mime,
+            imageBase64 = b64,
+            maxTokens = maxTokens
         )
-
-        val dataUrl = "data:$mime;base64," + Base64.getEncoder().encodeToString(image)
-        val body = requestBody(s.imageModel, system, maxTokens) {
-            putJsonArray("content") {
-                addJsonObject {
-                    put("type", "text")
-                    put("text", userText)
-                }
-                addJsonObject {
-                    put("type", "image_url")
-                    putJsonObject("image_url") { put("url", dataUrl) }
-                }
-            }
-        }
-        return send(apiKey, s.imageBaseUrl, s.imageModel, body)
+        return sendWithGatewayFallback(apiKey, DEFAULT_IMAGE_MODEL, body)
     }
 
-    private fun requestBody(
-        model: String,
+    private fun buildGeminiRequestBody(
         system: String,
-        maxTokens: Int,
-        userContent: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit
+        userText: String,
+        mime: String?,
+        imageBase64: String?,
+        maxTokens: Int
     ): String = buildJsonObject {
-        put("model", model)
-        putJsonArray("messages") {
-            addJsonObject {
-                put("role", "system")
-                put("content", system)
-            }
-            addJsonObject {
-                put("role", "user")
-                userContent()
+        if (system.isNotBlank()) {
+            putJsonObject("systemInstruction") {
+                putJsonArray("parts") {
+                    addJsonObject { put("text", system) }
+                }
             }
         }
-        put("temperature", 0.2)
-        putJsonObject("response_format") { put("type", "json_object") }
-        put("max_tokens", maxTokens)
+        putJsonArray("contents") {
+            addJsonObject {
+                put("role", "user")
+                putJsonArray("parts") {
+                    addJsonObject { put("text", userText) }
+                    if (!mime.isNullOrBlank() && !imageBase64.isNullOrBlank()) {
+                        addJsonObject {
+                            putJsonObject("inlineData") {
+                                put("mimeType", mime)
+                                put("data", imageBase64)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        putJsonObject("generationConfig") {
+            put("temperature", 0.2)
+            put("responseMimeType", "application/json")
+            // 留足输出 Token 余量，防止 JSON 被截断
+            put("maxOutputTokens", maxOf(maxTokens * 2, 2048))
+            // 关闭冗长思维链以实现毫秒/秒级极速 JSON 返回
+            putJsonObject("thinkingConfig") {
+                put("thinkingBudget", 0)
+            }
+        }
     }.toString()
 
-    private fun send(apiKey: String, baseUrl: String, model: String, body: String): AiResult {
-        val url = if (baseUrl.endsWith("/chat/completions")) baseUrl else "${baseUrl.trimEnd('/')}/chat/completions"
+    private fun gatewayUrls(model: String, encodedKey: String): List<String> = listOf(
+        "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$encodedKey",
+        "https://aiplatform.googleapis.com/v1/publishers/google/models/$model:generateContent?key=$encodedKey"
+    )
+
+    private fun sendWithGatewayFallback(apiKey: String, primaryModel: String, body: String): AiResult {
+        val encodedKey = URLEncoder.encode(apiKey, StandardCharsets.UTF_8)
+        val modelsToTry = listOf(primaryModel, FALLBACK_MODEL).distinct()
+
+        var lastFailure: AiResult.Failure = AiResult.Failure("AI request failed")
+
+        for (model in modelsToTry) {
+            val urls = gatewayUrls(model, encodedKey)
+            val startIdx = preferredGatewayIndex.coerceIn(0, urls.lastIndex)
+            val orderedIndices = listOf(startIdx, 1 - startIdx).distinct()
+
+            for (gwIdx in orderedIndices) {
+                val url = urls[gwIdx]
+                val res = executeHttp(url, apiKey, model, body)
+                if (res is AiResult.Success) {
+                    preferredGatewayIndex = gwIdx
+                    return res
+                }
+                if (res is AiResult.Failure) {
+                    lastFailure = res
+                    // 若是 401/403 网关绑定不匹配或 404 模型未找到，继续尝试备用网关/模型
+                    if (res.reason.contains("HTTP 401") || res.reason.contains("HTTP 403") || res.reason.contains("HTTP 404") || res.reason.contains("HTTP 400")) {
+                        continue
+                    }
+                }
+            }
+        }
+        return lastFailure
+    }
+
+    private fun executeHttp(url: String, apiKey: String, model: String, body: String): AiResult {
         val request = try {
             HttpRequest.newBuilder(URI.create(url))
                 .timeout(TIMEOUT)
-                .header("Authorization", "Bearer $apiKey")
                 .header("Content-Type", "application/json")
+                .header("x-goog-api-key", apiKey)
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build()
         } catch (e: IllegalArgumentException) {
-            return AiResult.Failure("Invalid AI endpoint URL: $url")
+            return AiResult.Failure("Invalid Gemini endpoint URL")
         }
 
         var attempts = 0
@@ -149,36 +185,51 @@ object AiService {
                 val response = http.send(request, HttpResponse.BodyHandlers.ofString())
                 val status = response.statusCode()
 
-                // 处理 429 或 502/503/504 等临时冷启动拥塞状态
                 if (status == 429 || status in 502..504) {
                     if (attempts <= MAX_RETRIES) {
-                        val retryAfterSec = response.headers().firstValue("retry-after").orElse(null)?.toDoubleOrNull()
-                        val waitMs = (retryAfterSec?.let { (it * 1000).toLong() } ?: 2_000L).coerceIn(1_000L, MAX_RETRY_WAIT_MS)
-                        println("[AiService] HTTP $status from $url. Retrying in ${waitMs}ms (Attempt $attempts/$MAX_RETRIES)...")
+                        val waitMs = (1_000L * attempts).coerceAtMost(MAX_RETRY_WAIT_MS)
+                        println("[AiService] Gemini HTTP $status. Retrying in ${waitMs}ms (Attempt $attempts/$MAX_RETRIES)...")
                         Thread.sleep(waitMs)
                         continue
                     }
                 }
 
+                // 如果某些网关不支持 thinkingConfig 字段报 400，自动剥离 thinkingConfig 重试一次
+                if (status == 400 && body.contains("\"thinkingConfig\"")) {
+                    val strippedBody = body.replace(Regex(""",\s*"thinkingConfig"\s*:\s*\{[^}]*\}"""), "")
+                    if (strippedBody != body) {
+                        return executeHttp(url, apiKey, model, strippedBody)
+                    }
+                }
+
                 if (status != 200) {
                     val errPreview = response.body().take(250).replace("\n", " ")
-                    System.err.println("[AiService] Error HTTP $status: $errPreview")
+                    System.err.println("[AiService] Gemini HTTP $status ($model): $errPreview")
                     return AiResult.Failure("AI API returned HTTP $status: $errPreview")
                 }
 
                 val root = json.parseToJsonElement(response.body()).jsonObject
-                val content = root["choices"]
-                    ?.jsonArray?.firstOrNull()?.jsonObject?.get("message")?.jsonObject
-                    ?.get("content")?.jsonPrimitive?.contentOrNull
-                    ?: return AiResult.Failure("AI response choices had no message content")
+                val parts = root["candidates"]
+                    ?.jsonArray?.firstOrNull()?.jsonObject
+                    ?.get("content")?.jsonObject
+                    ?.get("parts")?.jsonArray
+                    ?: return AiResult.Failure("Gemini response had no candidate parts")
+
+                // 取最后一个含文本的 part（跳过可能存在的 thought part）
+                val content = parts.mapNotNull { part ->
+                    val obj = part.jsonObject
+                    if (obj["thought"]?.jsonPrimitive?.contentOrNull == "true") null
+                    else obj["text"]?.jsonPrimitive?.contentOrNull
+                }.lastOrNull() ?: parts.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull
+                ?: return AiResult.Failure("Gemini response had no text content")
 
                 val data = extractJsonObject(content)
-                    ?: return AiResult.Failure("AI answer was not a valid JSON object: ${content.take(100)}")
+                    ?: return AiResult.Failure("Gemini answer was not a valid JSON object: ${content.take(100)}")
 
                 return AiResult.Success(data, model)
             } catch (e: java.net.http.HttpTimeoutException) {
-                System.err.println("[AiService] Timeout after ${TIMEOUT.seconds}s calling $url")
-                return AiResult.Failure("AI request timed out after ${TIMEOUT.seconds}s (possible cold start)")
+                System.err.println("[AiService] Timeout after ${TIMEOUT.seconds}s calling Gemini ($model)")
+                return AiResult.Failure("AI request timed out after ${TIMEOUT.seconds}s")
             } catch (e: InterruptedException) {
                 Thread.currentThread().interrupt()
                 return AiResult.Failure("AI request interrupted")
@@ -190,23 +241,16 @@ object AiService {
         return AiResult.Failure("AI request exceeded retry limit")
     }
 
-    /**
-     * 清洗大模型输出内容：剔除外层的 Markdown 代码块 (```json ... ```) 并提取核心 {...} JSON 对象
-     */
     private fun extractJsonObject(raw: String): JsonObject? {
         val trimmed = raw.trim()
-
-        // 1. 直接反序列化尝试
         runCatching { json.parseToJsonElement(trimmed) as? JsonObject }.getOrNull()?.let { return it }
 
-        // 2. 剥离 Markdown 围栏 ```json ... ```
         val withoutFences = trimmed
             .replace(Regex("""^```(?:json)?\s*""", RegexOption.IGNORE_CASE), "")
             .replace(Regex("""\s*```$"""), "")
             .trim()
         runCatching { json.parseToJsonElement(withoutFences) as? JsonObject }.getOrNull()?.let { return it }
 
-        // 3. 兜底提取最外层的 { ... }
         val start = trimmed.indexOf('{')
         val end = trimmed.lastIndexOf('}')
         if (start != -1 && end != -1 && end > start) {
@@ -216,42 +260,13 @@ object AiService {
         return null
     }
 
-    private fun settings(): Settings {
-        val runpodKey = System.getenv("RUNPOD_API_KEY")?.trim() ?: DEFAULT_RUNPOD_API_KEY
-        val groqKey = System.getenv("GROQ_API_KEY")?.trim()
-
-        val endpointId = System.getenv("RUNPOD_ENDPOINT_ID")?.trim() ?: DEFAULT_RUNPOD_ENDPOINT
-        val customBaseUrl = System.getenv("RUNPOD_BASE_URL")?.trim()
-
-        val textBaseUrl = when {
-            !customBaseUrl.isNullOrEmpty() -> customBaseUrl
-            endpointId.isNotBlank() -> "https://api.runpod.ai/v2/$endpointId/openai/v1"
-            else -> "https://api.groq.com/openai/v1"
-        }
-
-        val textModel = System.getenv("RUNPOD_TEXT_MODEL") ?: DEFAULT_TEXT_MODEL
-        val imageModel = System.getenv("RUNPOD_IMAGE_MODEL") ?: DEFAULT_IMAGE_MODEL
-        val imageBaseUrl = System.getenv("GROQ_BASE_URL")?.trim() ?: "https://api.groq.com/openai/v1"
-
-        return Settings(
-            textApiKey = runpodKey.ifEmpty { null },
-            textModel = textModel,
-            textBaseUrl = textBaseUrl,
-            imageApiKey = groqKey?.ifEmpty { null },
-            imageModel = imageModel,
-            imageBaseUrl = imageBaseUrl
-        )
-    }
-
-    // ==========================================
-    // 弹性属性解析辅助工具（支持驼峰、下划线及大小写容错）
-    // ==========================================
+    private fun resolveApiKey(): String? =
+        (System.getenv("GEMINI_API_KEY")?.trim()?.takeIf { it.isNotEmpty() }
+            ?: System.getenv("GOOGLE_API_KEY")?.trim()?.takeIf { it.isNotEmpty() }
+            ?: DEFAULT_GEMINI_API_KEY).ifEmpty { null }
 
     private fun JsonObject.findPrimitive(key: String): JsonPrimitive? {
-        // 1. 精确匹配
         (this[key] as? JsonPrimitive)?.let { return it }
-
-        // 2. 忽略大小写及下划线（例如 ai_suggestion 与 aiSuggestion 均能命中）
         val normalized = key.replace("_", "").lowercase()
         for ((k, v) in entries) {
             if (k.replace("_", "").lowercase() == normalized && v is JsonPrimitive) {
