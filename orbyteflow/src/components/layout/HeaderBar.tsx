@@ -79,7 +79,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                 )}
             </div>
 
-            <div className="flex items-center gap-3 shrink-0">
+            <div data-tour="header-controls" className="flex items-center gap-3 shrink-0">
                 <button
                     type="button"
                     onClick={onRefreshRates}
