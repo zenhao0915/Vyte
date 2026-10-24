@@ -5,9 +5,14 @@ import {
     AlertTriangle, ArrowUpRight, Edit3, FileText, ExternalLink, Plus, Trash2, Eye, X,
     Calendar, Camera, FileSpreadsheet,
 } from 'lucide-react';
-import type { CurrencyCode, ExtractedNlpOrderItem, Product, UserRole } from '../../types/vyte.ts';
-import { CURRENCY_SYMBOLS } from '../../types/vyte.ts';
-import {getDebugMockMode, orbyteApi} from '../../services/api';
+import {
+    CURRENCY_SYMBOLS,
+    type CurrencyCode,
+    type ExtractedNlpOrderItem,
+    type Product,
+    type UserRole,
+} from '../../types/vyte.ts';
+import { getDebugMockMode, orbyteApi } from '../../services/api';
 import { VyteDropdown } from '../../components/common/VyteDropdown';
 
 interface OrderStatusModuleProps {
@@ -44,6 +49,15 @@ const ORDER_INTAKE_KEY = 'vyte_order_intake_draft_v2';
 const ORDER_DRAFT_KEY = 'vyte_order_parsed_step2_draft_v2';
 const ORDER_NOTES_KEY = 'vyte_order_notes_map_v2';
 
+const fmtMoney = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function readLocal<T>(key: string, fallback: T): T {
+    try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+    } catch { return fallback; }
+}
+
 export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                                                         products, role, userID, currency = 'MYR', exchangeRate = 1.0,
                                                                         onApproveCustomerOrder, onTriggerShortageRestock, onPendingCountChange,
@@ -52,18 +66,43 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
     const sym = CURRENCY_SYMBOLS[currency] || 'RM';
     const todayIso = new Date().toISOString().slice(0, 10);
 
-    const [customerName, setCustomerName] = useState<string>(() => {
-        try { const s = localStorage.getItem(ORDER_INTAKE_KEY); if (s) return JSON.parse(s).customerName ?? 'Bangsar Artisan Cafe'; } catch { /* ignore */ }
-        return 'Bangsar Artisan Cafe';
-    });
-    const [requestedDate, setRequestedDate] = useState<string>(() => {
-        try { const s = localStorage.getItem(ORDER_INTAKE_KEY); if (s) return JSON.parse(s).requestedDate ?? todayIso; } catch { /* ignore */ }
-        return todayIso;
-    });
+    const detectLanguageAndBuildReply = (
+        rawText: string, customer: string, items: ExtractedNlpOrderItem[], allStockEnough: boolean
+    ): { langLabel: string; flag: string; autoReplyText: string } => {
+        const hasChinese = /[\u4e00-\u9fa5]/.test(rawText);
+        const hasMalay = /\b(tolong|hantar|esok|kotak|susu|kopi|nak|bila|terima kasih|bos)\b/i.test(rawText);
+        const itemSummary = items.map((i) => `${i.requestedQty}x ${i.name}`).join(', ');
+
+        if (hasChinese) {
+            return {
+                langLabel: '中文 / Mandarin Detected', flag: '🇨🇳/🇲🇾',
+                autoReplyText: allStockEnough
+                    ? `老板您好 (${customer})！Vyte AI 已收到您的订单：${itemSummary}。仓库现货充足，我们已经为您安排出货并附上电子账单，感谢支持！`
+                    : `老板您好 (${customer})！收到您的订单（${itemSummary}）。目前部分货品正在紧急补货中，我们会在配齐后第一时间优先为您送出！`,
+            };
+        }
+        if (hasMalay) {
+            return {
+                langLabel: 'Bahasa Melayu Detected', flag: '🇲🇾',
+                autoReplyText: allStockEnough
+                    ? `Salam Boss (${customer})! Pesanan anda (${itemSummary}) telah diterima oleh Vyte AI. Stok mencukupi dan penghantaran sedang disediakan. Terima kasih!`
+                    : `Salam Boss (${customer})! Pesanan anda (${itemSummary}) diterima. Stok sedang ditambah semula dan kami akan maklumkan masa penghantaran secepat mungkin.`,
+            };
+        }
+        return {
+            langLabel: 'English / Manglish Detected', flag: '🇬🇧/🇲🇾',
+            autoReplyText: allStockEnough
+                ? `Hi ${customer}! We've received your order (${itemSummary}). Stock is confirmed and ready for dispatch. Here is your invoice reference!`
+                : `Hi ${customer}! We received your order (${itemSummary}). One or more items are currently being restocked—we'll update your delivery slot shortly!`,
+        };
+    };
+
+    const savedIntake = useMemo(() => readLocal<Partial<{ customerName: string; requestedDate: string; rawOrderText: string }>>(ORDER_INTAKE_KEY, {}), []);
+    const [customerName, setCustomerName] = useState<string>(() => savedIntake.customerName ?? 'Bangsar Artisan Cafe');
+    const [requestedDate, setRequestedDate] = useState<string>(() => savedIntake.requestedDate ?? todayIso);
     const [rawOrderText, setRawOrderText] = useState<string>(() => {
-        try { const s = localStorage.getItem(ORDER_INTAKE_KEY); if (s) return JSON.parse(s).rawOrderText ?? ''; } catch { /* ignore */ }
-        const p1 = products[0];
-        const p2 = products[2] || products[1] || products[0];
+        if (savedIntake.rawOrderText !== undefined) return savedIntake.rawOrderText;
+        const p1 = products[0], p2 = products[2] || products[1] || products[0];
         return `Hi team, please send 6 ${p1?.uom || 'units'} of ${p1?.name || 'Coffee Beans'} and 3 ${p2?.uom || 'units'} of ${p2?.name || 'Takeaway Box'} by tomorrow.`;
     });
 
@@ -71,7 +110,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
         if (!getDebugMockMode()) {
             void orbyteApi.fetchBackendOrders().then((orders) => {
                 if (Array.isArray(orders)) {
-                    const mapped: CustomerOrderRecord[] = orders.map((o: any) => ({
+                    setCustomerOrders(orders.map((o: any) => ({
                         orderID: o.orderID,
                         invoiceID: `INV-CUST-${o.orderID.replace('ORD-', '')}`,
                         invoicePdfUrl: `/invoices/${o.orderID}.pdf`,
@@ -81,28 +120,20 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                         items: (o.lineOrders || []).map((l: any) => {
                             const prod = products.find((p) => p.id === l.productID);
                             return {
-                                productID: l.productID,
-                                SKU: prod?.sku || l.productID,
-                                name: prod?.name || l.productID,
-                                requestedQty: l.quantity,
-                                availableStock: prod?.stock ?? 0,
-                                isStockEnough: (prod?.stock ?? 0) >= l.quantity,
-                                sellingPrice: prod?.priceRM ?? Number((l.lineTotal / Math.max(1, l.quantity)).toFixed(2)),
-                                lineTotal: l.lineTotal,
+                                productID: l.productID, SKU: prod?.sku || l.productID, name: prod?.name || l.productID,
+                                requestedQty: l.quantity, availableStock: prod?.stock ?? 0, isStockEnough: (prod?.stock ?? 0) >= l.quantity,
+                                sellingPrice: prod?.priceRM ?? Number((l.lineTotal / Math.max(1, l.quantity)).toFixed(2)), lineTotal: l.lineTotal,
                             };
                         }),
                         subtotal: o.subtotal,
                         status: 'PENDING_HUMAN_APPROVAL',
-                    }));
-                    setCustomerOrders(mapped);
+                    })));
                 }
             });
         }
     }, [products]);
 
-    useEffect(() => {
-        localStorage.setItem(ORDER_INTAKE_KEY, JSON.stringify({ customerName, requestedDate, rawOrderText }));
-    }, [customerName, requestedDate, rawOrderText]);
+    useEffect(() => { localStorage.setItem(ORDER_INTAKE_KEY, JSON.stringify({ customerName, requestedDate, rawOrderText })); }, [customerName, requestedDate, rawOrderText]);
 
     const [nlpErrors, setNlpErrors] = useState<{ customerName?: string; requestedDate?: string; rawOrderText?: string }>({});
     const [isProcessingNlp, setIsProcessingNlp] = useState(false);
@@ -115,27 +146,18 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
     const [uploadedOrderFileName, setUploadedOrderFileName] = useState<string | null>(null);
     const [parseFailureMessage, setParseFailureMessage] = useState<string | null>(null);
 
-    const [parsedDraft, setParsedDraft] = useState<ParsedOrderDraft | null>(() => {
-        try { const s = localStorage.getItem(ORDER_DRAFT_KEY); return s ? JSON.parse(s) : null; } catch { return null; }
-    });
-
+    const [parsedDraft, setParsedDraft] = useState<ParsedOrderDraft | null>(() => readLocal(ORDER_DRAFT_KEY, null));
     useEffect(() => {
         if (parsedDraft) localStorage.setItem(ORDER_DRAFT_KEY, JSON.stringify(parsedDraft));
         else localStorage.removeItem(ORDER_DRAFT_KEY);
     }, [parsedDraft]);
 
     const [addSkuId, setAddSkuId] = useState<string>(products[0]?.id || '');
-
-    // Keep addSkuId synchronized when products list switches between Mock and Backend
     useEffect(() => {
-        if (products.length > 0 && !products.some((p) => p.id === addSkuId)) {
-            setAddSkuId(products[0].id);
-        }
+        if (products.length > 0 && !products.some((p) => p.id === addSkuId)) setAddSkuId(products[0].id);
     }, [products, addSkuId]);
 
-    const [orderNotesMap, setOrderNotesMap] = useState<Record<string, string>>(() => {
-        try { const s = localStorage.getItem(ORDER_NOTES_KEY); return s ? JSON.parse(s) : {}; } catch { return {}; }
-    });
+    const [orderNotesMap, setOrderNotesMap] = useState<Record<string, string>>(() => readLocal(ORDER_NOTES_KEY, {}));
     useEffect(() => { localStorage.setItem(ORDER_NOTES_KEY, JSON.stringify(orderNotesMap)); }, [orderNotesMap]);
 
     const [modifyingOrderId, setModifyingOrderId] = useState<string | null>(null);
@@ -144,36 +166,23 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
     const [selectedDetailOrder, setSelectedDetailOrder] = useState<CustomerOrderRecord | null>(null);
     const [confirmDialog, setConfirmDialog] = useState<{ order: CustomerOrderRecord; action: 'APPROVE' | 'REJECT' | 'MODIFY'; allEnoughLive: boolean } | null>(null);
 
-    const notify = (type: 'success' | 'error' | 'warning' | 'info', message: string) => {
-        onNotify?.(type, message);
-    };
+    const notify = (type: 'success' | 'error' | 'warning' | 'info', message: string) => onNotify?.(type, message);
 
     const [customerOrders, setCustomerOrders] = useState<CustomerOrderRecord[]>(() => {
-        try { const s = localStorage.getItem(ORDERS_LIST_KEY); if (s) return JSON.parse(s); } catch { /* ignore */ }
         const p0 = products[0];
         const price = p0?.priceRM ?? 68.0;
-        return [{
-            orderID: 'ORD-2026-4810',
-            invoiceID: 'CUST-2026-4810',
-            invoicePdfUrl: '/invoices/ORD-2026-4810.pdf',
-            customerName: 'Mont Kiara Roastery & Bakery',
-            requestedDate: '2026-10-21',
+        return readLocal(ORDERS_LIST_KEY, [{
+            orderID: 'ORD-2026-4810', invoiceID: 'CUST-2026-4810', invoicePdfUrl: '/invoices/ORD-2026-4810.pdf',
+            customerName: 'Mont Kiara Roastery & Bakery', requestedDate: '2026-10-21',
             rawMessage: `Need 4 ${p0?.uom || 'kg'} of ${p0?.name || 'Artisan Arabica Coffee Beans'} urgent delivery.`,
-            internalNotes: 'Priority morning dispatch slot.',
-            createdAt: '2026-10-21T09:15:00.000Z',
+            internalNotes: 'Priority morning dispatch slot.', createdAt: '2026-10-21T09:15:00.000Z',
             items: [{
-                productID: p0?.id || 'P1',
-                SKU: p0?.sku || 'FNB-4886',
-                name: p0?.name || 'Artisan Arabica Coffee Beans',
-                requestedQty: 4,
-                availableStock: p0?.stock ?? 8,
-                isStockEnough: (p0?.stock ?? 8) >= 4,
-                sellingPrice: price,
-                lineTotal: Number((4 * price).toFixed(2)),
+                productID: p0?.id || 'P1', SKU: p0?.sku || 'FNB-4886', name: p0?.name || 'Artisan Arabica Coffee Beans',
+                requestedQty: 4, availableStock: p0?.stock ?? 8, isStockEnough: (p0?.stock ?? 8) >= 4,
+                sellingPrice: price, lineTotal: Number((4 * price).toFixed(2)),
             }],
-            subtotal: Number((4 * price).toFixed(2)),
-            status: 'PENDING_HUMAN_APPROVAL',
-        }];
+            subtotal: Number((4 * price).toFixed(2)), status: 'PENDING_HUMAN_APPROVAL',
+        }]);
     });
 
     useEffect(() => {
@@ -192,11 +201,12 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
     }, [parsedDraft, products]);
 
     const isDraftStockSufficient = useMemo(() => liveDraftItems.length > 0 && liveDraftItems.every((i) => i.isStockEnough), [liveDraftItems]);
+    const draftAutoReply = useMemo(() => (parsedDraft ? detectLanguageAndBuildReply(parsedDraft.rawMessage, parsedDraft.customerName, liveDraftItems, isDraftStockSufficient) : null), [parsedDraft, liveDraftItems, isDraftStockSufficient]);
 
     const lastShortageKeyRef = useRef<string>('');
     useEffect(() => {
         if (!onTriggerShortageRestock) return;
-        const shortages = liveDraftItems.filter((i) => !i.isStockEnough && i.shortageQty > 0).map((i) => ({ productID: i.productID, neededQty: i.shortageQty }));
+        const shortages = liveDraftItems.filter((i) => !i.isStockEnough && (i.shortageQty ?? 0) > 0).map((i) => ({ productID: i.productID, neededQty: i.shortageQty ?? 0 }));
         const key = shortages.map((s) => `${s.productID}:${s.neededQty}`).join('|');
         if (key && key !== lastShortageKeyRef.current) {
             lastShortageKeyRef.current = key;
@@ -206,16 +216,16 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
         }
     }, [liveDraftItems, onTriggerShortageRestock]);
 
+    const applyCustomPreset = (presetCustomer: string, presetText: string) => {
+        setCustomerName(presetCustomer); setRawOrderText(presetText); setNlpErrors({}); setParseFailureMessage(null);
+    };
+
     const applyPresetMessage = (presetCustomer: string, idx1 = 0, idx2 = 2) => {
-        const p1 = products[idx1] || products[0];
-        const p2 = products[idx2] || products[1] || products[0];
+        const p1 = products[idx1] || products[0], p2 = products[idx2] || products[1] || products[0];
         const msg = p1 && p2 && p1.id !== p2.id
             ? `Hi team, please send 6 ${p1.uom} of ${p1.name} and 3 ${p2.uom} of ${p2.name} by tomorrow.`
             : `Hello, we would like to order 5 ${p1?.uom || 'units'} of ${p1?.name || 'Coffee Beans'} for our outlet.`;
-        setCustomerName(presetCustomer);
-        setRawOrderText(msg);
-        setNlpErrors({});
-        setParseFailureMessage(null);
+        applyCustomPreset(presetCustomer, msg);
     };
 
     const handleCustomerOrderPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -226,8 +236,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
             setUploadedOrderPhotoPreview(String(reader.result));
             setUploadedOrderFileName(file.name);
             setParseFailureMessage(null);
-            const p1 = products[0];
-            const p2 = products[2] || products[1] || products[0];
+            const p1 = products[0], p2 = products[2] || products[1] || products[0];
             const extractedText = `[OCR from "${file.name}"] Please supply 5 ${p1?.uom || 'kg'} of ${p1?.name || 'Item 1'} and 4 ${p2?.uom || 'box'} of ${p2?.name || 'Item 2'}.`;
             setCustomerName('Damansara Specialty Roasters');
             setRawOrderText(extractedText);
@@ -273,10 +282,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
             }
 
             const summaryMsg = `[Spreadsheet Import: ${file.name}] ${extractedItems.map((i) => `${i.requestedQty}x ${i.name} (${i.SKU})`).join(', ')}`;
-            setUploadedOrderFileName(file.name);
-            setCustomerName(detectedCustomer);
-            setRawOrderText(summaryMsg);
-            setParseFailureMessage(null);
+            setUploadedOrderFileName(file.name); setCustomerName(detectedCustomer); setRawOrderText(summaryMsg); setParseFailureMessage(null);
             setParsedDraft({ customerName: detectedCustomer, requestedDate, rawMessage: summaryMsg, internalNotes: `Imported from "${file.name}"`, items: extractedItems, currency });
             onLogAction('Orders', `Imported order file "${file.name}" (${extractedItems.length} line items).`);
             notify('success', `Loaded ${extractedItems.length} line item(s) from "${file.name}".`);
@@ -303,8 +309,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
 
             products.forEach((p) => {
                 const keywords = p.name.toLowerCase().split(' ').filter((w) => w.length > 2);
-                const matched = keywords.some((kw) => lower.includes(kw)) || lower.includes(p.sku.toLowerCase());
-                if (matched) {
+                if (keywords.some((kw) => lower.includes(kw)) || lower.includes(p.sku.toLowerCase())) {
                     const regex = new RegExp(`(\\d+)\\s*(?:${p.uom}|boxes|box|kg|pcs|units|liters|l|pack|packs)?[^.]*?${keywords[0]}`, 'i');
                     const match = rawOrderText.match(regex) || rawOrderText.match(/(\d+)/);
                     const qty = match ? Math.min(9999, Math.max(1, Number(match[1]))) : 5;
@@ -350,8 +355,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
             ...parsedDraft,
             items: parsedDraft.items.map((item) => {
                 if (item.productID !== productID) return item;
-                const liveProd = products.find((p) => p.id === productID);
-                const avail = liveProd ? liveProd.stock : item.availableStock;
+                const avail = products.find((p) => p.id === productID)?.stock ?? item.availableStock;
                 return { ...item, requestedQty: safeQty, availableStock: avail, isStockEnough: avail >= safeQty, lineTotal: Number((safeQty * item.sellingPrice).toFixed(2)) };
             }),
         });
@@ -418,29 +422,76 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
 
         try {
             const approvalNotes = (orderNotesMap[order.orderID] || '').trim() || `${action} by ${userID}`;
-            const updatedItems = action === 'MODIFY'
+            const useEditedQuantities = action === 'MODIFY' || modifyingOrderId === order.orderID;
+            const updatedItems = useEditedQuantities
                 ? order.items.map((item) => {
                     const modQty = modifiedQuantities[`${order.orderID}:${item.productID}`] ?? item.requestedQty;
-                    const liveProd = products.find((p) => p.id === item.productID);
-                    const avail = liveProd ? liveProd.stock : item.availableStock;
-                    return { ...item, requestedQty: modQty, availableStock: avail, isStockEnough: avail >= modQty, lineTotal: Number((modQty * item.sellingPrice).toFixed(2)) };
+                    const avail = products.find((p) => p.id === item.productID)?.stock ?? item.availableStock;
+                    return {
+                        ...item,
+                        requestedQty: modQty,
+                        availableStock: avail,
+                        isStockEnough: avail >= modQty,
+                        lineTotal: Number((modQty * item.sellingPrice).toFixed(2)),
+                    };
                 })
                 : order.items;
             const updatedSubtotal = Number(updatedItems.reduce((sum, i) => sum + i.lineTotal, 0).toFixed(2));
-
-            const res = await orbyteApi.approveCustomerOrder({ orderID: order.orderID, invoiceID: order.invoiceID, approvalAction: action, approvalNotes, updatedBy: userID });
+            const res = await orbyteApi.approveCustomerOrder({
+                orderID: order.orderID,
+                invoiceID: order.invoiceID,
+                approvalAction: action,
+                approvalNotes,
+                updatedBy: userID,
+            });
 
             if (action === 'APPROVE') {
-                setCustomerOrders((p) => p.map((o) => (o.orderID === order.orderID ? { ...o, status: 'APPROVED_AWAITING_DELIVERY', approvalNotes, inventoryDeducted: res.data.inventoryDeducted, updatedAt: res.data.updatedAt } : o)));
+                setCustomerOrders((p) =>
+                    p.map((o) =>
+                        o.orderID === order.orderID
+                            ? {
+                                ...o,
+                                items: updatedItems,
+                                subtotal: updatedSubtotal,
+                                status: 'APPROVED_AWAITING_DELIVERY',
+                                approvalNotes,
+                                inventoryDeducted: res.data.inventoryDeducted,
+                                updatedAt: res.data.updatedAt,
+                            }
+                            : o
+                    )
+                );
+                setModifyingOrderId(null);
                 onApproveCustomerOrder(updatedItems, order.customerName, order.orderID, order.invoiceID, res.data.inventoryDeducted);
                 notify('success', `Order ${order.orderID} approved and invoiced.`);
             } else if (action === 'MODIFY') {
-                setCustomerOrders((p) => p.map((o) => (o.orderID === order.orderID ? { ...o, items: updatedItems, subtotal: updatedSubtotal, status: 'MODIFIED', approvalNotes, inventoryDeducted: res.data.inventoryDeducted, updatedAt: res.data.updatedAt } : o)));
+                setCustomerOrders((p) =>
+                    p.map((o) =>
+                        o.orderID === order.orderID
+                            ? {
+                                ...o,
+                                items: updatedItems,
+                                subtotal: updatedSubtotal,
+                                status: 'MODIFIED',
+                                approvalNotes,
+                                inventoryDeducted: res.data.inventoryDeducted,
+                                updatedAt: res.data.updatedAt,
+                            }
+                            : o
+                    )
+                );
                 setModifyingOrderId(null);
-                onLogAction('Orders', `Modified order ${order.orderID} (${order.customerName}) \u2022 New Total: ${sym} ${(updatedSubtotal * exchangeRate).toFixed(2)}.`);
+                onLogAction('Orders', `Modified order ${order.orderID} (${order.customerName}) • New Total: ${sym} ${(updatedSubtotal * exchangeRate).toFixed(2)}.`);
                 notify('info', `Order ${order.orderID} updated.`);
             } else {
-                setCustomerOrders((p) => p.map((o) => (o.orderID === order.orderID ? { ...o, status: 'REJECTED', approvalNotes, inventoryDeducted: res.data.inventoryDeducted, updatedAt: res.data.updatedAt } : o)));
+                setCustomerOrders((p) =>
+                    p.map((o) =>
+                        o.orderID === order.orderID
+                            ? { ...o, status: 'REJECTED', approvalNotes, inventoryDeducted: res.data.inventoryDeducted, updatedAt: res.data.updatedAt }
+                            : o
+                    )
+                );
+                setModifyingOrderId(null);
                 onLogAction('Orders', `Rejected order ${order.orderID} (${order.customerName}).`);
                 notify('warning', `Order ${order.orderID} rejected.`);
             }
@@ -484,12 +535,10 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                             <FileSpreadsheet className="w-3.5 h-3.5 text-teal-600" /> Import Order CSV
                         </button>
                         <span className="text-slate-300 hidden sm:inline">|</span>
-                        <button type="button" onClick={() => applyPresetMessage('Bangsar Artisan Cafe', 0, 2)} className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-semibold cursor-pointer">
-                            Cafe Sample
-                        </button>
-                        <button type="button" onClick={() => applyPresetMessage('Subang Retail Hub', 1, 1)} className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-semibold cursor-pointer">
-                            Retail Sample
-                        </button>
+                        <button type="button" onClick={() => applyPresetMessage('Bangsar Artisan Cafe', 0, 2)} className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-semibold cursor-pointer">Cafe Sample</button>
+                        <button type="button" onClick={() => applyPresetMessage('Subang Retail Hub', 1, 1)} className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-semibold cursor-pointer">Retail Sample</button>
+                        <button type="button" onClick={() => applyCustomPreset('Kampung Baru Kopitiam', 'Boss, tolong hantar 6 kg Artisan Arabica Coffee Beans esok')} className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-[11px] font-bold cursor-pointer">🇲🇾 BM Sample</button>
+                        <button type="button" onClick={() => applyCustomPreset('吉隆坡茶室', '老板，明天帮我送 6 kg Artisan Arabica Coffee Beans 和 3 box Takeaway Box')} className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-lg text-[11px] font-bold cursor-pointer">🇨🇳 中文 Sample</button>
                     </div>
                 </div>
 
@@ -533,7 +582,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
 
                     <div className="lg:col-span-3 flex flex-col justify-end gap-2">
                         <button type="submit" disabled={isProcessingNlp} className="w-full py-3 px-4 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition cursor-pointer">
-                            <FileCheck className="w-3.5 h-3.5" />{isProcessingNlp ? 'Parsing Order...' : 'Parse Order & Check Stock'}
+                            <FileCheck className="w-3.5 h-3.5" /> {isProcessingNlp ? 'Parsing Order...' : 'Parse Order & Check Stock'}
                         </button>
                     </div>
                 </form>
@@ -584,6 +633,30 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                             </div>
                         </div>
 
+                        {draftAutoReply && (
+                            <div className="p-4 rounded-xl bg-white border border-purple-200 shadow-2xs space-y-2.5">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-base">{draftAutoReply.flag}</span>
+                                        <span className="text-xs font-bold text-slate-800">{draftAutoReply.langLabel}</span>
+                                        <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold">Vyte AI Auto-Reply</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(draftAutoReply.autoReplyText)}`, '_blank');
+                                            onLogAction('Orders', `Sent AI WhatsApp reply to ${parsedDraft.customerName} (${draftAutoReply.langLabel}).`);
+                                            notify('success', `WhatsApp AI Reply sent to ${parsedDraft.customerName}!`);
+                                        }}
+                                        className="px-3.5 py-1.5 bg-[#25D366] hover:bg-[#20ba5a] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                                    >
+                                        <MessageSquare className="w-3.5 h-3.5" /> Send AI Reply via WhatsApp
+                                    </button>
+                                </div>
+                                <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700 font-mono">&ldquo;{draftAutoReply.autoReplyText}&rdquo;</div>
+                            </div>
+                        )}
+
                         {!isDraftStockSufficient && (
                             <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 font-semibold flex items-center gap-2">
                                 <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
@@ -607,7 +680,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                         </div>
 
                         {liveDraftItems.length === 0 ? (
-                            <p className="text-xs text-slate-500 italic py-3 text-center">No items in draft yet. Select a product above and click "Add SKU to Draft".</p>
+                            <p className="text-xs text-slate-500 italic py-3 text-center">No items in draft yet. Select a product above and click &quot;Add SKU to Draft&quot;.</p>
                         ) : (
                             <div className="overflow-x-auto rounded-xl border border-purple-200 bg-white">
                                 <table className="w-full text-left border-collapse text-xs">
@@ -684,6 +757,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                             });
 
                             const allEnoughLive = liveItems.every((i) => i.isStockEnough);
+                            const liveOrderSubtotal = Number(liveItems.reduce((sum, i) => sum + i.lineTotal, 0).toFixed(2));
 
                             return (
                                 <div key={co.orderID} className={`rounded-2xl border overflow-hidden transition ${isPendingOrModified ? (allEnoughLive ? 'bg-white border-slate-200' : 'bg-rose-50/20 border-rose-200') : co.status === 'APPROVED_AWAITING_DELIVERY' ? 'bg-blue-50/15 border-blue-200' : co.status === 'DELIVERED_COMPLETED' ? 'bg-emerald-50/15 border-emerald-200' : 'bg-slate-50 border-slate-200 opacity-75'}`}>
@@ -710,7 +784,9 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                             <button type="button" onClick={() => setSelectedDetailOrder(co)} className="px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"><Eye className="w-3.5 h-3.5" /> Details</button>
                                             <div className="text-right mr-1">
                                                 <span className="text-[10px] uppercase font-bold text-slate-400 block">Order Total</span>
-                                                <span className="text-base font-extrabold text-slate-900 whitespace-nowrap">{sym} {(co.subtotal * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                                <span className="text-base font-extrabold text-slate-900 whitespace-nowrap">
+                                                    {sym} {fmtMoney(liveOrderSubtotal * exchangeRate)}
+                                                </span>
                                             </div>
 
                                             {isPendingOrModified && (
@@ -842,8 +918,8 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold text-[11px]">{"\u2713"} {item.requestedQty} {item.uom} Deducted (Rem: {item.availableStock} {item.uom})</span>
                                                                 )}
                                                             </td>
-                                                            <td className="py-2.5 px-3.5 text-slate-600 font-medium">{sym} {(item.sellingPrice * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {item.uom}</td>
-                                                            <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900">{sym} {(item.lineTotal * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                                            <td className="py-2.5 px-3.5 text-slate-600 font-medium">{sym} {fmtMoney(item.sellingPrice * exchangeRate)} / {item.uom}</td>
+                                                            <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900">{sym} {fmtMoney(item.lineTotal * exchangeRate)}</td>
                                                         </tr>
                                                     );
                                                 })}
@@ -900,7 +976,7 @@ export const OrderStatusModule: React.FC<OrderStatusModuleProps> = ({
                                 <span className="text-slate-400 block">Invoice PDF Document</span>
                                 <a href={selectedDetailOrder.invoicePdfUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-600 font-bold hover:underline inline-flex items-center gap-1">{selectedDetailOrder.invoicePdfUrl} <ExternalLink className="w-3 h-3" /></a>
                             </div>
-                            <div><span className="text-slate-400 block">Total Amount</span><strong className="text-slate-900">{sym} {(selectedDetailOrder.subtotal * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
+                            <div><span className="text-slate-400 block">Total Amount</span><strong className="text-slate-900">{sym} {fmtMoney(selectedDetailOrder.subtotal * exchangeRate)}</strong></div>
                         </div>
 
                         <div className="space-y-1 text-xs">

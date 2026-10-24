@@ -74,13 +74,11 @@ object ProductService {
         }
 
         seedIfEmpty()
-        DataStore.products.values
-            .filter { !lastKnownStock.containsKey(it.id) }
+        DataStore.products.values.filter { !lastKnownStock.containsKey(it.id) }
             .forEach { synchronized(lockFor(it.id)) { bootstrap(it) } }
 
         println(
-            "[Products] Loaded ${DataStore.products.size} active / ${archivedEntities.size} archived products, " +
-                "${movements.values.sumOf { it.size }} stock movements (persistent: ${ProductRepository.enabled})"
+            "[Products] Loaded ${DataStore.products.size} active / ${archivedEntities.size} archived products, " + "${movements.values.sumOf { it.size }} stock movements (persistent: ${ProductRepository.enabled})"
         )
     }
 
@@ -90,13 +88,12 @@ object ProductService {
         val keyword = search?.trim().orEmpty()
         val ids =
             DataStore.products.keys.toList() + if (includeArchived) archivedEntities.keys.toList() else emptyList()
-        return ids.sorted()
-            .mapNotNull { find(it) }
-            .filter { industry == null || industry == "ALL" || it.industry == industry }
-            .filter {
-                keyword.isEmpty() ||
-                        it.name.contains(keyword, ignoreCase = true) ||
-                        it.sku.contains(keyword, ignoreCase = true)
+        return ids.sorted().mapNotNull { find(it) }
+            .filter { industry == null || industry == "ALL" || it.industry == industry }.filter {
+                keyword.isEmpty() || it.name.contains(keyword, ignoreCase = true) || it.sku.contains(
+                    keyword,
+                    ignoreCase = true
+                )
             }
     }
 
@@ -125,8 +122,7 @@ object ProductService {
             expiringIn7Days = products.count { p ->
                 val expiry = p.expiryDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
                 p.stock > 0 && expiry != null && ChronoUnit.DAYS.between(today, expiry) in 0..7
-            }
-        )
+            })
     }
 
     // ============================== For other modules ==============================
@@ -185,8 +181,7 @@ object ProductService {
                     role = AuditService.OPERATIONS_STAFF,
                     detail = "Daily restock check: ${entity.name} (${ext.restockStatus}) - ${
                         triggerNote(
-                            entity,
-                            newExt
+                            entity, newExt
                         )
                     }"
                 )
@@ -222,6 +217,7 @@ object ProductService {
         attr.error?.let { return ProductResult.Fail(HttpStatusCode.BadRequest, it) }
 
         val id = newId()
+        val expiry = form.expiryDate?.ifBlank { null } ?: attr.expiryDate
         val entity = ProductEntity(
             id = id,
             sku = sku,
@@ -231,18 +227,19 @@ object ProductService {
             safeThreshold = minThreshold,
             costPrice = form.unitCostRM ?: round2(priceRM * 0.6),
             sellingPrice = priceRM,
-            expiryDate = attr.expiryDate.orEmpty()
+            expiryDate = expiry.orEmpty()
         )
         val ext = ProductExtras(
             industry = industry,
             uom = form.uom!!.trim(),
             reorderQty = form.reorderQty!!,
-            leadTimeDays = attr.leadTimeDays,
-            moq = attr.moq,
+            leadTimeDays = form.leadTimeDays ?: attr.leadTimeDays ?: 2,
+            moq = form.moq ?: attr.moq ?: 10,
             supplierName = form.supplierName.orEmpty(),
             supplierContact = form.supplierContact.orEmpty(),
-            batchNo = attr.batchNo,
-            variantSpec = attr.variantSpec,
+            batchNo = form.batchNo?.ifBlank { null } ?: attr.batchNo,
+            variantSpec = form.variantSpec?.ifBlank { null } ?: attr.variantSpec,
+            photoUrl = form.photoUrl?.ifBlank { null },
             restockStatus = if (stock <= minThreshold) "TRIGGERED_PENDING_APPROVAL" else "HEALTHY"
         )
         val opening = newMovement(id, "OPENING", stock, stock, "Opening stock", "system")
@@ -277,17 +274,16 @@ object ProductService {
             safeThreshold = req.minThreshold ?: entity.safeThreshold,
             costPrice = req.unitCostRM ?: entity.costPrice
         )
-        val newExt = recheckTrigger(
-            newEntity,
-            ext.copy(
-                reorderQty = req.reorderQty ?: ext.reorderQty,
-                supplierName = req.supplierName ?: ext.supplierName,
-                supplierContact = req.supplierContact ?: ext.supplierContact,
-                visibility = req.visibility ?: ext.visibility,
-                leadTimeDays = req.leadTimeDays ?: ext.leadTimeDays,
-                moq = req.moq ?: ext.moq
-            )
+        val updatedExt = ext.copy(
+            reorderQty = req.reorderQty ?: ext.reorderQty,
+            supplierName = req.supplierName ?: ext.supplierName,
+            supplierContact = req.supplierContact ?: ext.supplierContact,
+            visibility = req.visibility ?: ext.visibility,
+            leadTimeDays = req.leadTimeDays ?: ext.leadTimeDays,
+            moq = req.moq ?: ext.moq,
+            restockStatus = req.restockStatus ?: ext.restockStatus
         )
+        val newExt = if (req.restockStatus != null) updatedExt else recheckTrigger(newEntity, updatedExt)
 
         saveOrFail(ProductRecord(newEntity, newExt))?.let { return it }
         DataStore.products[id] = newEntity
@@ -295,19 +291,57 @@ object ProductService {
         ProductResult.Ok(toProduct(newEntity))
     }
 
-    /** Soft delete: hidden from lists and from the Order module, history is kept. */
     @Synchronized
     fun archive(id: String): ProductResult = synchronized(lockFor(id)) {
         syncExternalChange(id)
         failIfInactive(id)?.let { return it }
-        val entity = DataStore.products.getValue(id)
-        val newExt = extrasFor(entity).copy(archived = true)
+        val entity = DataStore.products.getValue(id).copy(stock = 0)
+        val newExt = extrasFor(entity).copy(
+            archived = true,
+            visibility = false,
+            restockStatus = "HEALTHY",
+            decommissionedAt = OffsetDateTime.now(MALAYSIA).toString()
+        )
 
         saveOrFail(ProductRecord(entity, newExt))?.let { return it }
         extras[id] = newExt
         archivedEntities[id] = entity
         DataStore.products.remove(id)
         ProductResult.Ok(toProduct(entity))
+    }
+
+    private fun toProduct(entity: ProductEntity): Product {
+        val ext = extrasFor(entity)
+        val stats = salesStats(entity.id, entity.stock)
+        return Product(
+            id = entity.id,
+            sku = entity.sku,
+            name = entity.name,
+            category = entity.category,
+            industry = ext.industry,
+            uom = ext.uom,
+            stock = entity.stock,
+            minThreshold = entity.safeThreshold,
+            reorderQty = ext.reorderQty,
+            priceRM = entity.sellingPrice,
+            unitCostRM = entity.costPrice.takeIf { it > 0.0 },
+            dailyDepletionRate = stats.dailyDepletionRate,
+            daysUntilStockout = stats.daysUntilStockout,
+            leadTimeDays = ext.leadTimeDays,
+            moq = ext.moq,
+            supplierName = ext.supplierName,
+            supplierContact = ext.supplierContact,
+            performance = stats.performance,
+            visibility = !ext.archived && ext.visibility,
+            batchNo = ext.batchNo,
+            expiryDate = entity.expiryDate.ifBlank { null },
+            variantSpec = ext.variantSpec,
+            restockStatus = ext.restockStatus,
+            photoUrl = ext.photoUrl,
+            isArchived = ext.archived,
+            isRemoved = ext.archived,
+            decommissionedAt = ext.decommissionedAt
+        )
     }
 
     fun approveRestock(id: String): ProductResult = synchronized(lockFor(id)) {
@@ -348,7 +382,10 @@ object ProductService {
         saveOrFail(ProductRecord(entity, confirmedExt))?.let { return it }
         extras[id] = confirmedExt
 
-        val invoice = InvoiceService.createPayable(
+        val existingInvoice = InvoiceService.list().firstOrNull {
+            it.type == InvoiceService.PAYABLE && it.sourceRef == id && it.status == "NEEDS_REVIEW"
+        }
+        val invoice = existingInvoice ?: InvoiceService.createPayable(
             party = ext.supplierName.ifBlank { "Unknown supplier" },
             amountRM = qty * entity.costPrice,
             category = "Inventory Restock (${entity.category})",
@@ -369,12 +406,7 @@ object ProductService {
 
     /** Caller must hold lockFor(entity.id) and have checked that the result is not negative. */
     private fun applyStockChange(
-        entity: ProductEntity,
-        type: String,
-        change: Int,
-        reason: String,
-        userID: String,
-        role: String
+        entity: ProductEntity, type: String, change: Int, reason: String, userID: String, role: String
     ): ProductResult {
         val ext = extrasFor(entity)
         val newStock = entity.stock + change
@@ -393,8 +425,7 @@ object ProductService {
             module = AuditService.PRODUCTS,
             role = role,
             detail = describeMovement(entity, newExt, movement) + if (triggered) " " + triggerNote(
-                entity,
-                newExt
+                entity, newExt
             ) else ""
         )
         return ProductResult.Ok(toProduct(entity))
@@ -442,16 +473,13 @@ object ProductService {
     }
 
     private data class SalesStats(
-        val dailyDepletionRate: Double,
-        val daysUntilStockout: Double?,
-        val performance: String
+        val dailyDepletionRate: Double, val daysUntilStockout: Double?, val performance: String
     )
 
     /** From SALE movements of the last 30 days; pending is a movement not yet added to the history. */
     private fun salesStats(id: String, stock: Int, pending: StockMovement? = null): SalesStats {
         val since = OffsetDateTime.now(MALAYSIA).minusDays(SALES_WINDOW_DAYS)
-        val unitsSold = (movementsOf(id) + listOfNotNull(pending))
-            .filter { it.type == "SALE" }
+        val unitsSold = (movementsOf(id) + listOfNotNull(pending)).filter { it.type == "SALE" }
             .filter { runCatching { OffsetDateTime.parse(it.timestamp).isAfter(since) }.getOrDefault(false) }
             .sumOf { -it.change }
         val rate = round1(unitsSold / SALES_WINDOW_DAYS.toDouble())
@@ -468,9 +496,7 @@ object ProductService {
 
     /** HEALTHY/CONFIRMED -> TRIGGERED_PENDING_APPROVAL when at/below min, or when stock runs out within the lead time. */
     private fun recheckTrigger(
-        entity: ProductEntity,
-        ext: ProductExtras,
-        pending: StockMovement? = null
+        entity: ProductEntity, ext: ProductExtras, pending: StockMovement? = null
     ): ProductExtras {
         if (ext.restockStatus !in TRIGGERABLE) return ext
         val stockout = salesStats(entity.id, entity.stock, pending).daysUntilStockout
@@ -503,36 +529,6 @@ object ProductService {
         return "$what$reason. Stock now ${m.stockAfter} $uom."
     }
 
-    private fun toProduct(entity: ProductEntity): Product {
-        val ext = extrasFor(entity)
-        val stats = salesStats(entity.id, entity.stock)
-        return Product(
-            id = entity.id,
-            sku = entity.sku,
-            name = entity.name,
-            category = entity.category,
-            industry = ext.industry,
-            uom = ext.uom,
-            stock = entity.stock,
-            minThreshold = entity.safeThreshold,
-            reorderQty = ext.reorderQty,
-            priceRM = entity.sellingPrice,
-            unitCostRM = entity.costPrice.takeIf { it > 0.0 },
-            dailyDepletionRate = stats.dailyDepletionRate,
-            daysUntilStockout = stats.daysUntilStockout,
-            leadTimeDays = ext.leadTimeDays,
-            moq = ext.moq,
-            supplierName = ext.supplierName,
-            supplierContact = ext.supplierContact,
-            performance = stats.performance,
-            visibility = ext.visibility,
-            batchNo = ext.batchNo,
-            expiryDate = entity.expiryDate.ifBlank { null },
-            variantSpec = ext.variantSpec,
-            restockStatus = ext.restockStatus
-        )
-    }
-
     /** Products created elsewhere (DataStore seed, other modules) get default extras. */
     private fun extrasFor(entity: ProductEntity): ProductExtras = extras.getOrPut(entity.id) {
         val supplier = DataStore.suppliers.firstOrNull()
@@ -556,29 +552,22 @@ object ProductService {
         movements.computeIfAbsent(id) { CopyOnWriteArrayList() }
 
     private fun newMovement(
-        productId: String,
-        type: String,
-        change: Int,
-        stockAfter: Int,
-        reason: String,
-        userID: String
-    ) =
-        StockMovement(
-            id = "MOV-${System.currentTimeMillis()}-${movementSeq.incrementAndGet()}",
-            productId = productId,
-            type = type,
-            change = change,
-            stockAfter = stockAfter,
-            reason = reason,
-            userID = userID.ifBlank { "unknown" },
-            timestamp = OffsetDateTime.now(MALAYSIA).truncatedTo(ChronoUnit.SECONDS).toString()
-        )
+        productId: String, type: String, change: Int, stockAfter: Int, reason: String, userID: String
+    ) = StockMovement(
+        id = "MOV-${System.currentTimeMillis()}-${movementSeq.incrementAndGet()}",
+        productId = productId,
+        type = type,
+        change = change,
+        stockAfter = stockAfter,
+        reason = reason,
+        userID = userID.ifBlank { "unknown" },
+        timestamp = OffsetDateTime.now(MALAYSIA).truncatedTo(ChronoUnit.SECONDS).toString()
+    )
 
     private fun skuTaken(sku: String, exceptId: String?): Boolean =
         (DataStore.products.values + archivedEntities.values).any {
             it.id != exceptId && it.sku.equals(
-                sku,
-                ignoreCase = true
+                sku, ignoreCase = true
             )
         }
 
@@ -627,13 +616,13 @@ object ProductService {
 
         return when (industry) {
             "FNB_PERISHABLE" -> {
-                val batchNo = Regex("""Batch:\s*(.+?)\s*(?:Exp:|$)""", RegexOption.IGNORE_CASE)
-                    .find(text)?.groupValues?.get(1)
-                    ?.substringBefore('\u2022')?.substringBefore('|')
-                    ?.trim()?.trimEnd { !it.isLetterOrDigit() }?.ifEmpty { null }
+                val batchNo =
+                    Regex("""Batch:\s*(.+?)\s*(?:Exp:|$)""", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)
+                        ?.substringBefore('\u2022')?.substringBefore('|')?.trim()?.trimEnd { !it.isLetterOrDigit() }
+                        ?.ifEmpty { null }
 
-                val exp = Regex("""Exp:\s*([^\u2022|\s]+)""", RegexOption.IGNORE_CASE)
-                    .find(text)?.groupValues?.get(1)?.trim()
+                val exp =
+                    Regex("""Exp:\s*([^\u2022|\s]+)""", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.trim()
 
                 if (exp != null) {
                     try {
@@ -648,10 +637,11 @@ object ProductService {
             "RETAIL_VARIANT" -> ExtraAttr(variantSpec = text)
 
             else -> ExtraAttr(
-                moq = Regex("""MOQ:\s*(\d+)""", RegexOption.IGNORE_CASE)
-                    .find(text)?.groupValues?.get(1)?.toIntOrNull(),
-                leadTimeDays = Regex("""Lead\s*Time:\s*(\d+)""", RegexOption.IGNORE_CASE)
-                    .find(text)?.groupValues?.get(1)?.toIntOrNull()
+                moq = Regex("""MOQ:\s*(\d+)""", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.toIntOrNull(),
+                leadTimeDays = Regex(
+                    """Lead\s*Time:\s*(\d+)""",
+                    RegexOption.IGNORE_CASE
+                ).find(text)?.groupValues?.get(1)?.toIntOrNull()
             )
         }
     }
@@ -677,8 +667,7 @@ object ProductService {
                 "Berjaya Wholesale Hub",
                 "+60123456781",
                 "Batch: B-${today.year}-${today.monthValue} • Exp: ${today.plusDays(12)}"
-            ),
-            NewProductForm(
+            ), NewProductForm(
                 "Gardenia Original Classic Bread",
                 "FNB-1002",
                 "Bakery",
@@ -692,12 +681,21 @@ object ProductService {
                 "Ah Hock Grocers Dist",
                 "+60123456782",
                 "Batch: B-${today.year}-${today.monthValue} • Exp: ${today.plusDays(4)}"
-            ),
-            NewProductForm(
-                "Cotton Polo Tee", "RTL-2001", "Apparel", "RETAIL_VARIANT", "pcs", 35, 10, 20, 39.9, 18.0,
-                "Klang Valley Logistics Hub", "+60123456783", "Size M • Navy"
-            ),
-            NewProductForm(
+            ), NewProductForm(
+                "Cotton Polo Tee",
+                "RTL-2001",
+                "Apparel",
+                "RETAIL_VARIANT",
+                "pcs",
+                35,
+                10,
+                20,
+                39.9,
+                18.0,
+                "Klang Valley Logistics Hub",
+                "+60123456783",
+                "Size M • Navy"
+            ), NewProductForm(
                 "Food-Grade Packaging Box 12x12",
                 "B2B-3001",
                 "Packaging",

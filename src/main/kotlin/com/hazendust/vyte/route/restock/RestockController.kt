@@ -29,7 +29,6 @@ object RestockController : BaseRouteController {
             call.respond(HttpStatusCode.OK, mapOf("status" to "RESET_OK", "workspaceId" to WorkspaceContext.currentId()))
         }
 
-        // 1.1 & 1.2 Restock Endpoints
         route.post("/api/restock/contact-supplier") {
             val req = call.receiveOrNull<ContactSupplierRequest>()
                 ?: return@post call.respondError(HttpStatusCode.BadRequest, "Invalid JSON body")
@@ -37,22 +36,56 @@ object RestockController : BaseRouteController {
                 return@post call.respondError(HttpStatusCode.BadRequest, "poNumber and supplierName are required")
             }
 
-            val prod = DataStore.products.values.firstOrNull { req.messageBody.contains(it.sku) || req.messageBody.contains(it.name) }
-            if (prod != null) ProductService.approveRestock(prod.id)
-            AuditService.log(AuditService.PRODUCTS, AuditService.SME_OWNER, "Contacted ${req.supplierName} via ${req.channel} for ${req.poNumber}.")
+            val prod = if (req.productId.isNotBlank()) {
+                DataStore.products[req.productId]
+            } else {
+                DataStore.products.values.firstOrNull { req.messageBody.contains(it.sku) || req.messageBody.contains(it.name) }
+            }
+            if (prod != null) {
+                ProductService.update(
+                    prod.id,
+                    com.hazendust.vyte.route.product.UpdateProductRequest(
+                        reorderQty = req.reorderQty?.takeIf { it > 0 },
+                        supplierName = req.supplierName.ifBlank { null },
+                        supplierContact = req.supplierPhoneNumber.ifBlank { null },
+                        unitCostRM = req.unitCostRM,
+                        leadTimeDays = req.leadTimeDays,
+                        restockStatus = "TRIGGERED_PENDING_APPROVAL"
+                    )
+                )
+                ProductService.approveRestock(prod.id)
+            }
+            AuditService.log(AuditService.PRODUCTS, req.role.ifBlank { AuditService.SME_OWNER }, "Contacted ${req.supplierName} via ${req.channel} for ${req.poNumber}.")
             call.respond(ContactSupplierResponse(req.poNumber, "SENT", OffsetDateTime.now().toString(), 200, "Dispatched via ${req.channel}"))
         }
 
         route.post("/api/restock/confirm") {
             val req = call.receiveOrNull<ConfirmRestockRequest>()
                 ?: return@post call.respondError(HttpStatusCode.BadRequest, "Invalid JSON body")
-            if (req.quantity <= 0) {
-                return@post call.respondError(HttpStatusCode.BadRequest, "quantity must be > 0")
+
+            // 如果前端只传了 SKU 而没传 productId，从库存按 SKU 寻找对应 ID
+            val pid = req.productId.ifBlank { req.productid }.ifBlank {
+                ProductService.list(null, null).firstOrNull { it.sku.equals(req.SKU, ignoreCase = true) }?.id.orEmpty()
             }
-            val pid = req.productId.ifBlank { req.productid }
+
+            if (pid.isBlank()) {
+                return@post call.respondError(HttpStatusCode.NotFound, "Product not found for SKU: ${req.SKU}")
+            }
+
             val res = ProductService.confirmDelivery(pid, req.quantity, req.userID)
-            val ok = res is ProductResult.Ok
-            call.respond(ConfirmRestockResponse(req.poNumber, if (ok) "CONFIRMED" else "PROCESSED", "DELIVERED", true, "Restock confirmed", OffsetDateTime.now().toString()))
+            val ok = res as? ProductResult.Ok
+            call.respond(
+                ConfirmRestockResponse(
+                    poNumber = req.poNumber,
+                    status = if (ok != null) "CONFIRMED" else "PROCESSED",
+                    confirmationStatus = "DELIVERED",
+                    isConfirmed = true,
+                    message = "Restock confirmed",
+                    updatedAt = OffsetDateTime.now().toString(),
+                    backendProduct = ok?.product,
+                    backendInvoice = ok?.invoice
+                )
+            )
         }
 
         // 2.1 & 2.2 Sales Review Endpoints

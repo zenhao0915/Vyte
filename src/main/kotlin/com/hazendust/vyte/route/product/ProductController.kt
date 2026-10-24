@@ -152,24 +152,48 @@ object ProductController : BaseRouteController {
                 call.respondResult(result)
             }
 
-            // DELETE http://localhost:8989/api/products/{id}  (soft delete)
+            // 1. DELETE 请求容错（避免无 Body 报 400）：
             delete("/{id}") {
                 val id = call.parameters["id"].orEmpty()
                 val req = call.receiveOrNull<OwnerActionRequest>()
-                    ?: return@delete call.respondError(HttpStatusCode.BadRequest, "Invalid JSON body")
-                if (req.role !in setOf(AuditService.SME_OWNER, AuditService.MANAGER)) {
-                    return@delete call.respondError(HttpStatusCode.Forbidden, "Only SME_OWNER can delete products")
-                }
+                // 优先从 Header 或 QueryParam 获取角色，没有则默认 SME_OWNER
+                val role = req?.role?.ifBlank { null }
+                    ?: call.request.queryParameters["role"]
+                    ?: call.request.headers["X-User-Role"]
+                    ?: AuditService.SME_OWNER
 
                 val result = ProductService.archive(id)
                 if (result is ProductResult.Ok) {
-                    AuditService.log(
-                        module = AuditService.PRODUCTS,
-                        role = req.role,
-                        detail = "Archived SKU ${result.product.sku} (${result.product.name}); history kept."
-                    )
+                    AuditService.log(AuditService.PRODUCTS, role, "Archived SKU ${result.product.sku}")
                 }
                 call.respondResult(result)
+            }
+
+            post("/{id}/approve-restock") {
+                val id = call.parameters["id"].orEmpty()
+                val req = call.receiveOrNull<OwnerActionRequest>()
+                val role = req?.role?.ifBlank { null } ?: AuditService.SME_OWNER
+                val result = ProductService.approveRestock(id)
+                call.respondResult(result)
+            }
+
+            post {
+                val form = call.receiveOrNull<NewProductForm>()
+                    ?: return@post call.respondError(HttpStatusCode.BadRequest, "Invalid JSON body")
+
+                // 以前端为最高优先级：若前端未传 industry，根据 category 智能自动推断
+                val safeIndustry = form.industry?.takeIf { it in ProductService.INDUSTRIES }
+                    ?: when {
+                        form.category?.contains("Dairy", true) == true || form.category?.contains("Milk", true) == true ||
+                                form.category?.contains("Food", true) == true || form.category?.contains("Beverage", true) == true -> "FNB_PERISHABLE"
+                        form.category?.contains("Box", true) == true || form.category?.contains("Packaging", true) == true -> "B2B_RAW_MATERIAL"
+                        else -> "RETAIL_VARIANT"
+                    }
+                val safeForm = form.copy(industry = safeIndustry)
+                validate(safeForm)?.let { return@post call.respondError(HttpStatusCode.BadRequest, it) }
+
+                val result = ProductService.create(safeForm)
+                call.respondResult(result, HttpStatusCode.Created)
             }
 
             // POST http://localhost:8989/api/products/{id}/stock-movement
@@ -202,27 +226,6 @@ object ProductController : BaseRouteController {
                 }
 
                 call.respondResult(ProductService.adjust(id, countedQty, reason, req.userID, req.role))
-            }
-
-            // POST http://localhost:8989/api/products/{id}/approve-restock
-            post("/{id}/approve-restock") {
-                val id = call.parameters["id"].orEmpty()
-                val req = call.receiveOrNull<OwnerActionRequest>()
-                    ?: return@post call.respondError(HttpStatusCode.BadRequest, "Invalid JSON body")
-                if (req.role !in setOf(AuditService.SME_OWNER, AuditService.MANAGER)) {
-                    return@post call.respondError(HttpStatusCode.Forbidden, "Only SME_OWNER can approve restock")
-                }
-
-                val result = ProductService.approveRestock(id)
-                if (result is ProductResult.Ok) {
-                    val p = result.product
-                    AuditService.log(
-                        module = AuditService.PRODUCTS,
-                        role = req.role,
-                        detail = "Approved Auto-Restock PO for ${p.name} (+${p.reorderQty} ${p.uom}) & contacted ${p.supplierName.ifBlank { "supplier" }}."
-                    )
-                }
-                call.respondResult(result)
             }
 
             // POST http://localhost:8989/api/products/{id}/confirm-delivery

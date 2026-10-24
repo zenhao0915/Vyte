@@ -1,32 +1,19 @@
 // src/modules/module6-compliance/ComplianceRenewalModule.tsx
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-    ShieldCheck,
-    AlertTriangle,
-    FolderLock,
-    Bot,
-    Search,
-    RefreshCw,
-    Upload,
-    CheckCircle2,
-    ExternalLink,
-    FileText,
-    Plus,
-    ArrowUpRight,
-    AlertCircle,
-    Check,
-    Clock,
-    Send,
+    AlertCircle, AlertTriangle, ArrowUpRight, Bot, Building2, Car, Check, CheckCircle2,
+    ExternalLink, FileText, FolderLock, Laptop, Plus, RefreshCw, Send, ShieldCheck, Sparkles, Upload, Wrench,
 } from 'lucide-react';
-import type {
-    BusinessComplianceProfile,
-    CurrencyCode,
-    DocumentVaultItem,
-    RenewalTask,
-    RenewalTaskStatus,
-    UserRole,
+import {
+    CURRENCY_SYMBOLS,
+    type BusinessComplianceProfile,
+    type ComplianceAssetCategory,
+    type CurrencyCode,
+    type DocumentVaultItem,
+    type RenewalTask,
+    type RenewalTaskStatus,
+    type UserRole,
 } from '../../types/vyte.ts';
-import { CURRENCY_SYMBOLS } from '../../types/vyte.ts';
 
 interface ComplianceRenewalModuleProps {
     profiles: BusinessComplianceProfile[];
@@ -43,56 +30,67 @@ interface ComplianceRenewalModuleProps {
     onTriggerLoadingScreen?: (message: string, durationMs?: number) => void;
 }
 
-type MainComplianceTab = 'ssm_radar' | 'vault_packet' | 'assisted_filing';
+type MainComplianceTab = 'ssm_radar' | 'accounting_sst' | 'mfrs_audit' | 'vault_packet' | 'assisted_filing';
 type SsmSubTab = 'scanner' | 'lookup';
 type VaultSubTab = 'repository' | 'upload';
 type FilingSubTab = 'pipeline' | 'initiate';
 
-const COMPLIANCE_UI_STORAGE_KEY = 'vyte_compliance_ui_state_v2';
+const COMPLIANCE_UI_STORAGE_KEY = 'vyte_compliance_ui_state_v4';
 
-const PBT_COUNCILS = [
+const ISSUING_AUTHORITIES_AND_VENDORS = [
     { label: 'MBPJ (Petaling Jaya)', value: 'MBPJ' },
     { label: 'DBKL (Kuala Lumpur)', value: 'DBKL' },
     { label: 'MBSA (Shah Alam)', value: 'MBSA' },
     { label: 'MBSJ (Subang Jaya)', value: 'MBSJ' },
+    { label: 'JPJ / PUSPAKOM Commercial Fleet', value: 'JPJ / PUSPAKOM Commercial Fleet' },
+    { label: 'Landlord / Building Management Office', value: 'BUILDING_MANAGEMENT' },
+    { label: 'OEM Machinery & Equipment Vendor', value: 'OEM_EQUIPMENT_VENDOR' },
+    { label: 'Enterprise Software / SaaS Vendor (Microsoft/AWS/Atlassian)', value: 'SOFTWARE_VENDOR' },
 ];
 
-const LICENSE_CATEGORIES = [
-    { label: 'Premise License (Lesen Premis)', value: 'PREMISE_LICENSE' },
-    { label: 'Food Establishment (Lesen Makanan)', value: 'FOOD_ESTABLISHMENT' },
-    { label: 'Signboard License (Lesen Iklan)', value: 'SIGNBOARD_LICENSE' },
-    { label: 'Warehouse & Storage Permit', value: 'WAREHOUSE_PERMIT' },
+const LICENSE_CATEGORIES: { label: string; value: string; category: ComplianceAssetCategory }[] = [
+    { label: 'Premise License (Lesen Premis / SSM)', value: 'PREMISE_LICENSE', category: 'SSM_PBT_LICENSE' },
+    { label: 'Signboard / Advertising License', value: 'SIGNBOARD_LICENSE', category: 'SSM_PBT_LICENSE' },
+    { label: 'Building Tenancy & Rental Contract', value: 'BUILDING_RENTAL_CONTRACT', category: 'RENTAL_CONTRACT' },
+    { label: 'Car / Fleet Road Tax & PUSPAKOM Inspection', value: 'FLEET_ROADTAX_PUSPAKOM', category: 'FLEET_VEHICLE' },
+    { label: 'Equipment / Machinery OEM Warranty Period', value: 'EQUIPMENT_OEM_WARRANTY', category: 'EQUIPMENT_WARRANTY' },
+    { label: 'Software License / Cloud SaaS Subscription', value: 'SOFTWARE_SUBSCRIPTION', category: 'SOFTWARE_LICENSE' },
 ];
 
 const DOC_TYPES = [
+    { label: 'Stamped Tenancy Agreement (Rental Contract)', value: 'TENANCY_AGREEMENT' },
+    { label: 'Building Floor Plan / CCC / Fire Safety Endorsement', value: 'BUILDING_CCC_SAFETY' },
+    { label: 'JPJ Vehicle Ownership Grant (VOC) & Road Tax', value: 'VEHICLE_ROADTAX_VOC' },
+    { label: 'PUSPAKOM VR1 Commercial Inspection Slip', value: 'PUSPAKOM_INSPECTION_SLIP' },
+    { label: 'Equipment OEM Warranty Card & Proof of Purchase', value: 'EQUIPMENT_WARRANTY_CERT' },
+    { label: 'Software License Agreement / SaaS Master Contract', value: 'SOFTWARE_EULA_CONTRACT' },
     { label: 'SSM Certificate (Form 9 / Section 17)', value: 'SSM_CERT_FORM_9' },
-    { label: 'Stamped Tenancy Agreement', value: 'TENANCY_AGREEMENT' },
-    { label: 'Premise Floor Plan (Renovated)', value: 'FLOOR_PLAN' },
-    { label: 'BOMBA Fire Safety Endorsement', value: 'FIRE_SAFETY_CERT' },
-    { label: 'Typhoid Vaccination & Food Handler Cert', value: 'TYPHOID_CERT' },
-    { label: 'Visual Signboard Artwork (DBP Approved)', value: 'SIGNBOARD_ARTWORK' },
 ];
 
+const OVERVIEW_CARDS = [
+    { icon: Building2, color: 'text-sky-400', title: 'Building & Tenancy', desc: 'Collect stamped tenancy agreements, landlord contacts, deposit refunds, and option-to-renew milestones.' },
+    { icon: Car, color: 'text-amber-400', title: 'Car & Fleet Licences', desc: 'Track JPJ road tax, commercial vehicle PUSPAKOM 6-month inspection slips, and fleet insurance renewals.' },
+    { icon: Wrench, color: 'text-purple-400', title: 'Warranty Periods', desc: 'OEM machinery, chillers, and hardware warranties with automatic 30-day free replacement claim alerts.' },
+    { icon: Laptop, color: 'text-emerald-400', title: 'Software Licensing', desc: 'SaaS subscriptions, ERP enterprise seats, license keys, and recurring software MSA documentation.' },
+];
+
+const CATEGORY_META: Record<ComplianceAssetCategory, { badgeCls: string; textCls: string; icon: React.ElementType; title: string; desc: string }> = {
+    RENTAL_CONTRACT: { badgeCls: 'bg-sky-100 text-sky-800', textCls: 'text-sky-800', icon: Building2, title: 'Building Listing:', desc: 'Stamped Tenancy Agreement active. Notice required 60 days before expiry for deposit protection.' },
+    FLEET_VEHICLE: { badgeCls: 'bg-blue-100 text-blue-800', textCls: 'text-blue-800', icon: Car, title: 'Vehicle Fleet:', desc: 'Road tax & PUSPAKOM inspection slip must be submitted to avoid commercial insurance void.' },
+    EQUIPMENT_WARRANTY: { badgeCls: 'bg-purple-100 text-purple-800', textCls: 'text-purple-800', icon: Wrench, title: 'OEM Warranty:', desc: 'Free preventative maintenance/compressor replacement eligible before warranty expires.' },
+    SOFTWARE_LICENSE: { badgeCls: 'bg-emerald-100 text-emerald-800', textCls: 'text-emerald-800', icon: Laptop, title: 'Software License:', desc: 'Enterprise tier / SaaS seat contract. Master Services Agreement indexed in vault.' },
+    SSM_PBT_LICENSE: { badgeCls: 'bg-slate-100 text-slate-800', textCls: 'text-slate-800', icon: FileText, title: 'Business Premise:', desc: 'Local authority permit (Lesen Premis). Up to 22% discount on multi-year renewal.' },
+};
+
 const sanitizePositiveDecimal = (raw: string): string => {
-    const cleaned = raw.replace(/[^0-9.]/g, '');
-    const parts = cleaned.split('.');
+    const parts = raw.replace(/[^0-9.]/g, '').split('.');
     const intPart = parts[0].replace(/^0+/, '').slice(0, 6);
     return parts.length > 1 ? `${intPart || '0'}.${parts[1].slice(0, 2)}` : intPart;
 };
 
 export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = ({
-                                                                                    profiles,
-                                                                                    setProfiles,
-                                                                                    vaultDocs,
-                                                                                    setVaultDocs,
-                                                                                    renewalTasks,
-                                                                                    setRenewalTasks,
-                                                                                    role,
-                                                                                    userID,
-                                                                                    currency = 'MYR',
-                                                                                    exchangeRate = 1.0,
-                                                                                    onLogAction,
-                                                                                    onTriggerLoadingScreen,
+                                                                                    profiles, setProfiles, vaultDocs, setVaultDocs, renewalTasks, setRenewalTasks,
+                                                                                    role, userID, currency = 'MYR', exchangeRate = 1.0, onLogAction, onTriggerLoadingScreen,
                                                                                 }) => {
     const currencySymbol = CURRENCY_SYMBOLS[currency] || 'RM';
     const canApprove = role === 'SME_OWNER' || role === 'MANAGER';
@@ -102,288 +100,158 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
         try {
             const raw = localStorage.getItem(COMPLIANCE_UI_STORAGE_KEY);
             return raw ? JSON.parse(raw) : {};
-        } catch {
-            return {};
-        }
+        } catch { return {}; }
     }, []);
 
-    const [mainTab, setMainTab] = useState<MainComplianceTab>(
-        savedState.mainTab ?? 'ssm_radar'
-    );
-    const [ssmSubTab, setSsmSubTab] = useState<SsmSubTab>(
-        savedState.ssmSubTab ?? 'scanner'
-    );
-    const [vaultSubTab, setVaultSubTab] = useState<VaultSubTab>(
-        savedState.vaultSubTab ?? 'repository'
-    );
-    const [filingSubTab, setFilingSubTab] = useState<FilingSubTab>(
-        savedState.filingSubTab ?? 'pipeline'
-    );
+    const [mainTab, setMainTab] = useState<MainComplianceTab>(savedState.mainTab ?? 'ssm_radar');
+    const [ssmSubTab, setSsmSubTab] = useState<SsmSubTab>(savedState.ssmSubTab ?? 'scanner');
+    const [vaultSubTab, setVaultSubTab] = useState<VaultSubTab>(savedState.vaultSubTab ?? 'repository');
+    const [filingSubTab, setFilingSubTab] = useState<FilingSubTab>(savedState.filingSubTab ?? 'pipeline');
+    const [assetCategoryFilter, setAssetCategoryFilter] = useState<'ALL' | ComplianceAssetCategory>('ALL');
+    const [claimedWarrantyRegNos, setClaimedWarrantyRegNos] = useState<string[]>([]);
 
-    const [ssmRegNo, setSsmRegNo] = useState<string>(
-        savedState.ssmRegNo ?? '202401048291'
-    );
-    const [ssmCompanyName, setSsmCompanyName] = useState<string>(
-        savedState.ssmCompanyName ?? 'ACME TECH SDN. BHD.'
-    );
-    const [ssmCouncil, setSsmCouncil] = useState<string>(
-        savedState.ssmCouncil ?? 'MBPJ'
-    );
-    const [ssmLicenseType, setSsmLicenseType] = useState<string>(
-        savedState.ssmLicenseType ?? 'PREMISE_LICENSE'
-    );
-    const [ssmExpiryDate, setSsmExpiryDate] = useState<string>(
-        savedState.ssmExpiryDate ?? '2026-11-30'
-    );
+    const [ssmRegNo, setSsmRegNo] = useState<string>(savedState.ssmRegNo ?? 'BLD-UNIT-88A');
+    const [ssmCompanyName, setSsmCompanyName] = useState<string>(savedState.ssmCompanyName ?? 'Bangsar South HQ - 3rd Floor');
+    const [ssmCouncil, setSsmCouncil] = useState<string>(savedState.ssmCouncil ?? 'BUILDING_MANAGEMENT');
+    const [ssmLicenseType, setSsmLicenseType] = useState<string>(savedState.ssmLicenseType ?? 'BUILDING_RENTAL_CONTRACT');
+    const [ssmExpiryDate, setSsmExpiryDate] = useState<string>(savedState.ssmExpiryDate ?? '2027-01-31');
     const [ssmLookupError, setSsmLookupError] = useState<string>('');
+    const [windowDays, setWindowDays] = useState<number>(savedState.windowDays ?? 365);
 
-    const [councilFilter, setCouncilFilter] = useState<string>(
-        savedState.councilFilter ?? 'ALL'
-    );
-    const [windowDays, setWindowDays] = useState<number>(
-        savedState.windowDays ?? 60
-    );
-    const [lastScannedAt, setLastScannedAt] = useState<string>('2026-10-23 12:15:00');
-
-    const [selectedDocIds, setSelectedDocIds] = useState<string[]>(
-        savedState.selectedDocIds ?? ['DOC-99401', 'DOC-99388', 'DOC-99350']
-    );
-    const [uploadRegNo, setUploadRegNo] = useState<string>(
-        savedState.uploadRegNo ?? '202401048291'
-    );
-    const [uploadDocType, setUploadDocType] = useState<string>(
-        savedState.uploadDocType ?? 'TENANCY_AGREEMENT'
-    );
-    const [uploadEffectiveDate, setUploadEffectiveDate] = useState<string>(
-        savedState.uploadEffectiveDate ?? '2026-01-01'
-    );
-    const [uploadExpiryDate, setUploadExpiryDate] = useState<string>(
-        savedState.uploadExpiryDate ?? '2027-12-31'
-    );
+    const [selectedDocIds, setSelectedDocIds] = useState<string[]>(savedState.selectedDocIds ?? ['DOC-99401']);
+    const [uploadRegNo, setUploadRegNo] = useState<string>(savedState.uploadRegNo ?? 'BLD-UNIT-88A');
+    const [uploadDocType, setUploadDocType] = useState<string>(savedState.uploadDocType ?? 'TENANCY_AGREEMENT');
+    const [uploadEffectiveDate, setUploadEffectiveDate] = useState<string>(savedState.uploadEffectiveDate ?? '2025-02-01');
+    const [uploadExpiryDate, setUploadExpiryDate] = useState<string>(savedState.uploadExpiryDate ?? '2027-01-31');
     const [uploadFileName, setUploadFileName] = useState<string>('');
     const [uploadError, setUploadError] = useState<string>('');
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const [filingRegNo, setFilingRegNo] = useState<string>(
-        savedState.filingRegNo ?? '202401048291'
-    );
-    const [filingMode, setFilingMode] = useState<
-        'CONCIERGE_MANUAL_SUBMISSION' | 'RPA_AUTOMATED'
-    >(savedState.filingMode ?? 'CONCIERGE_MANUAL_SUBMISSION');
-    const [filingFeeInput, setFilingFeeInput] = useState<string>(
-        savedState.filingFeeInput ?? '450.00'
-    );
-    const [filingDeadline, setFilingDeadline] = useState<string>(
-        savedState.filingDeadline ?? '2026-11-20'
-    );
-    const [filingNotes, setFilingNotes] = useState<string>(
-        savedState.filingNotes ??
-        'Premise renovation completed; updated floor plan & stamped tenancy attached.'
-    );
+    const [filingRegNo, setFilingRegNo] = useState<string>(savedState.filingRegNo ?? 'BLD-UNIT-88A');
+    const [filingMode, setFilingMode] = useState<'CONCIERGE_MANUAL_SUBMISSION' | 'RPA_AUTOMATED'>('CONCIERGE_MANUAL_SUBMISSION');
+    const [selectedTermYears, setSelectedTermYears] = useState<1 | 3 | 5>(1);
+    const [filingFeeInput, setFilingFeeInput] = useState<string>(savedState.filingFeeInput ?? '12000.00');
+    const [filingDeadline, setFilingDeadline] = useState<string>(savedState.filingDeadline ?? '2026-12-15');
+    const [filingNotes, setFilingNotes] = useState<string>(savedState.filingNotes ?? 'Tenancy extension notice. Rental deposit & stamped doc attached.');
     const [filingError, setFilingError] = useState<string>('');
 
     useEffect(() => {
-        localStorage.setItem(
-            COMPLIANCE_UI_STORAGE_KEY,
-            JSON.stringify({
-                mainTab,
-                ssmSubTab,
-                vaultSubTab,
-                filingSubTab,
-                ssmRegNo,
-                ssmCompanyName,
-                ssmCouncil,
-                ssmLicenseType,
-                ssmExpiryDate,
-                councilFilter,
-                windowDays,
-                selectedDocIds,
-                uploadRegNo,
-                uploadDocType,
-                uploadEffectiveDate,
-                uploadExpiryDate,
-                filingRegNo,
-                filingMode,
-                filingFeeInput,
-                filingDeadline,
-                filingNotes,
-            })
-        );
-    }, [
-        mainTab,
-        ssmSubTab,
-        vaultSubTab,
-        filingSubTab,
-        ssmRegNo,
-        ssmCompanyName,
-        ssmCouncil,
-        ssmLicenseType,
-        ssmExpiryDate,
-        councilFilter,
-        windowDays,
-        selectedDocIds,
-        uploadRegNo,
-        uploadDocType,
-        uploadEffectiveDate,
-        uploadExpiryDate,
-        filingRegNo,
-        filingMode,
-        filingFeeInput,
-        filingDeadline,
-        filingNotes,
-    ]);
+        localStorage.setItem(COMPLIANCE_UI_STORAGE_KEY, JSON.stringify({
+            mainTab, ssmSubTab, vaultSubTab, filingSubTab, ssmRegNo, ssmCompanyName, ssmCouncil, ssmLicenseType, ssmExpiryDate,
+            windowDays, selectedDocIds, uploadRegNo, uploadDocType, uploadEffectiveDate, uploadExpiryDate, filingRegNo, filingFeeInput, filingDeadline, filingNotes,
+        }));
+    }, [mainTab, ssmSubTab, vaultSubTab, filingSubTab, ssmRegNo, ssmCompanyName, ssmCouncil, ssmLicenseType, ssmExpiryDate, windowDays, selectedDocIds, uploadRegNo, uploadDocType, uploadEffectiveDate, uploadExpiryDate, filingRegNo, filingFeeInput, filingDeadline, filingNotes]);
 
-    const calcDaysLeft = (isoDate: string): number => {
-        const targetMs = new Date(isoDate).getTime();
-        const nowMs = new Date(todayIso).getTime();
-        return Math.round((targetMs - nowMs) / (1000 * 60 * 60 * 24));
+    const handleClaimWarrantyService = (prof: BusinessComplianceProfile) => {
+        setClaimedWarrantyRegNos((prev) => [...prev, prof.registrationNo]);
+        onLogAction('Warranty Claim', `Booked free OEM warranty inspection & preventive maintenance for ${prof.companyName} (${prof.registrationNo}).`);
     };
 
-    const scannedAlerts = useMemo(() => {
-        return profiles.filter((p) => {
-            const matchCouncil =
-                councilFilter === 'ALL' || p.councilName === councilFilter;
-            const daysLeft = calcDaysLeft(p.licenseExpiryDate);
-            const withinWindow = daysLeft <= windowDays;
-            return matchCouncil && withinWindow;
-        });
-    }, [profiles, councilFilter, windowDays]);
-
-    const handleVerifySsmProfile = (e: React.FormEvent<HTMLFormElement>) => {
-        e.preventDefault();
-        const cleanReg = ssmRegNo.trim();
-        const cleanName = ssmCompanyName.trim();
-
-        if (!/^\d{12}$/.test(cleanReg)) {
-            setSsmLookupError(
-                'SSM Registration No. must be an exact 12-digit numeric format (e.g., 202401048291).'
-            );
-            return;
-        }
-        if (cleanName.length < 3) {
-            setSsmLookupError('Registered Company Name is required (min 3 characters).');
-            return;
-        }
-        if (!ssmExpiryDate) {
-            setSsmLookupError('Please select a valid PBT License Expiry date.');
-            return;
-        }
-
-        setSsmLookupError('');
-        onTriggerLoadingScreen?.(
-            `Querying SSM Registry for ${cleanReg} & Validating PBT Window...`,
-            750
-        );
-
-        const daysLeft = calcDaysLeft(ssmExpiryDate);
-        const computedStatus: BusinessComplianceProfile['complianceStatus'] =
-            daysLeft < 0 ? 'EXPIRED' : daysLeft <= 60 ? 'EXPIRING_SOON' : 'ACTIVE';
-
-        const newProfile: BusinessComplianceProfile = {
-            registrationNo: cleanReg,
-            companyName: cleanName.toUpperCase(),
-            companyType: cleanName.toUpperCase().includes('PLT')
-                ? 'LLP'
-                : cleanName.toUpperCase().includes('SDN')
-                    ? 'SDN_BHD'
-                    : 'ENTERPRISE',
-            ssmExpiryDate: '2027-03-15',
-            councilName: ssmCouncil as BusinessComplianceProfile['councilName'],
-            licenseType: ssmLicenseType as BusinessComplianceProfile['licenseType'],
-            licenseExpiryDate: ssmExpiryDate,
-            complianceStatus: computedStatus,
-            autoAlertEnabled: true,
-        };
-
-        setProfiles((prev) => {
-            const exists = prev.some((p) => p.registrationNo === cleanReg);
-            return exists
-                ? prev.map((p) => (p.registrationNo === cleanReg ? newProfile : p))
-                : [newProfile, ...prev];
-        });
-
-        onLogAction(
-            'License & Compliance',
-            `Verified SSM Registration ${cleanReg} (${cleanName.toUpperCase()}) • Council: ${ssmCouncil} • Status: ${computedStatus}.`
-        );
-
-        setSsmSubTab('scanner');
+    const detectAssetCategory = (p: BusinessComplianceProfile): ComplianceAssetCategory => {
+        if (p.assetCategory && p.assetCategory in CATEGORY_META) return p.assetCategory as ComplianceAssetCategory;
+        const reg = p.registrationNo.toUpperCase();
+        const comp = p.companyName.toUpperCase();
+        const type = (p.licenseType || '').toUpperCase();
+        const council = p.councilName.toUpperCase();
+        if (reg.startsWith('SOFT-') || comp.includes('SOFTWARE') || comp.includes('SAAS') || type.includes('SOFTWARE') || council.includes('SOFTWARE')) return 'SOFTWARE_LICENSE';
+        if (reg.startsWith('BLD-') || comp.includes('TENANCY') || comp.includes('HQ') || comp.includes('SUITE') || type.includes('RENTAL') || council.includes('BUILDING') || p.assetCategory === 'BUILDING_RENTAL') return 'RENTAL_CONTRACT';
+        if (reg.startsWith('JPJ-') || council.includes('JPJ') || council.includes('PUSPAKOM') || comp.includes('VAN') || comp.includes('LORRY') || type.includes('FLEET')) return 'FLEET_VEHICLE';
+        if (reg.startsWith('WARR-') || comp.includes('WARRANTY') || council.includes('WARRANTY') || type.includes('EQUIPMENT')) return 'EQUIPMENT_WARRANTY';
+        return 'SSM_PBT_LICENSE';
     };
 
-    const handlePrepareAssistedFiling = (profile: BusinessComplianceProfile) => {
+    const calcDaysLeft = (isoDate: string): number => Math.round((new Date(isoDate).getTime() - new Date(todayIso).getTime()) / 86400000);
+
+    const scannedAlerts = useMemo(
+        () => profiles.filter((p) => (assetCategoryFilter === 'ALL' || detectAssetCategory(p) === assetCategoryFilter) && calcDaysLeft(p.licenseExpiryDate) <= windowDays),
+        [profiles, assetCategoryFilter, windowDays]
+    );
+
+    const handlePrepareAssistedFiling = (profile: BusinessComplianceProfile, preferredTerm?: 1 | 3 | 5) => {
+        const term: 1 | 3 | 5 = preferredTerm ?? (profile.selectedRenewalTermYears === 1 || profile.selectedRenewalTermYears === 3 ? profile.selectedRenewalTermYears : 5);
+        const annual = profile.annualFeeRM ?? 450;
+        const disc = term === 5 ? (profile.fiveYearDiscountPct ?? 22) : term === 3 ? 12 : 0;
+        const calculatedFee = Number((annual * term * (1 - disc / 100) * exchangeRate).toFixed(2));
         setFilingRegNo(profile.registrationNo);
+        setSelectedTermYears(term);
+        setFilingFeeInput(String(calculatedFee));
+        setFilingNotes(`${term}-Year term renewal initiated for ${profile.companyName}. Documentation verified.`);
         setMainTab('assisted_filing');
         setFilingSubTab('initiate');
     };
 
+    const handleVerifySsmProfile = (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        const cleanReg = ssmRegNo.trim(), cleanName = ssmCompanyName.trim();
+        if (cleanReg.length < 3) return setSsmLookupError('Identifier / Serial / Plate No. is required.');
+        if (cleanName.length < 3) return setSsmLookupError('Asset / Place / Software Name is required (min 3 characters).');
+        if (!ssmExpiryDate) return setSsmLookupError('Please select a valid expiry date.');
+
+        setSsmLookupError('');
+        onTriggerLoadingScreen?.(`Registering ${cleanName} into Documentation Database...`, 600);
+        const daysLeft = calcDaysLeft(ssmExpiryDate);
+        const computedStatus: BusinessComplianceProfile['complianceStatus'] = daysLeft < 0 ? 'EXPIRED' : daysLeft <= 60 ? 'EXPIRING_SOON' : 'COMPLIANT';
+        const determinedCategory: ComplianceAssetCategory = LICENSE_CATEGORIES.find((l) => l.value === ssmLicenseType)?.category ?? 'SSM_PBT_LICENSE';
+
+        const newProfile: BusinessComplianceProfile = {
+            registrationNo: cleanReg,
+            companyName: cleanName.toUpperCase(),
+            companyType: cleanName.toUpperCase().includes('PLT') ? 'LLP' : cleanName.toUpperCase().includes('SDN') ? 'SDN_BHD' : 'ENTERPRISE',
+            ssmExpiryDate: '2027-12-31',
+            councilName: ssmCouncil,
+            licenseType: ssmLicenseType,
+            licenseExpiryDate: ssmExpiryDate,
+            complianceStatus: computedStatus,
+            autoAlertEnabled: true,
+            assetCategory: determinedCategory,
+            annualFeeRM: determinedCategory === 'RENTAL_CONTRACT' ? 12000 : 480,
+            fiveYearDiscountPct: 20,
+            selectedRenewalTermYears: 1,
+        };
+
+        setProfiles((prev) => prev.some((p) => p.registrationNo === cleanReg) ? prev.map((p) => (p.registrationNo === cleanReg ? newProfile : p)) : [newProfile, ...prev]);
+        onLogAction('License Registered', `Indexed ${cleanReg} (${cleanName.toUpperCase()}) under [${determinedCategory}].`);
+        setSsmSubTab('scanner');
+    };
+
     const handleUploadVaultDoc = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
-        if (!uploadEffectiveDate || !uploadExpiryDate) {
-            setUploadError('Both Effective Date and Expiry Date are required.');
-            return;
-        }
-        if (uploadExpiryDate <= uploadEffectiveDate) {
-            setUploadError('Expiry Date must be later than the Effective Date.');
-            return;
-        }
+        if (!uploadEffectiveDate || !uploadExpiryDate) return setUploadError('Both Effective Date and Expiry Date are required.');
+        if (uploadExpiryDate <= uploadEffectiveDate) return setUploadError('Expiry Date must be after the Effective Date.');
 
         setUploadError('');
         const newDocId = `DOC-${Math.floor(10000 + Math.random() * 90000)}`;
-        const cleanFile =
-            uploadFileName.trim() ||
-            `${uploadDocType.toLowerCase()}_${uploadRegNo}.pdf`;
-
+        const cleanFile = uploadFileName.trim() || `${uploadDocType.toLowerCase()}_${uploadRegNo}.pdf`;
         const createdDoc: DocumentVaultItem = {
-            docID: newDocId,
-            registrationNo: uploadRegNo,
-            docType: uploadDocType as DocumentVaultItem['docType'],
-            fileUrl: `https://storage.local/compliance/${cleanFile}`,
-            fileSizeKb: Math.floor(450 + Math.random() * 1600),
-            effectiveDate: uploadEffectiveDate,
-            expiryDate: uploadExpiryDate,
-            uploadedAt: new Date().toISOString(),
-            uploadedBy: userID,
+            docID: newDocId, registrationNo: uploadRegNo, docType: uploadDocType,
+            fileUrl: `https://storage.local/compliance/${cleanFile}`, fileSizeKb: Math.floor(650 + Math.random() * 2100),
+            effectiveDate: uploadEffectiveDate, expiryDate: uploadExpiryDate,
+            uploadedAt: new Date().toISOString(), uploadedBy: userID, notes: 'Indexed in Central Documentation Database',
         };
 
         setVaultDocs((prev) => [createdDoc, ...prev]);
         setSelectedDocIds((prev) => [...prev, newDocId]);
         setUploadFileName('');
-
-        onLogAction(
-            'Compliance Vault',
-            `Uploaded ${uploadDocType} (${newDocId}) for company ${uploadRegNo} to centralized compliance vault.`
-        );
+        onLogAction('Vault Index', `Saved contract/doc ${newDocId} for asset ${uploadRegNo}.`);
         setVaultSubTab('repository');
     };
 
     const handleInitiateRenewal = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         const feeNum = Number(filingFeeInput);
-        if (!filingFeeInput || isNaN(feeNum) || feeNum <= 0) {
-            setFilingError(`Enter a valid renewal fee greater than ${currencySymbol} 0.00.`);
-            return;
-        }
-        if (!filingDeadline) {
-            setFilingError('Target filing deadline is required.');
-            return;
-        }
-        if (selectedDocIds.length === 0) {
-            setFilingError(
-                'Please select at least 1 supporting document from the Document Vault first.'
-            );
-            return;
-        }
+        if (!filingFeeInput || isNaN(feeNum) || feeNum <= 0) return setFilingError('Enter a valid renewal fee.');
+        if (!filingDeadline) return setFilingError('Target filing deadline is required.');
+        if (selectedDocIds.length === 0) return setFilingError('Please attach at least 1 document from the Document Vault.');
 
         setFilingError('');
-        onTriggerLoadingScreen?.(
-            'Packaging Vault Documents & Initiating Assisted Renewal...',
-            800
-        );
+        onTriggerLoadingScreen?.('Packaging Contract & Documentation Packet...', 800);
+        const matchedProfile = profiles.find((p) => p.registrationNo === filingRegNo) || profiles[0];
+        const renId = `REN-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-        const matchedProfile =
-            profiles.find((p) => p.registrationNo === filingRegNo) || profiles[0];
-        const renId = `REN-2026-${Math.floor(1000 + Math.random() * 9000)}`;
         const baseFeeRM = Number((feeNum / exchangeRate).toFixed(2));
+        const annualRM = matchedProfile.annualFeeRM ?? baseFeeRM / selectedTermYears;
+        const discPct = selectedTermYears === 5 ? (matchedProfile.fiveYearDiscountPct ?? 22) : selectedTermYears === 3 ? 12 : 0;
+        const savedDiscountRM = Number((annualRM * selectedTermYears * (discPct / 100)).toFixed(2));
 
         const createdTask: RenewalTask = {
             renewalID: renId,
@@ -393,55 +261,34 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
             licenseType: matchedProfile.licenseType,
             filingMode,
             status: 'ASSIGNED_TO_AGENT',
-            assignedAgentID:
-                filingMode === 'RPA_AUTOMATED' ? 'ORBYTE_RPA_BOT_01' : 'AGENT_DESK_03',
-            pbtPortalUrl: `https://e-lesen.${matchedProfile.councilName.toLowerCase()}.gov.my`,
+            assignedAgentID: filingMode === 'RPA_AUTOMATED' ? 'ORBYTE_RPA_BOT_01' : 'LEGAL_ADMIN_DESK',
+            pbtPortalUrl: `https://contracts-vault.local/${matchedProfile.registrationNo}`,
             submissionReferenceNo: null,
-            compiledSubmissionPdfUrl: `https://storage.local/packets/${matchedProfile.councilName}_${renId}.pdf`,
+            compiledSubmissionPdfUrl: `https://storage.local/packets/${renId}_bundle.pdf`,
             generatedChecklist: [
-                { step: 1, name: 'SSM Form 9 & Business Profile Validated', isCompleted: true },
-                {
-                    step: 2,
-                    name: `${selectedDocIds.length} Vault Document(s) Attached & Indexed`,
-                    isCompleted: true,
-                },
-                {
-                    step: 3,
-                    name: 'Owner / Manager Final Submission Approval',
-                    isCompleted: false,
-                },
+                { step: 1, name: 'Asset & Contract Registration Validated', isCompleted: true },
+                { step: 2, name: `${selectedDocIds.length} Verified Vault Document(s) Attached`, isCompleted: true },
+                { step: 3, name: `${selectedTermYears}-Year Renewal Terms Verified`, isCompleted: true },
+                { step: 4, name: 'Manager / Owner Statutory Sign-off', isCompleted: false },
             ],
             targetDeadline: filingDeadline,
             renewalFee: baseFeeRM,
+            renewalTermYears: selectedTermYears,
+            savedDiscountRM,
             currency: 'MYR',
-            internalNotes: filingNotes.trim() || 'Standard annual PBT license renewal.',
+            internalNotes: filingNotes.trim(),
             createdAt: new Date().toISOString(),
         };
 
         setRenewalTasks((prev) => [createdTask, ...prev]);
-        onLogAction(
-            'Assisted Renewal',
-            `Initiated ${filingMode} task ${renId} for ${matchedProfile.companyName} (${matchedProfile.councilName}).`
-        );
+        onLogAction('Assisted Renewal', `Created renewal task ${renId} for ${matchedProfile.companyName}.`);
         setFilingSubTab('pipeline');
     };
 
     const handleAdvanceRenewalStatus = (task: RenewalTask) => {
-        if (!canApprove) {
-            alert(
-                'Vyte RBAC Restriction: Only Owner or Manager accounts can approve statutory renewal submissions.'
-            );
-            return;
-        }
-
-        const nextStatus: RenewalTaskStatus =
-            (task.status as string) === 'ASSIGNED_TO_AGENT'
-                ? 'SUBMITTED_TO_PBT'
-                : 'APPROVED_RENEWED';
-
-        const refNo =
-            task.submissionReferenceNo ||
-            `${task.councilName}-SUB-${Math.floor(100000 + Math.random() * 900000)}`;
+        if (!canApprove) return alert('RBAC Restriction: Only Owner or Manager accounts can approve renewals.');
+        const nextStatus: RenewalTaskStatus = task.status === 'ASSIGNED_TO_AGENT' ? 'SUBMITTED_TO_PBT' : 'APPROVED_RENEWED';
+        const refNo = task.submissionReferenceNo || `REF-${Math.floor(100000 + Math.random() * 900000)}`;
 
         setRenewalTasks((prev) =>
             prev.map((t) =>
@@ -450,425 +297,243 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                         ...t,
                         status: nextStatus,
                         submissionReferenceNo: refNo,
-                        generatedChecklist: t.generatedChecklist.map((c) => ({
-                            ...c,
-                            isCompleted: true,
-                        })),
+                        generatedChecklist: t.generatedChecklist.map((c) => ({ ...c, isCompleted: true })),
                     }
                     : t
             )
         );
 
-        if ((nextStatus as string) === 'APPROVED_RENEWED') {
+        if (nextStatus === 'APPROVED_RENEWED') {
+            const termYears = task.renewalTermYears ?? 1;
             setProfiles((prev) =>
-                prev.map((p) =>
-                    p.registrationNo === task.registrationNo
-                        ? {
-                            ...p,
-                            complianceStatus: 'ACTIVE',
-                            licenseExpiryDate: '2027-11-30',
-                        }
-                        : p
-                )
+                prev.map((p) => {
+                    if (p.registrationNo !== task.registrationNo) return p;
+                    const baseDate = new Date(p.licenseExpiryDate);
+                    const startYear = isNaN(baseDate.getTime()) || baseDate.getFullYear() < new Date().getFullYear()
+                        ? new Date().getFullYear()
+                        : baseDate.getFullYear();
+                    const monthDay = /^\d{4}-\d{2}-\d{2}$/.test(p.licenseExpiryDate) ? p.licenseExpiryDate.slice(4) : '-12-31';
+                    return {
+                        ...p,
+                        complianceStatus: 'COMPLIANT',
+                        licenseExpiryDate: `${startYear + termYears}${monthDay}`,
+                    };
+                })
             );
         }
-
-        onLogAction(
-            'Assisted Renewal',
-            `Updated renewal task ${task.renewalID} (${task.companyName}) to ${nextStatus} [Ref: ${refNo}].`
-        );
     };
 
     return (
         <div className="space-y-4 select-none w-full">
-            {/* Main 3-Tab Toggle Bar + Secondary Sub-Function Toggle Bar */}
+            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-emerald-950 text-white rounded-2xl p-5 border border-white/10 shadow-md space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[11px] font-bold uppercase tracking-wider">
+            Enterprise Documentation Database &amp; Asset Vault
+          </span>
+                    <span className="text-xs text-slate-300 font-semibold flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            Centralized Repository for Tenancy, Fleet, Software &amp; Warranty Licences
+          </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                    {OVERVIEW_CARDS.map(({ icon: Icon, color, title, desc }) => (
+                        <div key={title} className="p-3.5 rounded-xl bg-white/5 border border-white/10 space-y-1">
+                            <div className={`flex items-center gap-1.5 ${color} font-bold`}><Icon className="w-4 h-4" /> {title}</div>
+                            <p className="text-[11px] text-slate-300">{desc}</p>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
             <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="inline-flex flex-wrap items-center bg-slate-200/80 p-1 rounded-xl border border-slate-300/70 text-xs font-semibold">
-                    <button
-                        type="button"
-                        onClick={() => setMainTab('ssm_radar')}
-                        className={`px-3.5 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
-                            mainTab === 'ssm_radar'
-                                ? 'bg-white text-emerald-800 font-bold shadow-2xs'
-                                : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                    >
-                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>SSM Lookup &amp; Expiry Radar ({profiles.length})</span>
+                <div className="inline-flex flex-wrap items-center bg-slate-200/80 p-1 rounded-xl border border-slate-300/70 text-xs font-semibold gap-1">
+                    <button type="button" onClick={() => setMainTab('ssm_radar')} className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${mainTab === 'ssm_radar' ? 'bg-white text-emerald-800 font-bold shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}>
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> <span>All Monitored Assets ({profiles.length})</span>
                     </button>
-
-                    <button
-                        type="button"
-                        onClick={() => setMainTab('vault_packet')}
-                        className={`px-3.5 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
-                            mainTab === 'vault_packet'
-                                ? 'bg-white text-purple-800 font-bold shadow-2xs'
-                                : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                    >
-                        <FolderLock className="w-3.5 h-3.5 text-purple-600" />
-                        <span>Document Vault &amp; Packet Builder ({vaultDocs.length})</span>
+                    <button type="button" onClick={() => setMainTab('vault_packet')} className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${mainTab === 'vault_packet' ? 'bg-white text-purple-800 font-bold shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}>
+                        <FolderLock className="w-3.5 h-3.5 text-purple-600" /> <span>Documentation Database ({vaultDocs.length})</span>
                     </button>
-
-                    <button
-                        type="button"
-                        onClick={() => setMainTab('assisted_filing')}
-                        className={`px-3.5 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
-                            mainTab === 'assisted_filing'
-                                ? 'bg-white text-blue-800 font-bold shadow-2xs'
-                                : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                    >
-                        <Bot className="w-3.5 h-3.5 text-blue-600" />
-                        <span>Concierge &amp; RPA Assisted Filing ({renewalTasks.length})</span>
+                    <button type="button" onClick={() => setMainTab('assisted_filing')} className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${mainTab === 'assisted_filing' ? 'bg-white text-blue-800 font-bold shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}>
+                        <Bot className="w-3.5 h-3.5 text-blue-600" /> <span>Renewal Pipeline ({renewalTasks.length})</span>
                     </button>
                 </div>
 
                 {mainTab === 'ssm_radar' && (
                     <div className="inline-flex items-center bg-amber-100/80 p-1 rounded-xl border border-amber-200 text-xs font-semibold">
-                        <button
-                            type="button"
-                            onClick={() => setSsmSubTab('scanner')}
-                            className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
-                                ssmSubTab === 'scanner'
-                                    ? 'bg-amber-500 text-white font-bold shadow-2xs'
-                                    : 'text-amber-900 hover:bg-amber-200/60'
-                            }`}
-                        >
-                            <AlertTriangle className="w-3.5 h-3.5" />
-                            <span>Expiry Alert Scanner ({scannedAlerts.length} Alerts)</span>
+                        <button type="button" onClick={() => setSsmSubTab('scanner')} className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${ssmSubTab === 'scanner' ? 'bg-amber-500 text-white font-bold shadow-2xs' : 'text-amber-900 hover:bg-amber-200/60'}`}>
+                            <AlertTriangle className="w-3.5 h-3.5" /> Expiry Radar ({scannedAlerts.length})
                         </button>
-                        <button
-                            type="button"
-                            onClick={() => setSsmSubTab('lookup')}
-                            className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
-                                ssmSubTab === 'lookup'
-                                    ? 'bg-amber-500 text-white font-bold shadow-2xs'
-                                    : 'text-amber-900 hover:bg-amber-200/60'
-                            }`}
-                        >
-                            <Search className="w-3.5 h-3.5" />
-                            <span>Real-Time SSM Lookup</span>
+                        <button type="button" onClick={() => setSsmSubTab('lookup')} className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${ssmSubTab === 'lookup' ? 'bg-amber-500 text-white font-bold shadow-2xs' : 'text-amber-900 hover:bg-amber-200/60'}`}>
+                            <Plus className="w-3.5 h-3.5" /> Register Asset / Contract
                         </button>
                     </div>
                 )}
 
                 {mainTab === 'vault_packet' && (
                     <div className="inline-flex items-center bg-purple-100/80 p-1 rounded-xl border border-purple-200 text-xs font-semibold">
-                        <button
-                            type="button"
-                            onClick={() => setVaultSubTab('repository')}
-                            className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
-                                vaultSubTab === 'repository'
-                                    ? 'bg-purple-600 text-white font-bold shadow-2xs'
-                                    : 'text-purple-900 hover:bg-purple-200/60'
-                            }`}
-                        >
-                            <FolderLock className="w-3.5 h-3.5" />
-                            <span>Vault Repository &amp; Packet ({selectedDocIds.length} Selected)</span>
+                        <button type="button" onClick={() => setVaultSubTab('repository')} className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${vaultSubTab === 'repository' ? 'bg-purple-600 text-white font-bold shadow-2xs' : 'text-purple-900 hover:bg-purple-200/60'}`}>
+                            <FolderLock className="w-3.5 h-3.5" /> Stored Contracts ({vaultDocs.length})
                         </button>
-                        <button
-                            type="button"
-                            onClick={() => setVaultSubTab('upload')}
-                            className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
-                                vaultSubTab === 'upload'
-                                    ? 'bg-purple-600 text-white font-bold shadow-2xs'
-                                    : 'text-purple-900 hover:bg-purple-200/60'
-                            }`}
-                        >
-                            <Upload className="w-3.5 h-3.5" />
-                            <span>Upload Compliance Document</span>
-                        </button>
-                    </div>
-                )}
-
-                {mainTab === 'assisted_filing' && (
-                    <div className="inline-flex items-center bg-blue-100/80 p-1 rounded-xl border border-blue-200 text-xs font-semibold">
-                        <button
-                            type="button"
-                            onClick={() => setFilingSubTab('pipeline')}
-                            className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
-                                filingSubTab === 'pipeline'
-                                    ? 'bg-blue-600 text-white font-bold shadow-2xs'
-                                    : 'text-blue-900 hover:bg-blue-200/60'
-                            }`}
-                        >
-                            <Clock className="w-3.5 h-3.5" />
-                            <span>Active Filing Pipeline ({renewalTasks.length})</span>
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setFilingSubTab('initiate')}
-                            className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
-                                filingSubTab === 'initiate'
-                                    ? 'bg-blue-600 text-white font-bold shadow-2xs'
-                                    : 'text-blue-900 hover:bg-blue-200/60'
-                            }`}
-                        >
-                            <Plus className="w-3.5 h-3.5" />
-                            <span>Initiate Assisted Renewal</span>
+                        <button type="button" onClick={() => setVaultSubTab('upload')} className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${vaultSubTab === 'upload' ? 'bg-purple-600 text-white font-bold shadow-2xs' : 'text-purple-900 hover:bg-purple-200/60'}`}>
+                            <Upload className="w-3.5 h-3.5" /> Upload Contract / Doc
                         </button>
                     </div>
                 )}
             </div>
 
-            {/* =====================================================================
-          MAIN TAB 1: SSM LOOKUP & EXPIRY RADAR (BOTH SUB-FUNCTIONS FULL-WIDTH)
-         ===================================================================== */}
             {mainTab === 'ssm_radar' && (
-                <div className="w-full">
+                <div className="w-full space-y-4">
                     {ssmSubTab === 'scanner' && (
                         <div className="w-full bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-4">
                             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
                                 <div>
                                     <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                                        <AlertTriangle className="w-4 h-4 text-amber-500" /> License &amp; PBT Compliance Expiry Alert Scanner
+                                        <AlertTriangle className="w-4 h-4 text-amber-500" /> Licences, Leases, Warranties &amp; Subscriptions Radar
                                     </h3>
-                                    <p className="text-xs text-slate-500 mt-0.5">
-                                        Scans SSM dates, premise licenses &amp; signboard renewals to trigger proactive warnings before council penalties occur.
-                                    </p>
+                                    <p className="text-xs text-slate-500 mt-0.5">Automated tracking for building rental renewals, vehicle road taxes, equipment warranties, and software subscriptions.</p>
                                 </div>
 
-                                <div className="flex flex-wrap items-center gap-2 text-xs">
-                                    <select
-                                        value={councilFilter}
-                                        onChange={(e) => setCouncilFilter(e.target.value)}
-                                        className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 font-bold text-slate-800"
-                                    >
-                                        <option value="ALL">PBT: All Councils</option>
-                                        {PBT_COUNCILS.map((c) => (
-                                            <option key={c.value} value={c.value}>
-                                                {c.label}
-                                            </option>
-                                        ))}
+                                <div className="flex items-center gap-2 text-xs">
+                                    <select value={windowDays} onChange={(e) => setWindowDays(Number(e.target.value))} className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 font-bold text-slate-800">
+                                        <option value={30}>Expiring in 30 Days</option>
+                                        <option value={60}>Expiring in 60 Days</option>
+                                        <option value={90}>Expiring in 90 Days</option>
+                                        <option value={365}>Show All (365 Days)</option>
                                     </select>
-
-                                    <select
-                                        value={windowDays}
-                                        onChange={(e) => setWindowDays(Number(e.target.value))}
-                                        className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 font-bold text-slate-800"
-                                    >
-                                        <option value={30}>Window: 30 Days</option>
-                                        <option value={60}>Window: 60 Days</option>
-                                        <option value={90}>Window: 90 Days</option>
-                                        <option value={365}>Window: All (365 Days)</option>
-                                    </select>
-
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            onTriggerLoadingScreen?.('Scanning SSM & PBT Expiry Dates...', 600);
-                                            setLastScannedAt(new Date().toISOString().slice(0, 19).replace('T', ' '));
-                                        }}
-                                        className="px-3.5 py-1.5 bg-slate-900 hover:bg-emerald-600 text-white rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer"
-                                    >
-                                        <RefreshCw className="w-3.5 h-3.5" /> Scan Now
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        onClick={() => setSsmSubTab('lookup')}
-                                        className="px-3.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl font-bold flex items-center gap-1 transition cursor-pointer"
-                                    >
-                                        <Plus className="w-3.5 h-3.5" /> Add / Verify SSM Entity
+                                    <button type="button" onClick={() => onTriggerLoadingScreen?.('Scanning Database & Expiry Timelines...', 500)} className="px-3.5 py-1.5 bg-slate-900 hover:bg-emerald-600 text-white rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer">
+                                        <RefreshCw className="w-3.5 h-3.5" /> Scan
                                     </button>
                                 </div>
                             </div>
 
-                            <div className="flex items-center justify-between text-xs text-slate-500">
-                <span>
-                  Showing <strong>{scannedAlerts.length}</strong> alert(s) out of{' '}
-                    <strong>{profiles.length}</strong> monitored licenses
-                </span>
-                                <span className="font-mono text-[11px]">Checked: {lastScannedAt}</span>
-                            </div>
-
-                            <div className="grid grid-cols-1 gap-3">
-                                {scannedAlerts.map((prof) => {
-                                    const daysLeft = calcDaysLeft(prof.licenseExpiryDate);
-                                    const isExpired = daysLeft < 0 || prof.complianceStatus === 'EXPIRED';
-
+                            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                                {([
+                                    { id: 'ALL', label: `All Monitored (${profiles.length})`, icon: ShieldCheck },
+                                    { id: 'RENTAL_CONTRACT', label: 'Building & Rental Places', icon: Building2 },
+                                    { id: 'FLEET_VEHICLE', label: 'Car & Fleet Licences', icon: Car },
+                                    { id: 'EQUIPMENT_WARRANTY', label: 'Warranty Periods', icon: Wrench },
+                                    { id: 'SOFTWARE_LICENSE', label: 'Software Licensing', icon: Laptop },
+                                    { id: 'SSM_PBT_LICENSE', label: 'SSM & Council Licences', icon: FileText },
+                                ] as const).map((cat) => {
+                                    const Icon = cat.icon;
+                                    const active = assetCategoryFilter === cat.id;
                                     return (
-                                        <div
-                                            key={`${prof.registrationNo}-${prof.licenseType}`}
-                                            className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition ${
-                                                isExpired
-                                                    ? 'bg-rose-50/40 border-rose-200'
-                                                    : prof.complianceStatus === 'EXPIRING_SOON'
-                                                        ? 'bg-amber-50/40 border-amber-200'
-                                                        : 'bg-emerald-50/30 border-emerald-200'
-                                            }`}
-                                        >
-                                            <div className="space-y-1.5">
-                                                <div className="flex flex-wrap items-center gap-2">
-                          <span className="px-2.5 py-0.5 rounded-md bg-slate-900 text-white font-mono text-[11px] font-bold">
-                            {prof.councilName}
-                          </span>
-                                                    <span
-                                                        className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold ${
-                                                            isExpired
-                                                                ? 'bg-rose-100 text-rose-700'
-                                                                : prof.complianceStatus === 'EXPIRING_SOON'
-                                                                    ? 'bg-amber-100 text-amber-800'
-                                                                    : 'bg-emerald-100 text-emerald-800'
-                                                        }`}
-                                                    >
-                            {prof.complianceStatus} ({daysLeft}d left)
-                          </span>
-                                                    <span className="text-xs font-mono text-slate-500">
-                            Exp: {prof.licenseExpiryDate}
-                          </span>
-                                                </div>
-
-                                                <h4 className="text-sm font-extrabold text-slate-900">
-                                                    {prof.companyName}{' '}
-                                                    <span className="font-mono text-xs font-normal text-slate-500">
-                            ({prof.registrationNo})
-                          </span>{' '}
-                                                    • {prof.licenseType.replace(/_/g, ' ')}
-                                                </h4>
-
-                                                <p className="text-xs text-amber-900 font-medium">
-                                                    Action Required: Prepare floor plan, SSM Form 9, and tenancy agreement in Document Vault for assisted PBT renewal filing.
-                                                </p>
-                                            </div>
-
-                                            <div className="flex items-center gap-2 shrink-0">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handlePrepareAssistedFiling(prof)}
-                                                    className="px-4 py-2 bg-[#2BB656] hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer whitespace-nowrap"
-                                                >
-                                                    Prepare Assisted Filing <ArrowUpRight className="w-3.5 h-3.5" />
-                                                </button>
-                                            </div>
-                                        </div>
+                                        <button key={cat.id} type="button" onClick={() => setAssetCategoryFilter(cat.id)} className={`px-3 py-1.5 rounded-xl border font-bold flex items-center gap-1.5 transition cursor-pointer ${active ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'}`}>
+                                            <Icon className="w-3.5 h-3.5" /> <span>{cat.label}</span>
+                                        </button>
                                     );
                                 })}
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-3.5">
+                                {scannedAlerts.length === 0 ? (
+                                    <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-xs text-slate-500">
+                                        No items expiring within the selected window. Click &quot;Register Asset / Contract&quot; to add new entries.
+                                    </div>
+                                ) : (
+                                    scannedAlerts.map((prof) => {
+                                        const daysLeft = calcDaysLeft(prof.licenseExpiryDate);
+                                        const isExpired = daysLeft < 0 || prof.complianceStatus === 'EXPIRED';
+                                        const cat = detectAssetCategory(prof);
+                                        const meta = CATEGORY_META[cat];
+                                        const MetaIcon = meta.icon;
+
+                                        return (
+                                            <div
+                                                key={`${prof.registrationNo}-${prof.licenseType}`}
+                                                className={`p-4 rounded-2xl border flex flex-col lg:flex-row lg:items-center justify-between gap-4 transition ${isExpired ? 'bg-rose-50/40 border-rose-200' : prof.complianceStatus === 'EXPIRING_SOON' ? 'bg-amber-50/35 border-amber-200' : 'bg-emerald-50/30 border-emerald-200'}`}
+                                            >
+                                                <div className="space-y-1.5 flex-1">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <span className="px-2.5 py-0.5 rounded-md bg-slate-900 text-white font-mono text-[11px] font-bold">{prof.registrationNo}</span>
+                                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${meta.badgeCls}`}>{cat.replace(/_/g, ' ')}</span>
+                                                        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold ${isExpired ? 'bg-rose-100 text-rose-700' : prof.complianceStatus === 'EXPIRING_SOON' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                              {isExpired ? 'EXPIRED' : `${daysLeft}d left`}
+                            </span>
+                                                        <span className="text-xs font-mono text-slate-500">Expiry Date: {prof.licenseExpiryDate}</span>
+                                                    </div>
+
+                                                    <h4 className="text-sm font-extrabold text-slate-900">
+                                                        {prof.companyName} <span className="ml-2 font-normal text-xs text-slate-500 font-mono">[{prof.councilName}]</span>
+                                                    </h4>
+
+                                                    <div className="p-2.5 rounded-xl bg-white/90 border border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+                                                        <div className={`flex items-center gap-2 ${meta.textCls}`}>
+                                                            <MetaIcon className="w-3.5 h-3.5 shrink-0" />
+                                                            <span><strong>{meta.title}</strong> {meta.desc}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                                                    {cat === 'EQUIPMENT_WARRANTY' && (
+                                                        claimedWarrantyRegNos.includes(prof.registrationNo) ? (
+                                                            <span className="px-3 py-2 rounded-xl bg-purple-100 text-purple-800 text-xs font-bold inline-flex items-center gap-1">
+                                <CheckCircle2 className="w-3.5 h-3.5" /> OEM Service Booked
+                              </span>
+                                                        ) : (
+                                                            <button type="button" onClick={() => handleClaimWarrantyService(prof)} className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer whitespace-nowrap">
+                                                                <Wrench className="w-3.5 h-3.5" /> Claim Free Service
+                                                            </button>
+                                                        )
+                                                    )}
+                                                    <button type="button" onClick={() => handlePrepareAssistedFiling(prof)} className="px-4 py-2 bg-[#2BB656] hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer whitespace-nowrap">
+                                                        Renew / Extend <ArrowUpRight className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })
+                                )}
                             </div>
                         </div>
                     )}
 
-                    {/* Full-Width Real-Time SSM Business Lookup */}
                     {ssmSubTab === 'lookup' && (
                         <div className="w-full bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-5">
                             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
                                 <div>
                                     <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                                        <Search className="w-4 h-4 text-emerald-600" /> Real-Time SSM Business Lookup &amp; Profile Registration
+                                        <Plus className="w-4 h-4 text-emerald-600" /> Register Building Lease, Fleet, Software or Warranty
                                     </h3>
-                                    <p className="text-xs text-slate-500 mt-0.5">
-                                        Verify 12-digit SSM registration numbers and register PBT council renewal windows across your organization.
-                                    </p>
+                                    <p className="text-xs text-slate-500 mt-0.5">Add building listings, tenancy agreements, vehicle plate numbers, software subscriptions, or equipment warranties to the documentation database.</p>
                                 </div>
-                                <span className="px-3 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono text-xs font-bold">
-                  POST /ssm-verify
-                </span>
                             </div>
 
                             <form onSubmit={handleVerifySsmProfile} noValidate className="space-y-4 text-xs">
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                     <div>
-                                        <label className="font-bold text-slate-700 block mb-1.5">
-                                            SSM Registration No. (12-Digit) *
-                                        </label>
-                                        <input
-                                            type="text"
-                                            inputMode="numeric"
-                                            maxLength={12}
-                                            placeholder="e.g., 202401048291"
-                                            value={ssmRegNo}
-                                            onChange={(e) => {
-                                                setSsmRegNo(e.target.value.replace(/[^0-9]/g, ''));
-                                                setSsmLookupError('');
-                                            }}
-                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono font-bold text-slate-900 focus:outline-none focus:border-emerald-500"
-                                        />
-                                    </div>
-
-                                    <div className="lg:col-span-2">
-                                        <label className="font-bold text-slate-700 block mb-1.5">
-                                            Registered Company Name *
-                                        </label>
-                                        <input
-                                            type="text"
-                                            placeholder="e.g., ACME TECH SDN. BHD."
-                                            value={ssmCompanyName}
-                                            onChange={(e) => {
-                                                setSsmCompanyName(e.target.value);
-                                                setSsmLookupError('');
-                                            }}
-                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-bold text-slate-900 focus:outline-none focus:border-emerald-500"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="font-bold text-slate-700 block mb-1.5">
-                                            Target Local Council (PBT) *
-                                        </label>
-                                        <select
-                                            value={ssmCouncil}
-                                            onChange={(e) => setSsmCouncil(e.target.value)}
-                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-semibold text-slate-900"
-                                        >
-                                            {PBT_COUNCILS.map((c) => (
-                                                <option key={c.value} value={c.value}>
-                                                    {c.label}
-                                                </option>
-                                            ))}
+                                        <label className="font-bold text-slate-700 block mb-1.5">Asset Category *</label>
+                                        <select value={ssmLicenseType} onChange={(e) => setSsmLicenseType(e.target.value)} className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-semibold text-slate-900">
+                                            {LICENSE_CATEGORIES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
                                         </select>
                                     </div>
-
                                     <div>
-                                        <label className="font-bold text-slate-700 block mb-1.5">
-                                            License Category *
-                                        </label>
-                                        <select
-                                            value={ssmLicenseType}
-                                            onChange={(e) => setSsmLicenseType(e.target.value)}
-                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-semibold text-slate-900"
-                                        >
-                                            {LICENSE_CATEGORIES.map((l) => (
-                                                <option key={l.value} value={l.value}>
-                                                    {l.label}
-                                                </option>
-                                            ))}
+                                        <label className="font-bold text-slate-700 block mb-1.5">ID / Plate No. / Contract Ref *</label>
+                                        <input type="text" placeholder="e.g., BLD-LOT-401, JPJ-WXY8821, SOFT-MSFT-365" value={ssmRegNo} onChange={(e) => { setSsmRegNo(e.target.value); setSsmLookupError(''); }} className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono font-bold text-slate-900 focus:outline-none focus:border-emerald-500" />
+                                    </div>
+                                    <div>
+                                        <label className="font-bold text-slate-700 block mb-1.5">Issuing Authority / Landlord / Vendor *</label>
+                                        <select value={ssmCouncil} onChange={(e) => setSsmCouncil(e.target.value)} className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-semibold text-slate-900">
+                                            {ISSUING_AUTHORITIES_AND_VENDORS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
                                         </select>
                                     </div>
-
+                                    <div className="md:col-span-2">
+                                        <label className="font-bold text-slate-700 block mb-1.5">Asset / Rental Premise / Software Name *</label>
+                                        <input type="text" placeholder="e.g., Suite 12-04 Menara Bangsar or Delivery Van BKK 1234 or AWS Enterprise Plan" value={ssmCompanyName} onChange={(e) => { setSsmCompanyName(e.target.value); setSsmLookupError(''); }} className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-bold text-slate-900 focus:outline-none focus:border-emerald-500" />
+                                    </div>
                                     <div>
-                                        <label className="font-bold text-slate-700 block mb-1.5">
-                                            PBT License Expiry Date *
-                                        </label>
-                                        <input
-                                            type="date"
-                                            value={ssmExpiryDate}
-                                            onChange={(e) => setSsmExpiryDate(e.target.value)}
-                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono font-bold text-slate-900"
-                                        />
+                                        <label className="font-bold text-slate-700 block mb-1.5">Expiry / Tenancy Cutoff Date *</label>
+                                        <input type="date" value={ssmExpiryDate} onChange={(e) => setSsmExpiryDate(e.target.value)} className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono font-bold text-slate-900" />
                                     </div>
                                 </div>
 
-                                {ssmLookupError && (
-                                    <p className="text-xs text-rose-600 font-semibold flex items-center gap-1.5">
-                                        <AlertCircle className="w-4 h-4 shrink-0" /> {ssmLookupError}
-                                    </p>
-                                )}
+                                {ssmLookupError && <p className="text-xs text-rose-600 font-semibold flex items-center gap-1.5"><AlertCircle className="w-4 h-4 shrink-0" /> {ssmLookupError}</p>}
 
                                 <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
-                                    <button
-                                        type="button"
-                                        onClick={() => setSsmSubTab('scanner')}
-                                        className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold cursor-pointer"
-                                    >
-                                        Back to Expiry Scanner
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        className="px-5 py-2.5 bg-[#2BB656] hover:bg-emerald-600 text-white rounded-xl font-bold flex items-center gap-2 shadow-xs transition cursor-pointer"
-                                    >
-                                        <RefreshCw className="w-3.5 h-3.5" /> Verify SSM &amp; Save to Radar
-                                    </button>
+                                    <button type="button" onClick={() => setSsmSubTab('scanner')} className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold cursor-pointer">Back to Radar</button>
+                                    <button type="submit" className="px-5 py-2.5 bg-[#2BB656] hover:bg-emerald-600 text-white rounded-xl font-bold flex items-center gap-2 shadow-xs transition cursor-pointer"><Check className="w-3.5 h-3.5" /> Save to Database</button>
                                 </div>
                             </form>
                         </div>
@@ -876,41 +541,23 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                 </div>
             )}
 
-            {/* =====================================================================
-          MAIN TAB 2: DOCUMENT VAULT & PACKET BUILDER (BOTH SUB-FUNCTIONS FULL-WIDTH)
-         ===================================================================== */}
             {mainTab === 'vault_packet' && (
-                <div className="w-full">
+                <div className="w-full space-y-4">
                     {vaultSubTab === 'repository' && (
                         <div className="w-full bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-4">
                             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
                                 <div>
                                     <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                                        <FolderLock className="w-4 h-4 text-purple-600" /> Centralized Compliance Document Vault &amp; Packet Builder
+                                        <FolderLock className="w-4 h-4 text-purple-600" /> Centralized Documentation Database &amp; Vault
                                     </h3>
-                                    <p className="text-xs text-slate-500 mt-0.5">
-                                        Select required statutory documents below to bundle into your PBT renewal packet.
-                                    </p>
+                                    <p className="text-xs text-slate-500 mt-0.5">Stores and indexes stamped tenancy agreements, vehicle grants, software licenses, and warranty documentation.</p>
                                 </div>
-
                                 <div className="flex items-center gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setVaultSubTab('upload')}
-                                        className="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                                    >
-                                        <Upload className="w-3.5 h-3.5" /> + Upload New Document
+                                    <button type="button" onClick={() => setVaultSubTab('upload')} className="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer">
+                                        <Upload className="w-3.5 h-3.5" /> + Upload Contract / Document
                                     </button>
-
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setMainTab('assisted_filing');
-                                            setFilingSubTab('initiate');
-                                        }}
-                                        className="px-4 py-2 bg-[#2BB656] hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
-                                    >
-                                        Proceed with {selectedDocIds.length} Selected Doc(s) <ArrowUpRight className="w-3.5 h-3.5" />
+                                    <button type="button" onClick={() => { setMainTab('assisted_filing'); setFilingSubTab('initiate'); }} className="px-4 py-2 bg-[#2BB656] hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer">
+                                        Proceed with {selectedDocIds.length} Document(s) <ArrowUpRight className="w-3.5 h-3.5" />
                                     </button>
                                 </div>
                             </div>
@@ -920,62 +567,35 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                                     <thead>
                                     <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-semibold text-slate-600 uppercase">
                                         <th className="py-3 px-4 w-12">Select</th>
-                                        <th className="py-3 px-3">Document ID &amp; Type</th>
-                                        <th className="py-3 px-3">SSM Entity</th>
-                                        <th className="py-3 px-3">Validity Period</th>
+                                        <th className="py-3 px-3">Doc ID &amp; Classification</th>
+                                        <th className="py-3 px-3">Linked Asset / Registration</th>
+                                        <th className="py-3 px-3">Contract Validity Period</th>
                                         <th className="py-3 px-3">File Size</th>
-                                        <th className="py-3 px-4 text-right">Document Preview</th>
+                                        <th className="py-3 px-4 text-right">Action</th>
                                     </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                     {vaultDocs.map((doc) => {
                                         const isChecked = selectedDocIds.includes(doc.docID);
                                         return (
-                                            <tr
-                                                key={doc.docID}
-                                                className={`transition ${
-                                                    isChecked ? 'bg-purple-50/30 hover:bg-purple-50/50' : 'hover:bg-slate-50'
-                                                }`}
-                                            >
+                                            <tr key={doc.docID} className={isChecked ? 'bg-purple-50/30' : 'hover:bg-slate-50'}>
                                                 <td className="py-3 px-4">
                                                     <input
-                                                        type="checkbox"
-                                                        checked={isChecked}
-                                                        onChange={() => {
-                                                            setSelectedDocIds((prev) =>
-                                                                prev.includes(doc.docID)
-                                                                    ? prev.filter((id) => id !== doc.docID)
-                                                                    : [...prev, doc.docID]
-                                                            );
-                                                        }}
+                                                        type="checkbox" checked={isChecked}
+                                                        onChange={() => setSelectedDocIds((prev) => prev.includes(doc.docID) ? prev.filter((id) => id !== doc.docID) : [...prev, doc.docID])}
                                                         className="w-4 h-4 accent-purple-600 cursor-pointer"
                                                     />
                                                 </td>
                                                 <td className="py-3 px-3">
-                                                    <p className="font-bold text-slate-900">
-                                                        {doc.docType.replace(/_/g, ' ')}
-                                                    </p>
-                                                    <span className="font-mono text-[11px] text-slate-400">
-                              {doc.docID}
-                            </span>
+                                                    <p className="font-bold text-slate-900">{doc.docType.replace(/_/g, ' ')}</p>
+                                                    <span className="font-mono text-[11px] text-slate-400">{doc.docID}</span>
                                                 </td>
-                                                <td className="py-3 px-3 font-mono font-bold text-slate-700">
-                                                    {doc.registrationNo}
-                                                </td>
-                                                <td className="py-3 px-3 font-mono text-slate-600">
-                                                    {doc.effectiveDate} &rarr; <strong>{doc.expiryDate}</strong>
-                                                </td>
-                                                <td className="py-3 px-3 text-slate-500">
-                                                    {doc.fileSizeKb.toLocaleString()} KB
-                                                </td>
+                                                <td className="py-3 px-3 font-mono font-bold text-slate-700">{doc.registrationNo}</td>
+                                                <td className="py-3 px-3 font-mono text-slate-600">{doc.effectiveDate} &rarr; <strong>{doc.expiryDate}</strong></td>
+                                                <td className="py-3 px-3 text-slate-500">{doc.fileSizeKb.toLocaleString()} KB</td>
                                                 <td className="py-3 px-4 text-right">
-                                                    <a
-                                                        href={doc.fileUrl}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-purple-100 text-slate-700 hover:text-purple-800 font-bold text-[11px] transition"
-                                                    >
-                                                        <FileText className="w-3 h-3" /> View PDF <ExternalLink className="w-2.5 h-2.5" />
+                                                    <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-purple-100 text-slate-700 hover:text-purple-800 font-bold text-[11px] transition">
+                                                        <FileText className="w-3 h-3" /> View Stored PDF <ExternalLink className="w-2.5 h-2.5" />
                                                     </a>
                                                 </td>
                                             </tr>
@@ -987,43 +607,157 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                         </div>
                     )}
 
-                    {/* Full-Width Upload Document to Compliance Vault */}
                     {vaultSubTab === 'upload' && (
                         <div className="w-full bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-5">
-                            <input
-                                ref={fileInputRef}
-                                type="file"
-                                accept=".pdf,.jpg,.png"
-                                onChange={(e) => {
-                                    const f = e.target.files?.[0];
-                                    if (f) setUploadFileName(f.name);
-                                }}
-                                className="hidden"
-                            />
-
+                            <input ref={fileInputRef} type="file" accept=".pdf,.jpg,.png" onChange={(e) => { const f = e.target.files?.[0]; if (f) setUploadFileName(f.name); }} className="hidden" />
                             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
                                 <div>
                                     <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                                        <Upload className="w-4 h-4 text-purple-600" /> Upload Document to Compliance Vault
+                                        <Upload className="w-4 h-4 text-purple-600" /> Upload Contract / License Document
                                     </h3>
-                                    <p className="text-xs text-slate-500 mt-0.5">
-                                        Index official certificates, tenancy agreements, or floor plans for PBT renewal packets.
-                                    </p>
+                                    <p className="text-xs text-slate-500 mt-0.5">Index tenancy contracts, vehicle registration certificates, software MSAs, or warranty agreements into the database.</p>
                                 </div>
-                                <span className="px-3 py-1 rounded-lg bg-purple-50 text-purple-700 border border-purple-200 font-mono text-xs font-bold">
-                  POST /vault/upload
-                </span>
                             </div>
 
                             <form onSubmit={handleUploadVaultDoc} noValidate className="space-y-4 text-xs">
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                     <div>
-                                        <label className="font-bold text-slate-700 block mb-1.5">
-                                            Target Company (SSM No.) *
-                                        </label>
+                                        <label className="font-bold text-slate-700 block mb-1.5">Linked Asset / Entity *</label>
+                                        <select value={uploadRegNo} onChange={(e) => setUploadRegNo(e.target.value)} className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-semibold text-slate-900">
+                                            {profiles.map((p) => <option key={p.registrationNo} value={p.registrationNo}>{p.companyName} ({p.registrationNo})</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="font-bold text-slate-700 block mb-1.5">Contract / Document Category *</label>
+                                        <select value={uploadDocType} onChange={(e) => setUploadDocType(e.target.value)} className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-semibold text-slate-900">
+                                            {DOC_TYPES.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="font-bold text-slate-700 block mb-1.5">Contract Effective Date *</label>
+                                        <input type="date" value={uploadEffectiveDate} onChange={(e) => setUploadEffectiveDate(e.target.value)} className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono font-bold text-slate-900" />
+                                    </div>
+                                    <div>
+                                        <label className="font-bold text-slate-700 block mb-1.5">Contract Expiry Date *</label>
+                                        <input type="date" value={uploadExpiryDate} onChange={(e) => setUploadExpiryDate(e.target.value)} className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono font-bold text-slate-900" />
+                                    </div>
+                                    <div className="md:col-span-2 lg:col-span-4">
+                                        <label className="font-bold text-slate-700 block mb-1.5">File Upload</label>
+                                        <div className="flex items-center gap-3">
+                                            <input type="text" placeholder="Choose PDF / image or enter filename..." value={uploadFileName} onChange={(e) => setUploadFileName(e.target.value)} className="flex-1 px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 text-slate-800" />
+                                            <button type="button" onClick={() => fileInputRef.current?.click()} className="px-4 py-2.5 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-xl font-bold cursor-pointer shrink-0">Choose File</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {uploadError && <p className="text-xs text-rose-600 font-semibold flex items-center gap-1.5"><AlertCircle className="w-4 h-4 shrink-0" /> {uploadError}</p>}
+
+                                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                                    <button type="button" onClick={() => setVaultSubTab('repository')} className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold cursor-pointer">Back</button>
+                                    <button type="submit" className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold flex items-center gap-2 shadow-xs cursor-pointer"><Upload className="w-3.5 h-3.5" /> Save to Documentation Database</button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {mainTab === 'assisted_filing' && (
+                <div className="w-full space-y-4">
+                    {filingSubTab === 'pipeline' && (
+                        <div className="w-full bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-4">
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                                <div>
+                                    <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                        <Bot className="w-4 h-4 text-blue-600" /> Active Renewals &amp; Contract Extensions
+                                    </h3>
+                                    <p className="text-xs text-slate-500 mt-0.5">Tracks renewal packet approvals, tenancy extension exercises, and road tax updates.</p>
+                                </div>
+                                <button type="button" onClick={() => setFilingSubTab('initiate')} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer">
+                                    <Plus className="w-3.5 h-3.5" /> Initiate Renewal / Extension
+                                </button>
+                            </div>
+
+                            <div className="space-y-3">
+                                {renewalTasks.length === 0 ? (
+                                    <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-xs text-slate-500">No active renewal tasks in pipeline.</div>
+                                ) : (
+                                    renewalTasks.map((task) => {
+                                        const isDone = task.status === 'APPROVED_RENEWED';
+                                        return (
+                                            <div key={task.renewalID} className="p-5 rounded-2xl border border-slate-200 bg-slate-50/60 space-y-3">
+                                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <span className="px-2.5 py-0.5 rounded-md bg-blue-100 text-blue-800 font-mono text-xs font-bold">{task.renewalID}</span>
+                                                        <span className="px-2.5 py-0.5 rounded-md bg-slate-900 text-white font-mono text-xs font-bold">{task.registrationNo}</span>
+                                                        <span className="text-sm font-extrabold text-slate-900">{task.companyName}</span>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="text-right">
+                                                            <span className="text-[10px] uppercase font-bold text-slate-400 block">Est. Cost</span>
+                                                            <span className="text-sm font-extrabold text-slate-900">{currencySymbol} {(task.renewalFee * exchangeRate).toLocaleString()}</span>
+                                                        </div>
+                                                        {!isDone ? (
+                                                            <button type="button" onClick={() => handleAdvanceRenewalStatus(task)} className="px-4 py-2 bg-[#2BB656] hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer">
+                                                                <Send className="w-3.5 h-3.5" /> {task.status === 'ASSIGNED_TO_AGENT' ? 'Approve & Submit' : 'Mark Renewed'}
+                                                            </button>
+                                                        ) : (
+                                                            <span className="px-3.5 py-2 rounded-xl bg-emerald-100 text-emerald-800 text-xs font-bold inline-flex items-center gap-1.5">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Completed ({task.submissionReferenceNo})
+                              </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <p className="text-xs text-slate-600">{task.internalNotes}</p>
+                                                <div className="flex flex-wrap items-center gap-2 pt-1">
+                                                    {task.generatedChecklist.map((item) => (
+                                                        <span key={item.step} className={`px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 border ${item.isCompleted ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'}`}>
+                              <Check className="w-3.5 h-3.5" /> {item.name}
+                            </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    })
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {filingSubTab === 'initiate' && (
+                        <div className="w-full bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-5">
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                                <div>
+                                    <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                        <Plus className="w-4 h-4 text-blue-600" /> Initiate Contract Renewal / Extension
+                                    </h3>
+                                    <p className="text-xs text-slate-500 mt-0.5">Link verified documents from the Documentation Database to process tenancy extensions, road tax renewals, or software renewals.</p>
+                                </div>
+                            </div>
+
+                            <form onSubmit={handleInitiateRenewal} noValidate className="space-y-4 text-xs">
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                    <div>
+                                        <label className="font-bold text-slate-700 block mb-1.5">Target Asset / Listing *</label>
                                         <select
-                                            value={uploadRegNo}
-                                            onChange={(e) => setUploadRegNo(e.target.value)}
+                                            value={filingRegNo}
+                                            onChange={(e) => {
+                                                const nextReg = e.target.value;
+                                                setFilingRegNo(nextReg);
+                                                const prof = profiles.find((p) => p.registrationNo === nextReg);
+                                                if (prof) {
+                                                    const term: 1 | 3 | 5 =
+                                                        prof.selectedRenewalTermYears === 1 || prof.selectedRenewalTermYears === 3
+                                                            ? prof.selectedRenewalTermYears
+                                                            : 5;
+                                                    const annual = prof.annualFeeRM ?? 450;
+                                                    const disc = term === 5 ? (prof.fiveYearDiscountPct ?? 22) : term === 3 ? 12 : 0;
+                                                    const calcFee = Number((annual * term * (1 - disc / 100) * exchangeRate).toFixed(2));
+                                                    setSelectedTermYears(term);
+                                                    setFilingFeeInput(String(calcFee));
+                                                }
+                                            }}
                                             className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-semibold text-slate-900"
                                         >
                                             {profiles.map((p) => (
@@ -1033,324 +767,32 @@ export const ComplianceRenewalModule: React.FC<ComplianceRenewalModuleProps> = (
                                             ))}
                                         </select>
                                     </div>
-
                                     <div>
-                                        <label className="font-bold text-slate-700 block mb-1.5">
-                                            Document Category *
-                                        </label>
-                                        <select
-                                            value={uploadDocType}
-                                            onChange={(e) => setUploadDocType(e.target.value)}
-                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-semibold text-slate-900"
-                                        >
-                                            {DOC_TYPES.map((d) => (
-                                                <option key={d.value} value={d.value}>
-                                                    {d.label}
-                                                </option>
-                                            ))}
+                                        <label className="font-bold text-slate-700 block mb-1.5">Processing Mode *</label>
+                                        <select value={filingMode} onChange={(e) => setFilingMode(e.target.value as 'CONCIERGE_MANUAL_SUBMISSION' | 'RPA_AUTOMATED')} className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-semibold text-slate-900">
+                                            <option value="CONCIERGE_MANUAL_SUBMISSION">Concierge Legal / Admin Desk</option>
+                                            <option value="RPA_AUTOMATED">Automated RPA Script</option>
                                         </select>
                                     </div>
-
                                     <div>
-                                        <label className="font-bold text-slate-700 block mb-1.5">
-                                            Document Effective Date *
-                                        </label>
-                                        <input
-                                            type="date"
-                                            value={uploadEffectiveDate}
-                                            onChange={(e) => setUploadEffectiveDate(e.target.value)}
-                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono font-bold text-slate-900"
-                                        />
+                                        <label className="font-bold text-slate-700 block mb-1.5">Expected Renewal Fee ({currency}) *</label>
+                                        <input type="text" inputMode="decimal" value={filingFeeInput} onChange={(e) => { setFilingFeeInput(sanitizePositiveDecimal(e.target.value)); setFilingError(''); }} className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-bold text-slate-900" />
                                     </div>
-
                                     <div>
-                                        <label className="font-bold text-slate-700 block mb-1.5">
-                                            Document Expiry Date *
-                                        </label>
-                                        <input
-                                            type="date"
-                                            value={uploadExpiryDate}
-                                            onChange={(e) => setUploadExpiryDate(e.target.value)}
-                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono font-bold text-slate-900"
-                                        />
+                                        <label className="font-bold text-slate-700 block mb-1.5">Target Extension Deadline *</label>
+                                        <input type="date" value={filingDeadline} onChange={(e) => setFilingDeadline(e.target.value)} className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono font-bold text-slate-900" />
                                     </div>
-
                                     <div className="md:col-span-2 lg:col-span-4">
-                                        <label className="font-bold text-slate-700 block mb-1.5">
-                                            Document PDF / Scan File
-                                        </label>
-                                        <div className="flex items-center gap-3">
-                                            <input
-                                                type="text"
-                                                placeholder="Click 'Choose PDF / Image' or enter filename..."
-                                                value={uploadFileName}
-                                                onChange={(e) => setUploadFileName(e.target.value)}
-                                                className="flex-1 px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 text-slate-800"
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() => fileInputRef.current?.click()}
-                                                className="px-4 py-2.5 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-xl font-bold cursor-pointer shrink-0"
-                                            >
-                                                Choose PDF / Image
-                                            </button>
-                                        </div>
+                                        <label className="font-bold text-slate-700 block mb-1.5">Notes &amp; Contract Terms</label>
+                                        <textarea rows={2} value={filingNotes} onChange={(e) => setFilingNotes(e.target.value)} className="w-full px-3.5 py-2 rounded-xl bg-white border border-slate-300 text-slate-800" />
                                     </div>
                                 </div>
 
-                                {uploadError && (
-                                    <p className="text-xs text-rose-600 font-semibold flex items-center gap-1.5">
-                                        <AlertCircle className="w-4 h-4 shrink-0" /> {uploadError}
-                                    </p>
-                                )}
+                                {filingError && <p className="text-xs text-rose-600 font-semibold flex items-center gap-1.5"><AlertCircle className="w-4 h-4 shrink-0" /> {filingError}</p>}
 
                                 <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
-                                    <button
-                                        type="button"
-                                        onClick={() => setVaultSubTab('repository')}
-                                        className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold cursor-pointer"
-                                    >
-                                        Back to Vault Table
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold flex items-center gap-2 shadow-xs cursor-pointer"
-                                    >
-                                        <Upload className="w-3.5 h-3.5" /> Save &amp; Index in Vault
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* =====================================================================
-          MAIN TAB 3: CONCIERGE & RPA ASSISTED FILING (BOTH SUB-FUNCTIONS FULL-WIDTH)
-         ===================================================================== */}
-            {mainTab === 'assisted_filing' && (
-                <div className="w-full">
-                    {filingSubTab === 'pipeline' && (
-                        <div className="w-full bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-4">
-                            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
-                                <div>
-                                    <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                                        <Bot className="w-4 h-4 text-blue-600" /> Active Concierge &amp; RPA Assisted Filing Pipeline
-                                    </h3>
-                                    <p className="text-xs text-slate-500 mt-0.5">
-                                        Tracks preparatory renewal packets, checklist verification, and Owner/Manager human approval before council submission.
-                                    </p>
-                                </div>
-
-                                <button
-                                    type="button"
-                                    onClick={() => setFilingSubTab('initiate')}
-                                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
-                                >
-                                    <Plus className="w-3.5 h-3.5" /> + Initiate New Renewal
-                                </button>
-                            </div>
-
-                            <div className="space-y-3">
-                                {renewalTasks.map((task) => {
-                                    const convertedFee = (task.renewalFee * exchangeRate).toFixed(2);
-                                    const isDone = (task.status as string) === 'APPROVED_RENEWED';
-
-                                    return (
-                                        <div
-                                            key={task.renewalID}
-                                            className="p-5 rounded-2xl border border-slate-200 bg-slate-50/60 space-y-3"
-                                        >
-                                            <div className="flex flex-wrap items-center justify-between gap-3">
-                                                <div className="flex flex-wrap items-center gap-2">
-                          <span className="px-2.5 py-0.5 rounded-md bg-blue-100 text-blue-800 font-mono text-xs font-bold">
-                            {task.renewalID}
-                          </span>
-                                                    <span className="px-2.5 py-0.5 rounded-md bg-slate-900 text-white font-mono text-xs font-bold">
-                            {task.councilName}
-                          </span>
-                                                    <span className="text-sm font-extrabold text-slate-900">
-                            {task.companyName}
-                          </span>
-                                                    <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-800 text-[11px] font-bold">
-                            {task.filingMode.replace(/_/g, ' ')}
-                          </span>
-                                                </div>
-
-                                                <div className="flex items-center gap-3">
-                                                    <div className="text-right">
-                            <span className="text-[10px] uppercase font-bold text-slate-400 block">
-                              Est. Council Fee
-                            </span>
-                                                        <span className="text-sm font-extrabold text-slate-900">
-                              {currencySymbol} {convertedFee}
-                            </span>
-                                                    </div>
-
-                                                    {!isDone ? (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleAdvanceRenewalStatus(task)}
-                                                            className="px-4 py-2 bg-[#2BB656] hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
-                                                        >
-                                                            <Send className="w-3.5 h-3.5" />
-                                                            {(task.status as string) === 'ASSIGNED_TO_AGENT'
-                                                                ? 'Approve & Submit Packet to PBT'
-                                                                : 'Confirm PBT License Renewed'}
-                                                        </button>
-                                                    ) : (
-                                                        <span className="px-3.5 py-2 rounded-xl bg-emerald-100 text-emerald-800 text-xs font-bold inline-flex items-center gap-1.5">
-                              <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Renewed &amp; Active ({task.submissionReferenceNo})
-                            </span>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            <p className="text-xs text-slate-600">{task.internalNotes}</p>
-
-                                            <div className="flex flex-wrap items-center gap-2 pt-1">
-                                                {task.generatedChecklist.map((item) => (
-                                                    <span
-                                                        key={item.step}
-                                                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 border ${
-                                                            item.isCompleted
-                                                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                                                : 'bg-amber-50 text-amber-800 border-amber-200'
-                                                        }`}
-                                                    >
-                            <Check className="w-3 h-3" /> {item.name}
-                          </span>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Full-Width Initiate Concierge / RPA Assisted License Renewal */}
-                    {filingSubTab === 'initiate' && (
-                        <div className="w-full bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-5">
-                            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
-                                <div>
-                                    <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                                        <Plus className="w-4 h-4 text-blue-600" /> Initiate Concierge / RPA Assisted License Renewal
-                                    </h3>
-                                    <p className="text-xs text-slate-500 mt-0.5">
-                                        Packages your selected Vault documents ({selectedDocIds.length} attached) into a preparatory renewal workflow.
-                                    </p>
-                                </div>
-                                <span className="px-3 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 font-mono text-xs font-bold">
-                  POST /renewal/initiate
-                </span>
-                            </div>
-
-                            <form onSubmit={handleInitiateRenewal} noValidate className="space-y-4 text-xs">
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                    <div>
-                                        <label className="font-bold text-slate-700 block mb-1.5">
-                                            Target Monitored Entity *
-                                        </label>
-                                        <select
-                                            value={filingRegNo}
-                                            onChange={(e) => setFilingRegNo(e.target.value)}
-                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-semibold text-slate-900"
-                                        >
-                                            {profiles.map((p) => (
-                                                <option key={p.registrationNo} value={p.registrationNo}>
-                                                    {p.companyName} ({p.councilName} • {p.licenseType})
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-
-                                    <div>
-                                        <label className="font-bold text-slate-700 block mb-1.5">
-                                            Assisted Execution Mode *
-                                        </label>
-                                        <select
-                                            value={filingMode}
-                                            onChange={(e) =>
-                                                setFilingMode(
-                                                    e.target.value as
-                                                        | 'CONCIERGE_MANUAL_SUBMISSION'
-                                                        | 'RPA_AUTOMATED'
-                                                )
-                                            }
-                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-semibold text-slate-900"
-                                        >
-                                            <option value="CONCIERGE_MANUAL_SUBMISSION">
-                                                Concierge Desk Specialist (Assisted Filing)
-                                            </option>
-                                            <option value="RPA_AUTOMATED">
-                                                Orbyte RPA Bot Pre-Fill (Human Approval Gate)
-                                            </option>
-                                        </select>
-                                    </div>
-
-                                    <div>
-                                        <label className="font-bold text-slate-700 block mb-1.5">
-                                            Estimated Renewal Fee ({currency}) *
-                                        </label>
-                                        <input
-                                            type="text"
-                                            inputMode="decimal"
-                                            placeholder="e.g., 450.00"
-                                            value={filingFeeInput}
-                                            onChange={(e) => {
-                                                setFilingFeeInput(sanitizePositiveDecimal(e.target.value));
-                                                setFilingError('');
-                                            }}
-                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-bold text-slate-900"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="font-bold text-slate-700 block mb-1.5">
-                                            Target Submission Deadline *
-                                        </label>
-                                        <input
-                                            type="date"
-                                            value={filingDeadline}
-                                            onChange={(e) => setFilingDeadline(e.target.value)}
-                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 font-mono font-bold text-slate-900"
-                                        />
-                                    </div>
-
-                                    <div className="md:col-span-2 lg:col-span-4">
-                                        <label className="font-bold text-slate-700 block mb-1.5">
-                                            Internal Filing Notes / Instructions
-                                        </label>
-                                        <textarea
-                                            rows={3}
-                                            value={filingNotes}
-                                            onChange={(e) => setFilingNotes(e.target.value)}
-                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 text-slate-800"
-                                        />
-                                    </div>
-                                </div>
-
-                                {filingError && (
-                                    <p className="text-xs text-rose-600 font-semibold flex items-center gap-1.5">
-                                        <AlertCircle className="w-4 h-4 shrink-0" /> {filingError}
-                                    </p>
-                                )}
-
-                                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
-                                    <button
-                                        type="button"
-                                        onClick={() => setFilingSubTab('pipeline')}
-                                        className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold cursor-pointer"
-                                    >
-                                        Back to Pipeline
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        className="px-5 py-2.5 bg-[#2BB656] hover:bg-emerald-600 text-white rounded-xl font-bold flex items-center gap-2 shadow-xs cursor-pointer"
-                                    >
-                                        <Send className="w-3.5 h-3.5" /> Create Renewal Task
-                                    </button>
+                                    <button type="button" onClick={() => setFilingSubTab('pipeline')} className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold cursor-pointer">Back</button>
+                                    <button type="submit" className="px-5 py-2.5 bg-[#2BB656] hover:bg-emerald-600 text-white rounded-xl font-bold flex items-center gap-2 shadow-xs cursor-pointer"><Send className="w-3.5 h-3.5" /> Submit for Sign-Off</button>
                                 </div>
                             </form>
                         </div>

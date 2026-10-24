@@ -1,12 +1,17 @@
 package com.hazendust.vyte.manager
 
+import com.hazendust.vyte.route.approval.ApprovalController
 import com.hazendust.vyte.route.audit.AuditController
+import com.hazendust.vyte.route.auth.AuthController
+import com.hazendust.vyte.route.compliance.ComplianceAndSupportController
 import com.hazendust.vyte.route.invoice.InvoiceController
 import com.hazendust.vyte.route.jobs.JobsController
+import com.hazendust.vyte.route.migration.MigrationController
 import com.hazendust.vyte.route.order.OrderController
 import com.hazendust.vyte.route.product.ProductController
 import com.hazendust.vyte.route.qc.QCController
 import com.hazendust.vyte.route.restock.RestockController
+import com.hazendust.vyte.route.supplier.SupplierController
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -18,13 +23,18 @@ interface BaseRouteController {
 
 object RouteManager {
     private val controllers: List<BaseRouteController> = listOf(
+        AuthController,
         OrderController,
         ProductController,
         QCController,
         InvoiceController,
         AuditController,
         JobsController,
-        RestockController
+        RestockController,
+        MigrationController,
+        ComplianceAndSupportController,
+        SupplierController,
+        ApprovalController
     )
 
     fun registerAll(route: Route) {
