@@ -7,7 +7,6 @@ import type {
     GetSalesReviewReportRequest,
     GetSalesReviewReportResponse,
     InvoiceItem,
-    NewProductForm,
     Product,
     QCAlert,
     UserRole,
@@ -211,9 +210,26 @@ export const orbyteApi = {
         }
     },
 
-    async createProduct(form: NewProductForm): Promise<Product | null> {
-        if (getDebugMockMode()) return null;
-        return requestJson<Product>('/api/products', { method: 'POST', body: JSON.stringify(form) });
+    createProduct: async (form: any) => {
+        const wsId = localStorage.getItem('vyte_workspace_id') || 'ws-mvm02vsm-0lwqs';
+        const baseUrl = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8080';
+
+        const res = await fetch(`${baseUrl}/api/products`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Workspace-ID': wsId,
+                'X-User-ID': wsId,
+            },
+            body: JSON.stringify(form),
+        });
+
+        if (!res.ok) {
+            const errJson = await res.json().catch(() => ({}));
+            throw new Error(errJson.error || `HTTP ${res.status}: 后端数据库拒绝写入`);
+        }
+
+        return await res.json();
     },
 
     async recordStockMovement(
