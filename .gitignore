@@ -51,3 +51,4 @@ vyte.db
 vyte.db-shm
 vyte.db-wal
 local.properties
+data/config.json
