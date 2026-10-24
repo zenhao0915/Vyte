@@ -131,7 +131,7 @@ cd orbyteflow && npm install && npm run dev
 * **Hosting:** Deployed publicly via Replit Deployments at [https://hazendust.replit.app](https://hazendust.replit.app).
 * **Secrets Management:** `RUNPOD_API_KEY`, `RUNPOD_ENDPOINT_ID`, and `GEMINI_API_KEY` are stored strictly in Replit Secrets.
 
-📄 **Proof of use:** [`submission/SDC2026_Haze&Dust_Replit_POU.pdf`](submission/SDC2026_Haze&Dust_Replit_POU.pdf)
+📄 **Proof of use:** [`submission/SDC2026_Haze&Dust_Replit_POU.pdf`](https://github.com/zenhao0915/Vyte/blob/submission/Submission/SDC2026_Haze%26Dust_Replit_POU.pdf)
 
 ---
 
@@ -147,7 +147,7 @@ curl -X POST https://api.runpod.ai/v2/$RUNPOD_ENDPOINT_ID/runsync \
   -d '{"input": {"task": "analyze_procurement", "holding_cost_pct": 18.5, "turnover_days": 21}}'
 ```
 
-📄 **Proof of use:** [`submission/SDC2026_Haze&Dust_Runpod_POU.pdf`](submission/SDC2026_Haze&Dust_Runpod_POU.pdf)
+📄 **Proof of use:** [`submission/SDC2026_Haze&Dust_Runpod_POU.pdf`](https://github.com/zenhao0915/Vyte/blob/submission/Submission/SDC2026_Haze%26Dust_Runpod_POU.pdf)
 
 ---
 
