@@ -23,8 +23,6 @@ interface HeaderBarProps {
     pendingInvoices: number;
     totalComplianceProfiles?: number;
     pendingCompliance?: number;
-    totalVaultDocs?: number;
-    totalRenewalTasks?: number;
     onNavigateFromNotification: (tab: ActiveTab, subTab?: 'restock' | 'orders') => void;
 }
 

@@ -32,8 +32,6 @@ interface SidebarProps {
     role: UserRole;
     operatingCurrency: CurrencyCode;
     onCurrencyChange: (currency: CurrencyCode) => void;
-    industryFilter?: string;
-    setIndustryFilter?: (filter: string) => void;
     searchQuery: string;
     setSearchQuery: (q: string) => void;
     pendingRestockCount: number;
@@ -42,7 +40,6 @@ interface SidebarProps {
     pendingInvoiceCount: number;
     pendingComplianceCount: number;
     auditLogCount: number;
-    totalProductCount: number;
     userSession: UserSession | null;
     onLogout: () => void;
     debugMockMode?: boolean;

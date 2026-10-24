@@ -1,11 +1,17 @@
+// src/modules/module5-invoice/InvoiceModule.tsx
 import React, { useState, useRef, useMemo } from 'react';
 import {
-    Plus, CheckCircle2, FileText, AlertCircle, Sparkles,
-    ArrowUpRight, ArrowDownLeft, X, Camera, FileSpreadsheet, Upload,
-    Wallet, ShieldAlert, TrendingUp, Download,
+    Plus, CheckCircle2, FileText, AlertCircle, Sparkles, ArrowUpRight, ArrowDownLeft,
+    X, Camera, FileSpreadsheet, Upload, Wallet, ShieldAlert, TrendingUp, Download,
 } from 'lucide-react';
-import type { CurrencyCode, InvoiceItem, Product, SstTaxCode, UserRole } from '../../types/vyte.ts';
-import { CURRENCY_SYMBOLS } from '../../types/vyte.ts';
+import {
+    CURRENCY_SYMBOLS,
+    type CurrencyCode,
+    type InvoiceItem,
+    type Product,
+    type SstTaxCode,
+    type UserRole,
+} from '../../types/vyte.ts';
 import { getDebugMockMode, orbyteApi } from '../../services/api.ts';
 
 interface InvoiceModuleProps {
@@ -42,6 +48,9 @@ const sanitizeDecimal = (raw: string): string => {
     return parts.length > 1 ? `${intPart || '0'}.${parts[1].slice(0, 2)}` : intPart;
 };
 
+const fmtMoney = (n: number, min = 2, max = 2) =>
+    n.toLocaleString(undefined, { minimumFractionDigits: min, maximumFractionDigits: max });
+
 export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                                                                 invoices, products = [], role, currency = 'MYR', exchangeRate = 1.0,
                                                                 onVerifyInvoice, onToggleInvoicePaid, onAddValidatedInvoice, onBatchImportInvoices,
@@ -55,9 +64,8 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
     const [selectedSstCodes, setSelectedSstCodes] = useState<Record<string, SstTaxCode>>({});
     const [showUploadForm, setShowUploadForm] = useState(false);
 
-    // Cash Flow Liquidity Guard Interactive Inputs
-    const [bankCashInputRM, setBankCashInputRM] = useState<string>('14500');
-    const [monthlyFixedOpExRM, setMonthlyFixedOpExRM] = useState<string>('8500');
+    const [bankCashInputRM, setBankCashInputRM] = useState('14500');
+    const [monthlyFixedOpExRM, setMonthlyFixedOpExRM] = useState('8500');
 
     const photoInputRef = useRef<HTMLInputElement>(null);
     const excelInputRef = useRef<HTMLInputElement>(null);
@@ -79,12 +87,8 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
             return { code: found.code, ratePct: found.ratePct, sstRM: Number(((inv.amountRM * found.ratePct) / 100).toFixed(2)) };
         }
         const cat = inv.aiCategory.toLowerCase();
-        if (cat.includes('raw') || cat.includes('coffee') || cat.includes('milk')) {
-            return { code: 'EXEMPT_0', ratePct: 0, sstRM: 0 };
-        }
-        if (cat.includes('utilities') || cat.includes('maintenance') || cat.includes('it')) {
-            return { code: 'SERVICE_8', ratePct: 8, sstRM: Number((inv.amountRM * 0.08).toFixed(2)) };
-        }
+        if (cat.includes('raw') || cat.includes('coffee') || cat.includes('milk')) return { code: 'EXEMPT_0', ratePct: 0, sstRM: 0 };
+        if (cat.includes('utilities') || cat.includes('maintenance') || cat.includes('it')) return { code: 'SERVICE_8', ratePct: 8, sstRM: Number((inv.amountRM * 0.08).toFixed(2)) };
         return { code: 'FNB_LOGISTICS_6', ratePct: 6, sstRM: Number((inv.amountRM * 0.06).toFixed(2)) };
     };
 
@@ -95,42 +99,21 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
     const cashFlowAnalysis = useMemo(() => {
         const currentCashRM = Math.max(0, Number(bankCashInputRM) || 0);
         const fixedOverheadRM = Math.max(0, Number(monthlyFixedOpExRM) || 0);
-
-        const unpaidSupplierBillsRM = invoices
-            .filter((i) => i.type === 'SUPPLIER_PAYABLE' && !i.paid)
-            .reduce((s, i) => s + i.amountRM + inferSstForInvoice(i).sstRM, 0);
-
-        const pendingRestockPoRM = products
-            .filter((p) => p.restockStatus === 'TRIGGERED_PENDING_APPROVAL')
-            .reduce((s, p) => s + p.reorderQty * (p.unitCostRM ?? p.priceRM * 0.62), 0);
-
-        const unpaidCustomerReceivablesRM = invoices
-            .filter((i) => i.type === 'CUSTOMER_RECEIVABLE' && !i.paid)
-            .reduce((s, i) => s + i.amountRM + inferSstForInvoice(i).sstRM, 0);
-
-        const totalSstOutputTaxRM = invoices
-            .filter((i) => i.type === 'CUSTOMER_RECEIVABLE')
-            .reduce((s, i) => s + inferSstForInvoice(i).sstRM, 0);
+        const unpaidSupplierBillsRM = invoices.filter((i) => i.type === 'SUPPLIER_PAYABLE' && !i.paid).reduce((s, i) => s + i.amountRM + inferSstForInvoice(i).sstRM, 0);
+        const pendingRestockPoRM = products.filter((p) => p.restockStatus === 'TRIGGERED_PENDING_APPROVAL').reduce((s, p) => s + p.reorderQty * (p.unitCostRM ?? p.priceRM * 0.62), 0);
+        const unpaidCustomerReceivablesRM = invoices.filter((i) => i.type === 'CUSTOMER_RECEIVABLE' && !i.paid).reduce((s, i) => s + i.amountRM + inferSstForInvoice(i).sstRM, 0);
+        const totalSstOutputTaxRM = invoices.filter((i) => i.type === 'CUSTOMER_RECEIVABLE').reduce((s, i) => s + inferSstForInvoice(i).sstRM, 0);
 
         const total30DayOutflowRM = unpaidSupplierBillsRM + pendingRestockPoRM + fixedOverheadRM + totalSstOutputTaxRM;
         const minSafeCashNeededRM = Number((total30DayOutflowRM * 1.2).toFixed(2));
         const projectedLiquidCashRM = Number((currentCashRM + unpaidCustomerReceivablesRM * 0.8).toFixed(2));
         const cashGapOrSurplusRM = Number((projectedLiquidCashRM - minSafeCashNeededRM).toFixed(2));
-        const dailyBurnRM = Math.max(100, total30DayOutflowRM / 30);
-        const runwayDays = Math.round(projectedLiquidCashRM / dailyBurnRM);
+        const runwayDays = Math.round(projectedLiquidCashRM / Math.max(100, total30DayOutflowRM / 30));
 
         return {
-            currentCashRM,
-            fixedOverheadRM,
-            unpaidSupplierBillsRM,
-            pendingRestockPoRM,
-            unpaidCustomerReceivablesRM,
-            totalSstOutputTaxRM,
-            total30DayOutflowRM,
-            minSafeCashNeededRM,
-            projectedLiquidCashRM,
-            cashGapOrSurplusRM,
-            runwayDays,
+            currentCashRM, fixedOverheadRM, unpaidSupplierBillsRM, pendingRestockPoRM,
+            unpaidCustomerReceivablesRM, totalSstOutputTaxRM, total30DayOutflowRM,
+            minSafeCashNeededRM, projectedLiquidCashRM, cashGapOrSurplusRM, runwayDays,
             isHealthy: cashGapOrSurplusRM >= 0,
         };
     }, [bankCashInputRM, monthlyFixedOpExRM, invoices, products, selectedSstCodes]);
@@ -139,14 +122,13 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
         const headers = ['Invoice No', 'Date', 'Direction', 'Counterparty', 'Category', 'SST Tax Code', 'SST Rate (%)', `Base Amount (${currency})`, `SST Tax (${currency})`, `Total Incl. SST (${currency})`];
         const rows = invoices.map((inv) => {
             const sst = inferSstForInvoice(inv);
-            const base = inv.amountRM * exchangeRate;
-            const tax = sst.sstRM * exchangeRate;
+            const base = inv.amountRM * exchangeRate, tax = sst.sstRM * exchangeRate;
             return [inv.invNo, inv.date, inv.type, `"${inv.party}"`, `"${inv.aiCategory}"`, sst.code, `${sst.ratePct}%`, base.toFixed(2), tax.toFixed(2), (base + tax).toFixed(2)].join(',');
         });
         const blob = new Blob(['\uFEFF' + [headers.join(','), ...rows].join('\n')], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url; a.setAttribute('download', `Vyte_RMCD_SST02_Tax_Schedule_2026.csv`);
+        a.href = url; a.setAttribute('download', 'Vyte_RMCD_SST02_Tax_Schedule_2026.csv');
         document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
     };
 
@@ -233,7 +215,7 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
         if (!invNo.trim() || !/^[A-Za-z0-9-_]{4,20}$/.test(invNo.trim())) errs.invNo = 'Invoice No. must be 4–20 alphanumeric chars.';
         if (!partyName.trim() || partyName.trim().length < 3) errs.partyName = 'Counterparty business name is required.';
         const amt = Number(amountInput);
-        if (!amountInput || isNaN(amt) || amt <= 0 || amt > 1000000) errs.amountInput = `Enter a valid amount.`;
+        if (!amountInput || isNaN(amt) || amt <= 0 || amt > 1000000) errs.amountInput = 'Enter a valid amount.';
         if (!rawLineDescription.trim() || rawLineDescription.trim().length < 6) errs.rawLineDescription = 'Describe invoice items for AI & SST classification.';
         if (Object.keys(errs).length > 0) return setFormErrors(errs);
 
@@ -263,27 +245,16 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
 
     return (
         <div className="space-y-4">
-            {/* CASH FLOW & WORKING CAPITAL LIQUIDITY GUARD */}
             <div className="bg-gradient-to-r from-slate-900 via-[#10241B] to-slate-900 text-white rounded-2xl p-5 border border-emerald-500/30 shadow-md space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
                     <div className="flex items-center gap-2.5">
-                        <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 flex items-center justify-center">
-                            <Wallet className="w-5 h-5" />
-                        </div>
+                        <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 flex items-center justify-center"><Wallet className="w-5 h-5" /></div>
                         <div>
                             <div className="flex items-center gap-2">
-                                <h3 className="text-sm font-bold text-white">
-                                    Cash Flow Liquidity Guard: Minimum Safe Working Capital
-                                </h3>
-                                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
-                                    cashFlowAnalysis.isHealthy
-                                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
-                                        : 'bg-rose-500/30 text-rose-200 border border-rose-400/50'
-                                }`}>
-                                    {cashFlowAnalysis.isHealthy
-                                        ? `HEALTHY RUNWAY (${cashFlowAnalysis.runwayDays} Days Cover)`
-                                        : `CASH SHORTFALL ALERT (${cashFlowAnalysis.runwayDays} Days Left)`}
-                                </span>
+                                <h3 className="text-sm font-bold text-white">Cash Flow Liquidity Guard: Minimum Safe Working Capital</h3>
+                                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${cashFlowAnalysis.isHealthy ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40' : 'bg-rose-500/30 text-rose-200 border border-rose-400/50'}`}>
+                  {cashFlowAnalysis.isHealthy ? `HEALTHY RUNWAY (${cashFlowAnalysis.runwayDays} Days Cover)` : `CASH SHORTFALL ALERT (${cashFlowAnalysis.runwayDays} Days Left)`}
+                </span>
                             </div>
                             <p className="text-[11px] text-slate-300">
                                 Calculates your exact <strong>Minimum Required Safe Cash</strong> for the next 30 days (Unpaid Bills + Pending POs + Fixed Overhead + SST).
@@ -291,27 +262,14 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                         </div>
                     </div>
 
-                    {/* Interactive Inputs */}
                     <div className="flex flex-wrap items-center gap-3 text-xs">
                         <div className="bg-white/10 px-3 py-1.5 rounded-xl border border-white/15">
                             <label className="text-[10px] text-emerald-300 font-bold block">Current Bank Cash (RM)</label>
-                            <input
-                                type="text"
-                                inputMode="numeric"
-                                value={bankCashInputRM}
-                                onChange={(e) => setBankCashInputRM(e.target.value.replace(/[^0-9]/g, ''))}
-                                className="w-24 bg-transparent text-white font-extrabold text-xs focus:outline-none border-b border-emerald-400"
-                            />
+                            <input type="text" inputMode="numeric" value={bankCashInputRM} onChange={(e) => setBankCashInputRM(e.target.value.replace(/[^0-9]/g, ''))} className="w-24 bg-transparent text-white font-extrabold text-xs focus:outline-none border-b border-emerald-400" />
                         </div>
                         <div className="bg-white/10 px-3 py-1.5 rounded-xl border border-white/15">
                             <label className="text-[10px] text-amber-300 font-bold block">Monthly Rent &amp; Payroll (RM)</label>
-                            <input
-                                type="text"
-                                inputMode="numeric"
-                                value={monthlyFixedOpExRM}
-                                onChange={(e) => setMonthlyFixedOpExRM(e.target.value.replace(/[^0-9]/g, ''))}
-                                className="w-24 bg-transparent text-white font-extrabold text-xs focus:outline-none border-b border-amber-400"
-                            />
+                            <input type="text" inputMode="numeric" value={monthlyFixedOpExRM} onChange={(e) => setMonthlyFixedOpExRM(e.target.value.replace(/[^0-9]/g, ''))} className="w-24 bg-transparent text-white font-extrabold text-xs focus:outline-none border-b border-amber-400" />
                         </div>
                     </div>
                 </div>
@@ -319,46 +277,29 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
                     <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 space-y-1">
                         <span className="text-[10px] font-bold uppercase text-amber-300">1. Committed 30-Day Outflows</span>
-                        <p className="text-base font-extrabold text-white">
-                            {sym} {(cashFlowAnalysis.total30DayOutflowRM * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </p>
-                        <p className="text-[11px] text-slate-300">
-                            Unpaid Bills ({sym} {(cashFlowAnalysis.unpaidSupplierBillsRM * exchangeRate).toFixed(0)}) + Pending POs ({sym} {(cashFlowAnalysis.pendingRestockPoRM * exchangeRate).toFixed(0)}) + OpEx
-                        </p>
+                        <p className="text-base font-extrabold text-white">{sym} {fmtMoney(cashFlowAnalysis.total30DayOutflowRM * exchangeRate)}</p>
+                        <p className="text-[11px] text-slate-300">Unpaid Bills ({sym} {(cashFlowAnalysis.unpaidSupplierBillsRM * exchangeRate).toFixed(0)}) + Pending POs ({sym} {(cashFlowAnalysis.pendingRestockPoRM * exchangeRate).toFixed(0)}) + OpEx</p>
                     </div>
 
                     <div className="p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-400/40 space-y-1">
                         <span className="text-[10px] font-bold uppercase text-emerald-300">2. Minimum Safe Cash Needed</span>
-                        <p className="text-base font-extrabold text-emerald-300">
-                            {sym} {(cashFlowAnalysis.minSafeCashNeededRM * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </p>
-                        <p className="text-[11px] text-emerald-100">
-                            Includes <strong>+20% Working Capital Safety Buffer</strong> to prevent stockout or payroll crunch.
-                        </p>
+                        <p className="text-base font-extrabold text-emerald-300">{sym} {fmtMoney(cashFlowAnalysis.minSafeCashNeededRM * exchangeRate)}</p>
+                        <p className="text-[11px] text-emerald-100">Includes <strong>+20% Working Capital Safety Buffer</strong> to prevent stockout or payroll crunch.</p>
                     </div>
 
                     <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 space-y-1">
                         <span className="text-[10px] font-bold uppercase text-blue-300">3. Cash + Collectable AR (80%)</span>
-                        <p className="text-base font-extrabold text-white">
-                            {sym} {(cashFlowAnalysis.projectedLiquidCashRM * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </p>
-                        <p className="text-[11px] text-slate-300">
-                            Bank ({sym} {(cashFlowAnalysis.currentCashRM * exchangeRate).toFixed(0)}) + Unpaid AR ({sym} {(cashFlowAnalysis.unpaidCustomerReceivablesRM * exchangeRate).toFixed(0)})
-                        </p>
+                        <p className="text-base font-extrabold text-white">{sym} {fmtMoney(cashFlowAnalysis.projectedLiquidCashRM * exchangeRate)}</p>
+                        <p className="text-[11px] text-slate-300">Bank ({sym} {(cashFlowAnalysis.currentCashRM * exchangeRate).toFixed(0)}) + Unpaid AR ({sym} {(cashFlowAnalysis.unpaidCustomerReceivablesRM * exchangeRate).toFixed(0)})</p>
                     </div>
 
-                    <div className={`p-3.5 rounded-xl border space-y-1 ${
-                        cashFlowAnalysis.isHealthy
-                            ? 'bg-emerald-950/60 border-emerald-400/40'
-                            : 'bg-rose-950/80 border-rose-400/60'
-                    }`}>
-                        <span className="text-[10px] font-bold uppercase text-white flex items-center gap-1">
-                            {cashFlowAnalysis.isHealthy ? <TrendingUp className="w-3.5 h-3.5 text-emerald-400" /> : <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />}
-                            4. Net Liquidity Position
-                        </span>
+                    <div className={`p-3.5 rounded-xl border space-y-1 ${cashFlowAnalysis.isHealthy ? 'bg-emerald-950/60 border-emerald-400/40' : 'bg-rose-950/80 border-rose-400/60'}`}>
+            <span className="text-[10px] font-bold uppercase text-white flex items-center gap-1">
+              {cashFlowAnalysis.isHealthy ? <TrendingUp className="w-3.5 h-3.5 text-emerald-400" /> : <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />}
+                4. Net Liquidity Position
+            </span>
                         <p className={`text-base font-extrabold ${cashFlowAnalysis.isHealthy ? 'text-emerald-300' : 'text-rose-300'}`}>
-                            {cashFlowAnalysis.isHealthy ? '+' : ''}
-                            {sym} {(cashFlowAnalysis.cashGapOrSurplusRM * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {cashFlowAnalysis.isHealthy ? '+' : ''}{sym} {fmtMoney(cashFlowAnalysis.cashGapOrSurplusRM * exchangeRate)}
                         </p>
                         <p className="text-[11px] text-slate-200">
                             {cashFlowAnalysis.isHealthy
@@ -369,7 +310,6 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                 </div>
             </div>
 
-            {/* INVOICE & GOVERNMENT SST REPOSITORY */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden space-y-4">
                 <input ref={photoInputRef} type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
                 <input ref={excelInputRef} type="file" accept=".csv,.xlsx,.xls" onChange={handleExcelSpreadsheetUpload} className="hidden" />
@@ -380,20 +320,14 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                             <FileText className="w-5 h-5 text-emerald-600" />
                             Smart Invoices &amp; RMCD SST Compliance Repository (0% / 6% F&amp;B / 8% Service / 10% Sales Tax)
                         </h3>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                            Automated RMCD SST computation, statutory invoice tracking, and customer AR reminders.
-                        </p>
+                        <p className="text-xs text-slate-500 mt-0.5">Automated RMCD SST computation, statutory invoice tracking, and customer AR reminders.</p>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
                         <div className="hidden xl:flex items-center gap-3 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 text-xs">
-                            <span className="flex items-center gap-1 text-amber-700 font-bold">
-                                <ArrowUpRight className="w-3.5 h-3.5" /> Payables: {sym} {(totalPayablesRM * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                            </span>
+                            <span className="flex items-center gap-1 text-amber-700 font-bold"><ArrowUpRight className="w-3.5 h-3.5" /> Payables: {sym} {fmtMoney(totalPayablesRM * exchangeRate, 2, 2)}</span>
                             <span className="text-slate-300">|</span>
-                            <span className="flex items-center gap-1 text-blue-700 font-bold">
-                                <ArrowDownLeft className="w-3.5 h-3.5" /> Receivables: {sym} {(totalReceivablesRM * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                            </span>
+                            <span className="flex items-center gap-1 text-blue-700 font-bold"><ArrowDownLeft className="w-3.5 h-3.5" /> Receivables: {sym} {fmtMoney(totalReceivablesRM * exchangeRate, 2, 2)}</span>
                         </div>
                         <button type="button" onClick={handleExportSst02Csv} className="px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer">
                             <Download className="w-3.5 h-3.5 text-amber-700" /> Export SST-02 Schedule
@@ -507,9 +441,9 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                                         <span className={`inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-bold ${source.color}`}>{source.label}</span>
                                     </td>
                                     <td className="py-3 px-3 whitespace-nowrap">
-                                        <span className={`px-2 py-0.5 rounded-md text-[11px] font-semibold ${inv.type === 'SUPPLIER_PAYABLE' ? 'bg-amber-50 text-amber-800' : 'bg-blue-50 text-blue-800'}`}>
-                                            {inv.type === 'SUPPLIER_PAYABLE' ? 'Supplier Bill' : 'Customer Sales'}
-                                        </span>
+                      <span className={`px-2 py-0.5 rounded-md text-[11px] font-semibold ${inv.type === 'SUPPLIER_PAYABLE' ? 'bg-amber-50 text-amber-800' : 'bg-blue-50 text-blue-800'}`}>
+                        {inv.type === 'SUPPLIER_PAYABLE' ? 'Supplier Bill' : 'Customer Sales'}
+                      </span>
                                     </td>
                                     <td className="py-3 px-3 font-semibold text-slate-900 max-w-[180px] truncate">
                                         <p className="truncate">{inv.party}</p><p className="text-[10px] text-slate-400">{inv.date}</p>
@@ -528,11 +462,7 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                                         </div>
                                     </td>
                                     <td className="py-3 px-3 whitespace-nowrap">
-                                        <select
-                                            value={sst.code}
-                                            onChange={(e) => setSelectedSstCodes({ ...selectedSstCodes, [inv.id]: e.target.value as SstTaxCode })}
-                                            className="px-2 py-1 rounded-lg bg-slate-100 border border-slate-200 font-bold text-[11px] text-slate-800"
-                                        >
+                                        <select value={sst.code} onChange={(e) => setSelectedSstCodes({ ...selectedSstCodes, [inv.id]: e.target.value as SstTaxCode })} className="px-2 py-1 rounded-lg bg-slate-100 border border-slate-200 font-bold text-[11px] text-slate-800">
                                             <option value="EXEMPT_0">0% Exempt</option>
                                             <option value="FNB_LOGISTICS_6">6% F&amp;B / Logistics</option>
                                             <option value="SERVICE_8">8% Service Tax</option>
@@ -540,12 +470,8 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                                         </select>
                                     </td>
                                     <td className="py-3 px-3 whitespace-nowrap">
-                                        <p className="font-extrabold text-slate-900">
-                                            {sym} {((inv.amountRM + sst.sstRM) * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                        </p>
-                                        <span className="text-[10px] text-slate-500">
-                                            Base: {sym} {(inv.amountRM * exchangeRate).toFixed(2)} + SST ({sst.ratePct}%): {sym} {(sst.sstRM * exchangeRate).toFixed(2)}
-                                        </span>
+                                        <p className="font-extrabold text-slate-900">{sym} {fmtMoney((inv.amountRM + sst.sstRM) * exchangeRate)}</p>
+                                        <span className="text-[10px] text-slate-500">Base: {sym} {(inv.amountRM * exchangeRate).toFixed(2)} + SST ({sst.ratePct}%): {sym} {(sst.sstRM * exchangeRate).toFixed(2)}</span>
                                     </td>
                                     <td className="py-3 px-3 whitespace-nowrap">
                                         <button type="button" onClick={() => onToggleInvoicePaid(inv.id)} className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer border transition ${inv.paid ? 'bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'}`}>
@@ -560,13 +486,8 @@ export const InvoiceModule: React.FC<InvoiceModuleProps> = ({
                                         ) : (
                                             <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold inline-flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Verified</span>
                                         )}
-
                                         {inv.type === 'CUSTOMER_RECEIVABLE' && !inv.paid && (
-                                            <button
-                                                type="button"
-                                                onClick={() => handleSendPaymentReminder(inv, 'EN')}
-                                                className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold inline-flex items-center gap-1 shadow-2xs cursor-pointer"
-                                            >
+                                            <button type="button" onClick={() => handleSendPaymentReminder(inv, 'EN')} className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold inline-flex items-center gap-1 shadow-2xs cursor-pointer">
                                                 Remind Customer
                                             </button>
                                         )}

@@ -1,6 +1,4 @@
 // src/types/vyte.ts
-
-
 export type CurrencyCode = 'MYR' | 'SGD' | 'USD' | 'RMB';
 
 export const CURRENCY_SYMBOLS: Record<CurrencyCode, string> = {
@@ -23,65 +21,18 @@ export interface UserSession {
 }
 
 export type ActiveTab = 'mod1' | 'mod2' | 'mod3' | 'mod4' | 'mod5' | 'mod6' | 'logs';
-
 export type IndustryProfile = 'FNB_PERISHABLE' | 'RETAIL_VARIANT' | 'B2B_RAW_MATERIAL';
-
-export type CompanyType = 'SDN_BHD' | 'ENTERPRISE' | 'LLP';
-
-export type LicenseType =
-    | 'PREMISE_LICENSE'
-    | 'SIGNBOARD_LICENSE'
-    | 'FOOD_ESTABLISHMENT'
-    | 'PREMISE_TENANCY_CONTRACT'
-    | 'SOFTWARE_SUBSCRIPTION_LICENSE'
-    | 'FLEET_ROADTAX_PUSPAKOM'
-    | 'EQUIPMENT_OEM_WARRANTY';
-
-export type ComplianceStatus =
-    | 'ACTIVE'
-    | 'EXPIRING_SOON'
-    | 'EXPIRED'
-    | 'PENDING_RENEWAL';
-
-export type ComplianceDocType =
-    | 'SSM_CERT_FORM_9'
-    | 'TENANCY_AGREEMENT'
-    | 'SOFTWARE_LICENSE_AGREEMENT'
-    | 'FLOOR_PLAN'
-    | 'FIRE_SAFETY_CERT'
-    | 'PREVIOUS_LICENSE';
-
-export type ComplianceAssetCategory =
-    | 'SSM_PBT_LICENSE'
-    | 'RENTAL_CONTRACT'
-    | 'SOFTWARE_LICENSE'
-    | 'FLEET_VEHICLE'
-    | 'EQUIPMENT_WARRANTY';
-
-export type RenewalTaskStatus =
-    | 'ASSIGNED_TO_AGENT'
-    | 'SUBMITTED_TO_PBT'
-    | 'APPROVED_RENEWED'
-    | 'REJECTED';
-
+export type ComplianceAssetCategory = 'SSM_PBT_LICENSE' | 'RENTAL_CONTRACT' | 'SOFTWARE_LICENSE' | 'FLEET_VEHICLE' | 'EQUIPMENT_WARRANTY';
+export type RenewalTaskStatus = 'ASSIGNED_TO_AGENT' | 'SUBMITTED_TO_PBT' | 'APPROVED_RENEWED' | 'REJECTED';
 export type SstTaxCode = 'EXEMPT_0' | 'FNB_LOGISTICS_6' | 'SERVICE_8' | 'SALES_10';
 
 export const DOC_TYPES = [
-    // Building & Rental Contracts
     { label: 'Stamped Tenancy Agreement (Rental Contract)', value: 'TENANCY_AGREEMENT' },
     { label: 'Building Floor Plan / CCC / Bomba Fire Safety', value: 'BUILDING_CCC_SAFETY' },
-
-    // Car / Fleet Licences
     { label: 'JPJ Vehicle Ownership Grant (VOC) & Road Tax', value: 'VEHICLE_ROADTAX_VOC' },
     { label: 'PUSPAKOM VR1 Commercial Inspection Disc', value: 'PUSPAKOM_INSPECTION_SLIP' },
-
-    // Warranties
     { label: 'Equipment OEM Warranty Card & Invoice', value: 'EQUIPMENT_WARRANTY_CERT' },
-
-    // Software Licences
     { label: 'Software License Agreement / SaaS Master Contract', value: 'SOFTWARE_EULA_CONTRACT' },
-
-    // Statutory
     { label: 'SSM Form 9 / PBT Premise License', value: 'SSM_CERT_FORM_9' },
 ];
 
@@ -104,8 +55,10 @@ export interface Product {
     supplierContact: string;
     performance?: string;
     visibility?: boolean;
+    isArchived?: boolean;
     isRemoved?: boolean;
     removedAt?: string;
+    decommissionedAt?: string;
     frozenUnitsSold?: number;
     frozenRevenueRM?: number;
     batchNo?: string;
@@ -115,36 +68,6 @@ export interface Product {
     valuationClass?: string;
     priceControl?: 'V' | 'S';
     restockStatus: 'HEALTHY' | 'TRIGGERED_PENDING_APPROVAL' | 'SUPPLIER_CONTACTED' | 'CONFIRMED';
-}
-
-export interface SupplierBid {
-    bidId: string;
-    productId: string;
-    productSku?: string;
-    sku?: string; // 兼容别名
-    productName: string;
-    supplierCode?: string;
-    supplierId?: string; // 兼容别名
-    supplierName: string;
-    supplierContact?: string;
-    address: string;
-    status: 'Submitted' | 'Awarded' | string;
-    quotationNetValueRM: number;
-    unitPriceRM: number;
-    quotedQty?: number;
-    uom?: string;
-    quotationDate?: string;
-    leadTimeDays: number;
-    pastDefectRatePct?: number;
-    pastOrdersCount?: number;
-    pastExperienceNote?: string;
-    staffSampleComment?: string;
-    staffComment?: string; // 兼容别名
-    sampleTestStatus?: 'PASSED' | 'FAILED' | 'PENDING_TEST';
-    sampleTestResult?: 'PASSED' | 'FAILED' | 'MINOR_ISSUES'; // 兼容别名
-    aiQualityScore: number;
-    aiRecommendation: string;
-    isAiRecommended?: boolean;
 }
 
 export interface QCAlert {
@@ -171,7 +94,7 @@ export interface QCAlert {
     hrNotes?: string;
     assignedAt?: string;
     hrEscalated?: boolean;
-    hrEscalationPayload?: any;
+    hrEscalationPayload?: OrbyteHrOverdueEscalationPayload;
     completedAtDate?: string;
     completedLate?: boolean;
 }
@@ -220,7 +143,7 @@ export interface BusinessComplianceProfile {
     licenseExpiryDate: string;
     complianceStatus: 'EXPIRING_SOON' | 'EXPIRED' | 'COMPLIANT';
     autoAlertEnabled: boolean;
-    assetCategory: string;
+    assetCategory?: string;
     rentalAddress?: string;
     landlordName?: string;
     monthlyRentRM?: number;
@@ -290,30 +213,6 @@ export interface ExtractedNlpOrderItem {
     lineTotal: number;
 }
 
-export interface AutoOrderSuggestion {
-    id: string;
-    poNumber: string;
-    productID: string;
-    sku: string;
-    productName: string;
-    category: string;
-    uom: string;
-    currentStock: number;
-    minThreshold: number;
-    dailyDepletionRate: number;
-    daysUntilStockout: number;
-    leadTimeDays: number;
-    suggestedOrderQty: number;
-    moq: number;
-    unitPriceRM: number;
-    supplierName: string;
-    supplierPhone: string;
-    channel: 'WHATSAPP' | 'EMAIL';
-    aiReasoning: string;
-    urgency: 'CRITICAL' | 'HIGH' | 'NORMAL';
-    humanStatus: string;
-}
-
 export interface NewProductForm {
     name: string;
     sku: string;
@@ -373,12 +272,7 @@ export interface OrbyteHrOverdueEscalationPayload {
     escalationId: string;
     hrTaskId: string;
     qcAlertId: string;
-    staff: {
-        staffId: string;
-        name: string;
-        department: string;
-        position: string;
-    };
+    staff: { staffId: string; name: string; department: string; position: string };
     taskDetails: {
         sku: string;
         productName: string;
@@ -393,18 +287,6 @@ export interface OrbyteHrOverdueEscalationPayload {
     };
     hrSystemDirective: 'LOG_KPI_BREACH_AND_ESCALATE_SUPERVISOR';
     dispatchedAt: string;
-}
-
-export interface AccountingStatutoryDeadline {
-    id: string;
-    formCode: string;
-    title: string;
-    authority: 'LHDN (Inland Revenue)' | 'RMCD (Customs SST)' | 'SSM (Companies Commission)' | 'KWSP / PERKESO';
-    frequency: 'ANNUAL' | 'BI_MONTHLY' | 'MONTHLY' | 'QUARTERLY';
-    dueDate: string;
-    estimatedPayableRM: number;
-    penaltyRule: string;
-    status: 'PENDING_FILING' | 'PREPARED_READY' | 'FILED_COMPLETED';
 }
 
 export interface AnalyzeProcurementRequest {
@@ -453,34 +335,4 @@ export interface GetSalesReviewReportResponse {
         totalSalesAmount: number;
         remainingStock: number;
     }[];
-}
-
-export interface SSMVerifyResponse {
-    registrationNo: string;
-    companyName: string;
-    companyType: CompanyType | string;
-    isValid: boolean;
-    ssmStatus: string;
-    ssmExpiryDate: string;
-    daysUntilExpiry: number;
-    isWithinRenewalWindow: boolean;
-    verificationSource: string;
-    verifiedAt: string;
-}
-
-export interface ExpiringLicenseItem {
-    registrationNo: string;
-    companyName: string;
-    licenseType: LicenseType | string;
-    councilName: string;
-    expiryDate: string;
-    daysRemaining: number;
-    urgencyLevel: ComplianceStatus | string;
-    actionRequired: string;
-}
-
-export interface CheckComplianceExpiryResponse {
-    lastCheckedAt: string;
-    totalLicensesMonitored: number;
-    expiringItems: ExpiringLicenseItem[];
 }
