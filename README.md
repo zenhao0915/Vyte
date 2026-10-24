@@ -169,6 +169,10 @@ curl -X POST https://api.runpod.ai/v2/$RUNPOD_ENDPOINT_ID/runsync \
 
 ## Future Improvements
 
+* [ ] Best-selling product leaderboard with automated profit-margin and seasonal demand analytics.
+* [ ] Consignment stock tracking with automated supplier and retail-partner settlement reconciliation.
+* [ ] Customer warranty management for end-user serial tracking, claim validation, and RMA replacements.
+* [ ] Tiered Freemium model offering core inventory tools for micro-SMEs with scalable Pro AI/GPU add-ons.
 * [ ] Direct LHDN MyInvois API integration for automated e-Invoice submission.
 * [ ] WebAssembly camera barcode/QR scanning for mobile stocktaking.
 * [ ] Self-service vendor portal for live RFQ bidding and certificate uploads.
