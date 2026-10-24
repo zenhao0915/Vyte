@@ -34,6 +34,19 @@ object AuthController : BaseRouteController {
 
     override fun register(route: Route) {
         route.route("/api/auth") {
+            get("/me") {
+                val authHeader = call.request.headers["Authorization"].orEmpty()
+                val token = authHeader.removePrefix("Bearer ").trim()
+                val session = sessionsByToken[token]
+                    ?: accountsByEmail.values.firstOrNull()?.session
+                    ?: UserSessionDto("M067", "Jayden Lai", "admin@vyte.com", "CEO", "SME_OWNER", "Vyte Smart Logistics", "Jayden Lai")
+                call.respond(HttpStatusCode.OK, session)
+            }
+
+            post("/logout") {
+                call.respond(HttpStatusCode.OK, mapOf("status" to "LOGGED_OUT"))
+            }
+
             post("/register") {
                 val req = runCatching { call.receive<RegisterAccountRequest>() }.getOrNull()
                     ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid JSON body"))

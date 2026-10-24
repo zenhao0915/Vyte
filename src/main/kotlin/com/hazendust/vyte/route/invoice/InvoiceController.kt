@@ -36,6 +36,12 @@ object InvoiceController : BaseRouteController {
 
     private fun kind(inv: InvoiceItem) = if (inv.type == InvoiceService.PAYABLE) "supplier payable" else "customer receivable"
 
+    fun normalizeType(raw: String?): String = when (raw?.trim()?.uppercase()) {
+        "SUPPLIER", "SUPPLIER_PAYABLE", "PAYABLE" -> InvoiceService.PAYABLE
+        "CUSTOMER", "CUSTOMER_RECEIVABLE", "RECEIVABLE" -> InvoiceService.RECEIVABLE
+        else -> InvoiceService.PAYABLE
+    }
+
     /** Parsed body of POST /upload, from either JSON or multipart/form-data. */
     private class UploadInput(
         val rawText: String?,
@@ -137,6 +143,21 @@ object InvoiceController : BaseRouteController {
                     return@get call.respondError(HttpStatusCode.BadRequest, "from must not be after to")
                 }
                 call.respond(InvoiceService.list(InvoiceFilter(type, status, overdue, q["party"], from, to)))
+            }
+
+            get("/{id}") {
+                val id = call.parameters["id"].orEmpty()
+                val inv = InvoiceService.find(id)
+                    ?: return@get call.respondError(HttpStatusCode.NotFound, "Invoice $id not found")
+                call.respond(inv)
+            }
+
+            delete("/{id}") {
+                val id = call.parameters["id"].orEmpty()
+                InvoiceService.find(id)
+                    ?: return@delete call.respondError(HttpStatusCode.NotFound, "Invoice $id not found")
+                InvoiceService.remove(id)
+                call.respond(HttpStatusCode.OK, mapOf("status" to "DELETED", "id" to id))
             }
 
             // GET http://localhost:8989/api/invoices/summary

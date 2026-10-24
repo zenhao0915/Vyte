@@ -1,5 +1,6 @@
 package com.hazendust.vyte.manager
 
+import com.hazendust.vyte.route.approval.ApprovalController
 import com.hazendust.vyte.route.audit.AuditController
 import com.hazendust.vyte.route.auth.AuthController
 import com.hazendust.vyte.route.compliance.ComplianceAndSupportController
@@ -10,6 +11,7 @@ import com.hazendust.vyte.route.order.OrderController
 import com.hazendust.vyte.route.product.ProductController
 import com.hazendust.vyte.route.qc.QCController
 import com.hazendust.vyte.route.restock.RestockController
+import com.hazendust.vyte.route.supplier.SupplierController
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -30,7 +32,9 @@ object RouteManager {
         JobsController,
         RestockController,
         MigrationController,
-        ComplianceAndSupportController
+        ComplianceAndSupportController,
+        SupplierController,
+        ApprovalController
     )
 
     fun registerAll(route: Route) {

@@ -33,6 +33,7 @@ class TenantWorkspace(val tenantId: String) {
     val invoiceExtras = ConcurrentHashMap<String, InvoiceExtras>()
     val auditLogs = CopyOnWriteArrayList<AuditLogEntity>()
     val ownAuditIds = ConcurrentHashMap.newKeySet<String>()
+    val orderInvoiceIds = ConcurrentHashMap<String, String>()
 
     val complianceProfiles = CopyOnWriteArrayList<ComplianceProfileDto>()
     val vaultDocs = CopyOnWriteArrayList<DocumentVaultItemDto>()

@@ -62,10 +62,16 @@ object RestockController : BaseRouteController {
         route.post("/api/restock/confirm") {
             val req = call.receiveOrNull<ConfirmRestockRequest>()
                 ?: return@post call.respondError(HttpStatusCode.BadRequest, "Invalid JSON body")
-            if (req.quantity <= 0) {
-                return@post call.respondError(HttpStatusCode.BadRequest, "quantity must be > 0")
+
+            // 如果前端只传了 SKU 而没传 productId，从库存按 SKU 寻找对应 ID
+            val pid = req.productId.ifBlank { req.productid }.ifBlank {
+                ProductService.list(null, null).firstOrNull { it.sku.equals(req.SKU, ignoreCase = true) }?.id.orEmpty()
             }
-            val pid = req.productId.ifBlank { req.productid }
+
+            if (pid.isBlank()) {
+                return@post call.respondError(HttpStatusCode.NotFound, "Product not found for SKU: ${req.SKU}")
+            }
+
             val res = ProductService.confirmDelivery(pid, req.quantity, req.userID)
             val ok = res as? ProductResult.Ok
             call.respond(
