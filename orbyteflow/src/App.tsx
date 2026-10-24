@@ -559,49 +559,73 @@ export default function App() {
     };
 
     const handleSaveProduct = async (newProd: NewProductForm) => {
+        const isDebug = getDebugMockMode();
         const basePriceRM = Number((Number(newProd.priceRM) / activeExchangeRate).toFixed(2));
-        const backendCreated = await orbyteApi.createProduct({ ...newProd, priceRM: basePriceRM }).catch(() => null);
-        if (backendCreated) {
-            setProducts((p) => [backendCreated, ...p]);
-            addAuditLog('Catalog', `Added SKU "${backendCreated.name}" (${backendCreated.stock} ${backendCreated.uom}).`);
-            setShowAddModal(false);
-            pushToast('success', `Added ${backendCreated.name} (${backendCreated.sku}).`);
-            return;
-        }
-        const isLow = Number(newProd.stock) <= Number(newProd.minThreshold);
-        const parts = newProd.extraAttr?.split(/[•|]/) || [];
-        const moqMatch = newProd.extraAttr?.match(/MOQ\s*[:\-]?\s*(\d+)/i);
-        const leadMatch = newProd.extraAttr?.match(/Lead\s*Time\s*[:\-]?\s*(\d+)/i);
-
-        const created: Product = {
-            id: `P-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-            sku: newProd.sku || `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
-            name: newProd.name,
-            category: newProd.category,
-            industry: newProd.industry,
-            uom: newProd.uom,
-            stock: Number(newProd.stock),
-            minThreshold: Number(newProd.minThreshold),
-            reorderQty: Number(newProd.reorderQty),
+        const payload = {
+            name: newProd.name?.trim(),
+            sku: newProd.sku?.trim() || undefined,
+            category: newProd.category?.trim(),
+            industry: newProd.industry || 'RETAIL_VARIANT',
+            uom: newProd.uom?.trim() || 'unit',
+            stock: Number(newProd.stock) || 0,
+            minThreshold: Number(newProd.minThreshold) || 10,
+            reorderQty: Number(newProd.reorderQty) || 20,
             priceRM: basePriceRM,
             unitCostRM: Number((basePriceRM * 0.6).toFixed(2)),
-            dailyDepletionRate: 3.0,
-            leadTimeDays: leadMatch ? Math.max(1, Number(leadMatch[1])) : 2,
-            moq: moqMatch ? Math.max(1, Number(moqMatch[1])) : 10,
-            supplierName: newProd.supplierName || 'Preferred Supplier',
-            supplierContact: newProd.supplierContact || '+6012-9998888',
-            performance: 'Good',
-            visibility: true,
-            batchNo: newProd.industry === 'FNB_PERISHABLE' ? parts[0]?.replace(/Batch\s*:/i, '').trim() || 'B-2026-NEW' : undefined,
-            expiryDate: newProd.industry === 'FNB_PERISHABLE' ? parts[1]?.replace(/Exp\s*:/i, '').trim() || '2026-11-15' : undefined,
-            variantSpec: newProd.industry !== 'FNB_PERISHABLE' ? newProd.extraAttr : undefined,
+            supplierName: newProd.supplierName?.trim() || 'Preferred Supplier',
+            supplierContact: newProd.supplierContact?.trim() || '+6012-9998888',
+            extraAttr: newProd.extraAttr,
             photoUrl: newProd.photoUrl,
-            restockStatus: isLow ? 'TRIGGERED_PENDING_APPROVAL' : 'HEALTHY',
         };
-        setProducts((p) => [created, ...p]);
-        addAuditLog('Catalog', `Added SKU "${created.name}" (${created.stock} ${created.uom}).`);
-        setShowAddModal(false);
-        pushToast('success', `Added ${created.name} (${created.sku}).`);
+        try {
+            const backendCreated = await orbyteApi.createProduct(payload);
+
+            if (backendCreated) {
+                setProducts((p) => [backendCreated, ...p]);
+                addAuditLog('Catalog', `Added SKU "${backendCreated.name}" (${backendCreated.stock} ${backendCreated.uom}).`);
+                setShowAddModal(false);
+                pushToast('success', `Added ${backendCreated.name} (${backendCreated.sku}).`);
+                return;
+            }
+            throw new Error('Backend returned empty product');
+        } catch (err: any) {
+            console.error('Save product failed:', err);
+            if (!isDebug) {
+                pushToast('error', `Add Item Failed: ${err.message || 'Backend Not Connected! Add Item Not Allowed!'}`);
+                return;
+            }
+
+            const parts = newProd.extraAttr?.split(/[•|]/) || [];
+            const isLow = Number(newProd.stock) <= Number(newProd.minThreshold);
+            const created: Product = {
+                id: `P-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+                sku: newProd.sku || `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
+                name: newProd.name,
+                category: newProd.category,
+                industry: newProd.industry,
+                uom: newProd.uom,
+                stock: Number(newProd.stock),
+                minThreshold: Number(newProd.minThreshold),
+                reorderQty: Number(newProd.reorderQty),
+                priceRM: basePriceRM,
+                unitCostRM: Number((basePriceRM * 0.6).toFixed(2)),
+                dailyDepletionRate: 3.0,
+                leadTimeDays: 2,
+                moq: 10,
+                supplierName: newProd.supplierName || 'Preferred Supplier',
+                supplierContact: newProd.supplierContact || '+6012-9998888',
+                performance: 'Good',
+                visibility: true,
+                batchNo: newProd.industry === 'FNB_PERISHABLE' ? parts[0]?.replace(/Batch\s*:/i, '').trim() || 'B-2026-NEW' : undefined,
+                expiryDate: newProd.industry === 'FNB_PERISHABLE' ? parts[1]?.replace(/Exp\s*:/i, '').trim() || '2026-11-15' : undefined,
+                variantSpec: newProd.industry !== 'FNB_PERISHABLE' ? newProd.extraAttr : undefined,
+                photoUrl: newProd.photoUrl,
+                restockStatus: isLow ? 'TRIGGERED_PENDING_APPROVAL' : 'HEALTHY',
+            };
+            setProducts((p) => [created, ...p]);
+            setShowAddModal(false);
+            pushToast('warning', `[Debug Mode] Added locally: ${created.name}`);
+        }
     };
 
     const handleBatchImportProducts = (importedList: Product[]) => {
