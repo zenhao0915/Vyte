@@ -2,6 +2,7 @@ package com.hazendust.vyte.route.migration
 
 import com.hazendust.vyte.data.WorkspaceContext
 import com.hazendust.vyte.manager.BaseRouteController
+import com.hazendust.vyte.manager.DatabaseManager
 import com.hazendust.vyte.route.ai.AiService
 import com.hazendust.vyte.route.ai.AiService.number
 import com.hazendust.vyte.route.ai.AiService.string
@@ -13,20 +14,21 @@ import com.hazendust.vyte.route.invoice.InvoiceService
 import com.hazendust.vyte.route.product.Product
 import com.hazendust.vyte.route.product.ProductResult
 import com.hazendust.vyte.route.product.ProductService
-import com.hazendust.vyte.route. product.UpdateProductRequest
+import com.hazendust.vyte.route.product.UpdateProductRequest
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import java.io.File
 import java.sql.DriverManager
 import java.time.LocalDate
-import java.util.Base64
+import java.util.*
 
 object MigrationController : BaseRouteController {
 
@@ -72,102 +74,113 @@ object MigrationController : BaseRouteController {
             post("/commit") {
                 val req = call.receiveOrNull<CommitMigrationRequest>()
                     ?: return@post call.respondError(HttpStatusCode.BadRequest, "Invalid JSON body")
+                val headerTenant = WorkspaceContext.currentId()
+                val effectiveTenant = req.userID.trim().takeIf { it.isNotBlank() && it != "default" }
+                    ?: headerTenant
 
-                val savedProducts = mutableListOf<Product>()
-                val savedInvoices = mutableListOf<InvoiceItem>()
-                val ws = WorkspaceContext.current()
-                ws.transitionMode = req.transitionMode
+                val response = WorkspaceContext.withTenant(effectiveTenant) {
+                    val savedProducts = mutableListOf<Product>()
+                    val savedInvoices = mutableListOf<InvoiceItem>()
+                    val ws = WorkspaceContext.current()
+                    ws.transitionMode = req.transitionMode
 
-                // 2.1 导入或合并商品 (按 SKU 去重更新，防止 409 冲突)
-                val existingProductsBySku = ProductService.list(null, null, includeArchived = true)
-                    .associateBy { it.sku.lowercase() }
-                    .toMutableMap()
+                    // 2.1 导入或合并商品 (按 SKU 去重更新)
+                    val existingProductsBySku = ProductService.list(null, null, includeArchived = true)
+                        .associateBy { it.sku.lowercase() }
+                        .toMutableMap()
 
-                for (form in req.products) {
-                    val skuKey = form.sku?.trim()?.lowercase().orEmpty()
-                    val existing = if (skuKey.isNotEmpty()) existingProductsBySku[skuKey] else null
-                    if (existing != null) {
-                        val upd = ProductService.update(
-                            existing.id,
-                            UpdateProductRequest(
-                                name = form.name,
-                                category = form.category,
-                                priceRM = form.priceRM,
-                                unitCostRM = form.unitCostRM,
-                                minThreshold = form.minThreshold,
-                                reorderQty = form.reorderQty,
-                                supplierName = form.supplierName,
-                                supplierContact = form.supplierContact
+                    for (form in req.products) {
+                        val skuKey = form.sku?.trim()?.lowercase().orEmpty()
+                        val existing = if (skuKey.isNotEmpty()) existingProductsBySku[skuKey] else null
+                        if (existing != null) {
+                            val upd = ProductService.update(
+                                existing.id,
+                                UpdateProductRequest(
+                                    name = form.name,
+                                    category = form.category,
+                                    priceRM = form.priceRM,
+                                    unitCostRM = form.unitCostRM,
+                                    minThreshold = form.minThreshold,
+                                    reorderQty = form.reorderQty,
+                                    supplierName = form.supplierName,
+                                    supplierContact = form.supplierContact
+                                )
                             )
+                            if (upd is ProductResult.Ok) {
+                                savedProducts.add(upd.product)
+                            }
+                        } else {
+                            when (val res = ProductService.create(form)) {
+                                is ProductResult.Ok -> {
+                                    savedProducts.add(res.product)
+                                    existingProductsBySku[res.product.sku.lowercase()] = res.product
+                                }
+
+                                is ProductResult.Fail -> Unit
+                            }
+                        }
+                    }
+
+                    // 2.2 导入或合并发票
+                    for ((invNo, type, party, date1, dueDate1, amountRM, aiCategory, _, paid, status) in req.invoices) {
+                        val date = date1?.let { InvoiceService.parseDate(it) } ?: InvoiceService.today()
+                        val dueDate = dueDate1?.let { InvoiceService.parseDate(it) }
+                        val createReq = CreateInvoiceRequest(
+                            type = if (type in InvoiceService.TYPES) type else InvoiceService.RECEIVABLE,
+                            party = party.ifBlank { "Migrated Partner" },
+                            amountRM = amountRM.coerceAtLeast(0.0),
+                            date = date.toString(),
+                            dueDate = dueDate?.toString(),
+                            aiCategory = aiCategory.ifBlank { "Migrated Legacy Invoice" },
+                            invNo = invNo,
+                            sourceRef = "MIGRATED:${req.sourceFileName}",
+                            notes = "Migrated from ${req.sourceFileName} (${req.transitionMode} mode)"
                         )
-                        if (upd is ProductResult.Ok) {
-                            savedProducts.add(upd.product)
-                        }
-                    } else {
-                        when (val res = ProductService.create(form)) {
-                            is ProductResult.Ok -> {
-                                savedProducts.add(res.product)
-                                existingProductsBySku[res.product.sku.lowercase()] = res.product
+                        when (val res = InvoiceService.createFromRequest(createReq, date, dueDate)) {
+                            is InvoiceResult.Ok -> {
+                                var item = res.invoice
+                                if (paid) {
+                                    (InvoiceService.setPaid(item.id, true) as? InvoiceResult.Ok)?.let {
+                                        item = it.invoice
+                                    }
+                                }
+                                if (status == "VERIFIED") {
+                                    (InvoiceService.verify(item.id) as? InvoiceResult.Ok)?.let { item = it.invoice }
+                                }
+                                savedInvoices.add(item)
                             }
-                            is ProductResult.Fail -> Unit
+
+                            is InvoiceResult.Fail -> Unit
                         }
                     }
-                }
 
-                for ((invNo, type, party, date1, dueDate1, amountRM, aiCategory, _, paid, status) in req.invoices) {
-                    val date = date1?.let { InvoiceService.parseDate(it) } ?: InvoiceService.today()
-                    val dueDate = dueDate1?.let { InvoiceService.parseDate(it) }
-                    val createReq = CreateInvoiceRequest(
-                        type = if (type in InvoiceService.TYPES) type else InvoiceService.RECEIVABLE,
-                        party = party.ifBlank { "Migrated Partner" },
-                        amountRM = amountRM.coerceAtLeast(0.0),
-                        date = date.toString(),
-                        dueDate = dueDate?.toString(),
-                        aiCategory = aiCategory.ifBlank { "Migrated Legacy Invoice" },
-                        invNo = invNo,
-                        sourceRef = "MIGRATED:${req.sourceFileName}",
-                        notes = "Migrated from ${req.sourceFileName} (${req.transitionMode} mode)"
-                    )
-                    when (val res = InvoiceService.createFromRequest(createReq, date, dueDate)) {
-                        is InvoiceResult.Ok -> {
-                            var item = res.invoice
-                            if (paid) {
-                                (InvoiceService.setPaid(item.id, true) as? InvoiceResult.Ok)?.let { item = it.invoice }
-                            }
-                            if (status == "VERIFIED") {
-                                (InvoiceService.verify(item.id) as? InvoiceResult.Ok)?.let { item = it.invoice }
-                            }
-                            savedInvoices.add(item)
+                    // 2.3 导入或合并合规档案
+                    val savedCompliance = mutableListOf<ComplianceProfileDto>()
+                    for (comp in req.complianceProfiles) {
+                        ws.complianceProfiles.removeIf {
+                            it.registrationNo.equals(
+                                comp.registrationNo,
+                                ignoreCase = true
+                            )
                         }
-                        is InvoiceResult.Fail -> Unit
+                        ws.complianceProfiles.add(0, comp)
+                        savedCompliance.add(comp)
                     }
-                }
 
-                val savedCompliance = mutableListOf<ComplianceProfileDto>()
-                for (comp in req.complianceProfiles) {
-                    ws.complianceProfiles.removeIf { it.registrationNo.equals(comp.registrationNo, ignoreCase = true) }
-                    ws.complianceProfiles.add(0, comp)
-                    savedCompliance.add(comp)
-                }
+                    // 立即同步到 SQLite 数据库中对应 effectiveTenant 的表中
+                    if (DatabaseManager.isReady) {
+                        DatabaseManager.saveWorkspace(ws)
+                    }
 
-                val summary = "Migrated ${savedProducts.size} SKUs, ${savedInvoices.size} invoices & ${savedCompliance.size} licenses from '${req.sourceFileName}' (Mode: ${req.transitionMode})."
-                AuditService.log(
-                    module = "AI Migration",
-                    role = req.role.ifBlank { AuditService.SME_OWNER },
-                    detail = summary
-                )
-
-                call.respond(
-                    HttpStatusCode.Created,
-                    CommitMigrationResponse(
-                        status = "MIGRATED_OK",
-                        transitionMode = req.transitionMode,
-                        importedProducts = savedProducts,
-                        importedInvoices = savedInvoices,
-                        importedComplianceProfiles = savedCompliance,
-                        summary = summary
+                    val summary =
+                        "Migrated ${savedProducts.size} SKUs, ${savedInvoices.size} invoices & ${savedCompliance.size} licenses to [$effectiveTenant]."
+                    AuditService.log(
+                        module = "AI Migration",
+                        role = req.role.ifBlank { AuditService.SME_OWNER },
+                        detail = summary
                     )
-                )
+                }
+                call.respond(HttpStatusCode.Created, response)
             }
 
             get("/compliance") {
@@ -189,14 +202,15 @@ object MigrationController : BaseRouteController {
                 val sb = StringBuilder()
                 val tables = mutableListOf<String>()
                 conn.createStatement().use { stmt ->
-                    stmt.executeQuery("SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").use { rs ->
-                        while (rs.next()) {
-                            val tName = rs.getString("name")
-                            tables.add(tName)
-                            sb.appendLine("-- TABLE: $tName")
-                            sb.appendLine(rs.getString("sql"))
+                    stmt.executeQuery("SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+                        .use { rs ->
+                            while (rs.next()) {
+                                val tName = rs.getString("name")
+                                tables.add(tName)
+                                sb.appendLine("-- TABLE: $tName")
+                                sb.appendLine(rs.getString("sql"))
+                            }
                         }
-                    }
                     for (t in tables.take(8)) {
                         stmt.executeQuery("SELECT * FROM \"$t\" LIMIT 25").use { rs ->
                             val meta = rs.metaData
@@ -274,7 +288,8 @@ object MigrationController : BaseRouteController {
         }
 
         if (AiService.isConfigured() && rawContent.isNotBlank()) {
-            val userPrompt = "File Name: $fileName ($formatLabel)\nRaw Content:\n\"\"\"\n${rawContent.take(10_000)}\n\"\"\""
+            val userPrompt =
+                "File Name: $fileName ($formatLabel)\nRaw Content:\n\"\"\"\n${rawContent.take(10_000)}\n\"\"\""
             val aiRes = AiService.chatJson(MIGRATION_SYSTEM_PROMPT, userPrompt, 1800)
             if (aiRes is AiService.AiResult.Success) {
                 val parsed = mapAiJsonToPreview(aiRes.data, formatLabel, today)
@@ -290,7 +305,8 @@ object MigrationController : BaseRouteController {
     private fun mapAiJsonToPreview(data: JsonObject, formatLabel: String, today: LocalDate): AiParsedPreviewResponse {
         val detectedSystem = data.string("detectedSystem") ?: "Legacy SME System"
         val confidence = data.number("aiConfidence")?.toInt()?.coerceIn(75, 99) ?: 94
-        val summary = data.string("aiSummary") ?: "Successfully mapped legacy schema and extracted operational records into Vyte."
+        val summary =
+            data.string("aiSummary") ?: "Successfully mapped legacy schema and extracted operational records into Vyte."
 
         val mappings = (data["fieldMappings"] as? JsonArray)?.mapNotNull { el ->
             val obj = el as? JsonObject ?: return@mapNotNull null
@@ -332,7 +348,8 @@ object MigrationController : BaseRouteController {
                 performance = "Good",
                 visibility = true,
                 batchNo = obj.string("batchNo") ?: if (industry == "FNB_PERISHABLE") "B-${today.year}-MIG" else null,
-                expiryDate = obj.string("expiryDate") ?: if (industry == "FNB_PERISHABLE") today.plusDays(14).toString() else null,
+                expiryDate = obj.string("expiryDate") ?: if (industry == "FNB_PERISHABLE") today.plusDays(14)
+                    .toString() else null,
                 restockStatus = if (stock <= minT) "TRIGGERED_PENDING_APPROVAL" else "HEALTHY"
             )
         }.orEmpty()
@@ -393,7 +410,12 @@ object MigrationController : BaseRouteController {
     /**
      * 当未配置 GROQ_API_KEY 或上传离线文件时的多格式确定性规则解析器
      */
-    private fun ruleBasedFallbackParse(fileName: String, formatLabel: String, rawContent: String, today: LocalDate): AiParsedPreviewResponse {
+    private fun ruleBasedFallbackParse(
+        fileName: String,
+        formatLabel: String,
+        rawContent: String,
+        today: LocalDate
+    ): AiParsedPreviewResponse {
         val lower = rawContent.lowercase()
         val detectedSystem = when {
             lower.contains("autocount") -> "AutoCount Accounting / Inventory"
@@ -437,7 +459,8 @@ object MigrationController : BaseRouteController {
                         daysUntilStockout = Math.round((stock / 3.5) * 10) / 10.0,
                         leadTimeDays = 2,
                         moq = 10,
-                        supplierName = cols.getOrNull(4)?.takeIf { it.isNotBlank() } ?: "Malaysian Wholesale Hub Sdn Bhd",
+                        supplierName = cols.getOrNull(4)?.takeIf { it.isNotBlank() }
+                            ?: "Malaysian Wholesale Hub Sdn Bhd",
                         supplierContact = "+6012-3456789",
                         performance = "Good",
                         visibility = true,

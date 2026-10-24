@@ -15,6 +15,7 @@ import com.hazendust.vyte.route.product.StockMovement
 import com.hazendust.vyte.route.qc.QCAlert
 import kotlinx.coroutines.ThreadContextElement
 import kotlinx.coroutines.asContextElement
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -90,13 +91,10 @@ object WorkspaceContext {
     fun asCoroutineElement(tenantId: String): ThreadContextElement<String> =
         currentTenant.asContextElement(value = sanitizeTenantId(tenantId))
 
-    fun <T> withTenant(tenantId: String, block: () -> T): T {
-        val prev = currentTenant.get()
-        currentTenant.set(sanitizeTenantId(tenantId))
-        return try {
+    suspend fun <T> withTenant(tenantId: String, block: suspend () -> T): T {
+        val sanitized = sanitizeTenantId(tenantId)
+        return withContext(currentTenant.asContextElement(sanitized)) {
             block()
-        } finally {
-            currentTenant.set(prev)
         }
     }
 }
