@@ -102,34 +102,41 @@ export const UniversalSystemMigratorModal: React.FC<UniversalSystemMigratorModal
         if (!preview || !selectedFile) return;
         setIsImporting(true);
         setErrorMsg(null);
+        const currentWsId =
+            localStorage.getItem('vyte_workspace_id') ||
+            localStorage.getItem('active_workspace_id') ||
+            'ws-mvm02vsm-0lwqs';
 
+        let commitRes: any = null;
         try {
-            // 真实发送 Commit 请求给后端
-            const commitRes = await orbyteApi.commitMigration({
+            commitRes = await orbyteApi.commitMigration({
                 sourceFileName: selectedFile.name,
                 transitionMode,
                 products: preview.products,
                 invoices: preview.invoices,
                 complianceProfiles: preview.complianceProfiles,
+                userID: currentWsId,
             });
+        } catch (err: any) {
+            setErrorMsg(`Error: ${err.message || 'Backend Failed!'}`);
+            setIsImporting(false);
+            return;
+        }
+        setIsImporting(false);
+        setPreview(null);
+        setSelectedFile(null);
+        onClose();
 
-            // 只有后端成功写入数据库后，才允许向前端应用同步数据
+        try {
             onImportSuccess({
-                products: commitRes.importedProducts || preview.products,
-                invoices: commitRes.importedInvoices || preview.invoices,
-                complianceProfiles: commitRes.importedComplianceProfiles || preview.complianceProfiles,
+                products: commitRes?.importedProducts || preview.products,
+                invoices: commitRes?.importedInvoices || preview.invoices,
+                complianceProfiles: commitRes?.importedComplianceProfiles || preview.complianceProfiles,
                 sourceFileName: selectedFile.name,
                 transitionMode,
             });
-
-            setPreview(null);
-            setSelectedFile(null);
-            onClose();
-        } catch (err: any) {
-            // 后端连不上或保存失败，直接阻止操作，展示错误红框
-            setErrorMsg(`导入阻断: ${err.message || '后端未响应，已取消保存'}`);
-        } finally {
-            setIsImporting(false);
+        } catch (parentErr) {
+            console.warn('Parent onImportSuccess warning:', parentErr);
         }
     };
 

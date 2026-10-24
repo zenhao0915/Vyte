@@ -1,5 +1,5 @@
 // src/components/layout/Sidebar.tsx
-import React, {useEffect, useState} from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     AlertTriangle,
     Box,
@@ -22,10 +22,10 @@ import {
     Volume2,
     X,
 } from 'lucide-react';
-import type {ActiveTab, CurrencyCode, UserRole, UserSession} from '../../types/vyte.ts';
-import {VyteLogo} from '../common/VyteLogo';
-import {VyteDropdown} from '../common/VyteDropdown';
-import {getApiBaseUrl, setApiBaseUrl} from '../../services/api';
+import type { ActiveTab, CurrencyCode, UserRole, UserSession } from '../../types/vyte.ts';
+import { VyteLogo } from '../common/VyteLogo';
+import { VyteDropdown } from '../common/VyteDropdown';
+import { getApiBaseUrl, setApiBaseUrl, orbyteApi } from '../../services/api';
 
 interface SidebarProps {
     activeTab: ActiveTab;
@@ -101,6 +101,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }
         onCurrencyChange(tempCurrency);
         setShowSettingsModal(false);
+    };
+
+    // 核心：调用后端登出接口，并彻底清除本地存储
+    const handleLogout = async () => {
+        try {
+            if (orbyteApi?.logout) {
+                await orbyteApi.logout();
+            } else {
+                await fetch(`${getApiBaseUrl()}/api/auth/logout`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            }
+        } catch (err) {
+            console.error('Logout error:', err);
+        } finally {
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('vyte_jwt');
+            localStorage.removeItem('vyte_session');
+            localStorage.removeItem('vyte_workspace_id');
+            localStorage.removeItem('active_workspace_id');
+            localStorage.removeItem('user_session');
+            localStorage.removeItem('user');
+            onLogout();
+        }
     };
 
     const roleBadge = {
@@ -216,16 +241,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     className="w-6 h-6 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center text-slate-500 hover:text-emerald-600 hover:border-emerald-300 absolute -right-3 top-8 z-40 transition cursor-pointer"
                 >
                     {isCollapsed ? (
-                        <ChevronRight className="w-3.5 h-3.5"/>
+                        <ChevronRight className="w-3.5 h-3.5" />
                     ) : (
-                        <ChevronLeft className="w-3.5 h-3.5"/>
+                        <ChevronLeft className="w-3.5 h-3.5" />
                     )}
                 </button>
 
                 <div className="flex flex-col flex-1 min-h-0 overflow-y-auto">
                     <div className="px-5 py-4 flex items-center justify-center border-b border-slate-100 shrink-0">
                         {isCollapsed ? (
-                            <VyteLogo iconOnly={true} className="h-9 w-auto"/>
+                            <VyteLogo iconOnly={true} className="h-9 w-auto" />
                         ) : (
                             <VyteLogo
                                 variant="dark-text"
@@ -243,11 +268,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 title="Search SKU or item"
                                 className="w-full py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200/80 flex items-center justify-center text-slate-500 cursor-pointer"
                             >
-                                <Search className="w-4 h-4"/>
+                                <Search className="w-4 h-4" />
                             </button>
                         ) : (
                             <div className="relative">
-                                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5"/>
+                                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                                 <input
                                     type="text"
                                     placeholder="Search SKU or item..."
@@ -285,26 +310,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                             : 'border-transparent text-slate-700 font-medium hover:bg-slate-50'
                                     }`}
                                 >
-                  <span className="flex items-center gap-2.5 min-w-0">
-                    <Icon className={`w-4 h-4 shrink-0 ${mod.iconColor}`}/>
-                      {!isCollapsed && (
-                          <span
-                              className={`truncate whitespace-nowrap ${
-                                  mod.id === 'mod6'
-                                      ? 'text-[11px] tracking-tight'
-                                      : 'text-xs'
-                              }`}
-                          >
-                        {mod.label}
-                      </span>
-                      )}
-                  </span>
+                                    <span className="flex items-center gap-2.5 min-w-0">
+                                        <Icon className={`w-4 h-4 shrink-0 ${mod.iconColor}`} />
+                                        {!isCollapsed && (
+                                            <span
+                                                className={`truncate whitespace-nowrap ${
+                                                    mod.id === 'mod6'
+                                                        ? 'text-[11px] tracking-tight'
+                                                        : 'text-xs'
+                                                }`}
+                                            >
+                                                {mod.label}
+                                            </span>
+                                        )}
+                                    </span>
                                     {!isCollapsed && (
                                         <span
                                             className={`text-[11px] px-2 py-0.5 rounded-full font-bold shrink-0 ml-1 ${mod.badgeClass}`}
                                         >
-                      {mod.badge}
-                    </span>
+                                            {mod.badge}
+                                        </span>
                                     )}
                                 </button>
                             );
@@ -326,15 +351,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                         : 'justify-between px-3 py-2'
                                 } rounded-xl text-xs transition-all cursor-pointer border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-950 font-bold`}
                             >
-                <span className="flex items-center gap-2.5 min-w-0">
-                  <Database className="w-4 h-4 shrink-0 text-emerald-600"/>
-                    {!isCollapsed && <span className="truncate">Data Import Tool</span>}
-                </span>
+                                <span className="flex items-center gap-2.5 min-w-0">
+                                    <Database className="w-4 h-4 shrink-0 text-emerald-600" />
+                                    {!isCollapsed && <span className="truncate">Data Import Tool</span>}
+                                </span>
                                 {!isCollapsed && (
-                                    <span
-                                        className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-200 text-emerald-800">
-                    AI
-                  </span>
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-200 text-emerald-800">
+                                        AI
+                                    </span>
                                 )}
                             </button>
                         )}
@@ -350,17 +374,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                         : 'justify-between px-3 py-2'
                                 } rounded-xl text-xs transition-all cursor-pointer border border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-blue-950 font-bold`}
                             >
-                <span className="flex items-center gap-2.5 min-w-0">
-                  <Headset className="w-4 h-4 shrink-0 text-blue-600"/>
-                    {!isCollapsed && (
-                        <span className="truncate">After-Sales Support</span>
-                    )}
-                </span>
+                                <span className="flex items-center gap-2.5 min-w-0">
+                                    <Headset className="w-4 h-4 shrink-0 text-blue-600" />
+                                    {!isCollapsed && (
+                                        <span className="truncate">After-Sales Support</span>
+                                    )}
+                                </span>
                                 {!isCollapsed && (
-                                    <span
-                                        className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-blue-200 text-blue-800">
-                    24/7
-                  </span>
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-blue-200 text-blue-800">
+                                        24/7
+                                    </span>
                                 )}
                             </button>
                         )}
@@ -376,7 +399,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 : 'justify-center gap-1.5 px-3 py-2'
                         } ${roleBadge.style}`}
                     >
-                        <ShieldCheck className="w-3.5 h-3.5 shrink-0"/>
+                        <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
                         {!isCollapsed && <span className="truncate">{roleBadge.label}</span>}
                     </div>
 
@@ -388,15 +411,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 title="Workspace Settings"
                                 className="w-full py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-slate-900 border border-slate-200/80 flex items-center justify-center transition cursor-pointer"
                             >
-                                <Settings className="w-4 h-4"/>
+                                <Settings className="w-4 h-4" />
                             </button>
                             <button
                                 type="button"
-                                onClick={onLogout}
+                                onClick={handleLogout}
                                 title="Log Out"
                                 className="w-full py-2.5 rounded-xl bg-rose-50/70 hover:bg-rose-100 text-rose-600 border border-rose-200/70 flex items-center justify-center transition cursor-pointer"
                             >
-                                <LogOut className="w-4 h-4"/>
+                                <LogOut className="w-4 h-4" />
                             </button>
                         </div>
                     ) : (
@@ -406,15 +429,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 onClick={() => setShowSettingsModal(true)}
                                 className="py-2 px-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-200/90 text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer"
                             >
-                                <Settings className="w-3.5 h-3.5 text-slate-500"/>
+                                <Settings className="w-3.5 h-3.5 text-slate-500" />
                                 <span>Settings</span>
                             </button>
                             <button
                                 type="button"
-                                onClick={onLogout}
+                                onClick={handleLogout}
                                 className="py-2 px-3 rounded-xl bg-rose-50/70 hover:bg-rose-100 text-rose-600 border border-rose-200/80 text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer"
                             >
-                                <LogOut className="w-3.5 h-3.5"/>
+                                <LogOut className="w-3.5 h-3.5" />
                                 <span>Log Out</span>
                             </button>
                         </div>
@@ -423,15 +446,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </aside>
 
             {showSettingsModal && (
-                <div
-                    className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-                    <div
-                        className="bg-white rounded-2xl border border-slate-200 max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-2xl border border-slate-200 max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
                         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                             <div className="flex items-center gap-2">
-                                <div
-                                    className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                                    <Sliders className="w-4 h-4"/>
+                                <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                                    <Sliders className="w-4 h-4" />
                                 </div>
                                 <div>
                                     <h3 className="text-base font-bold text-slate-900">
@@ -447,7 +467,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 onClick={() => setShowSettingsModal(false)}
                                 className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
                             >
-                                <X className="w-4 h-4"/>
+                                <X className="w-4 h-4" />
                             </button>
                         </div>
 
@@ -466,12 +486,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 </p>
                             </div>
                             {onStartTutorial && (
-                                <div
-                                    className="p-3.5 rounded-xl bg-emerald-50/80 border border-emerald-200 flex items-center justify-between gap-3">
+                                <div className="p-3.5 rounded-xl bg-emerald-50/80 border border-emerald-200 flex items-center justify-between gap-3">
                                     <div className="flex items-center gap-2.5">
-                                        <div
-                                            className="w-8 h-8 rounded-lg bg-[#2BB656]/20 text-emerald-700 flex items-center justify-center shrink-0">
-                                            <Compass className="w-4 h-4"/>
+                                        <div className="w-8 h-8 rounded-lg bg-[#2BB656]/20 text-emerald-700 flex items-center justify-center shrink-0">
+                                            <Compass className="w-4 h-4" />
                                         </div>
                                         <div>
                                             <p className="font-bold text-slate-900">
@@ -498,7 +516,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             <div className="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200 space-y-2.5">
                                 <label className="flex items-center justify-between cursor-pointer">
                                     <div className="flex items-center gap-2.5">
-                                        <Bug className="w-4 h-4 text-amber-600 shrink-0"/>
+                                        <Bug className="w-4 h-4 text-amber-600 shrink-0" />
                                         <div>
                                             <p className="font-bold text-slate-900">
                                                 Debug Mode (Use Local Mock Data)
@@ -517,7 +535,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 </label>
                                 {!tempDebugMode && (
                                     <div className="pt-1 border-t border-amber-200/70 flex items-center gap-2">
-                                        <Server className="w-3.5 h-3.5 text-slate-500 shrink-0"/>
+                                        <Server className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                                         <input
                                             type="text"
                                             value={tempServerUrl}
@@ -540,10 +558,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                         value={tempCurrency}
                                         onChange={setTempCurrency}
                                         options={[
-                                            {label: 'MYR (RM) - Malaysia', value: 'MYR'},
-                                            {label: 'SGD (S$) - Singapore', value: 'SGD'},
-                                            {label: 'USD ($) - International', value: 'USD'},
-                                            {label: 'RMB (\u00A5) - China', value: 'RMB'},
+                                            { label: 'MYR (RM) - Malaysia', value: 'MYR' },
+                                            { label: 'SGD (S$) - Singapore', value: 'SGD' },
+                                            { label: 'USD ($) - International', value: 'USD' },
+                                            { label: 'RMB (¥) - China', value: 'RMB' },
                                         ]}
                                     />
                                 </div>
@@ -558,24 +576,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                         value={defaultTurnoverTarget}
                                         onChange={setDefaultTurnoverTarget}
                                         options={[
-                                            {label: '7 Days (Fast FMCG)', value: '7'},
-                                            {label: '14 Days (Retail Regular)', value: '14'},
-                                            {label: '21 Days (Vyte Optimal)', value: '21'},
-                                            {label: '30 Days (Standard)', value: '30'},
-                                            {label: '60 Days (Slow B2B)', value: '60'},
+                                            { label: '7 Days (Fast FMCG)', value: '7' },
+                                            { label: '14 Days (Retail Regular)', value: '14' },
+                                            { label: '21 Days (Vyte Optimal)', value: '21' },
+                                            { label: '30 Days (Standard)', value: '30' },
+                                            { label: '60 Days (Slow B2B)', value: '60' },
                                         ]}
                                     />
                                 </div>
                             </div>
 
                             <div className="space-y-2 pt-2">
-                                {toggleItems.map(({key, icon: Icon, title, desc}) => (
+                                {toggleItems.map(({ key, icon: Icon, title, desc }) => (
                                     <label
                                         key={key}
                                         className="flex items-center justify-between p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50"
                                     >
                                         <div className="flex items-center gap-2.5">
-                                            <Icon className="w-4 h-4 text-emerald-600 shrink-0"/>
+                                            <Icon className="w-4 h-4 text-emerald-600 shrink-0" />
                                             <div>
                                                 <p className="font-bold text-slate-800">{title}</p>
                                                 <p className="text-[11px] text-slate-500">{desc}</p>
@@ -585,7 +603,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                             type="checkbox"
                                             checked={prefs[key]}
                                             onChange={(e) =>
-                                                setPrefs((p) => ({...p, [key]: e.target.checked}))
+                                                setPrefs((p) => ({ ...p, [key]: e.target.checked }))
                                             }
                                             className="w-4 h-4 accent-[#2BB656] cursor-pointer"
                                         />

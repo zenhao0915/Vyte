@@ -39,6 +39,38 @@ const MOCK_CACHE_KEYS = [
     'vyte_order_parsed_step2_draft_v2',
 ];
 
+export function getActiveWorkspaceId(): string {
+    const sessionStr = localStorage.getItem('vyte_session');
+    if (sessionStr) {
+        try {
+            const user = JSON.parse(sessionStr);
+            const identifier = user.email || user.userID;
+            if (identifier) {
+                return identifier.trim().replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+            }
+        } catch {}
+    }
+    const custom = localStorage.getItem('vyte_workspace_id');
+    if (custom && custom !== 'ws-mvm02vsm-0lwqs') {
+        return custom;
+    }
+    return 'default';
+}
+
+export function getAuthHeaders(): Record<string, string> {
+    const tenantId = getActiveWorkspaceId();
+    const token = localStorage.getItem('accessToken') || localStorage.getItem('vyte_jwt') || '';
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'X-Workspace-ID': tenantId,
+        'X-User-ID': tenantId,
+    };
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
+}
+
 export const getAuthToken = (): string | null => localStorage.getItem(AUTH_TOKEN_KEY);
 export const setAuthToken = (token: string | null): void => {
     if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
@@ -65,12 +97,26 @@ export const setApiBaseUrl = (url: string): void => {
 };
 
 const getWorkspaceId = (): string => {
-    let wsId = localStorage.getItem(WORKSPACE_ID_KEY);
-    if (!wsId) {
-        wsId = `ws-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-        localStorage.setItem(WORKSPACE_ID_KEY, wsId);
+    const sessionStr = localStorage.getItem('vyte_session') || localStorage.getItem('user_session');
+    if (sessionStr) {
+        try {
+            const user = JSON.parse(sessionStr);
+            const identifier = user.email || user.userID;
+            if (identifier) {
+                const tenantId = identifier.trim().replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+                localStorage.setItem(WORKSPACE_ID_KEY, tenantId);
+                return tenantId;
+            }
+        } catch {
+        }
     }
-    return wsId;
+
+    const wsId = localStorage.getItem(WORKSPACE_ID_KEY);
+    if (wsId && !wsId.startsWith('ws-')) {
+        return wsId;
+    }
+
+    return 'default';
 };
 
 async function requestJson<T>(path: string, options?: RequestInit): Promise<T> {
@@ -107,6 +153,167 @@ export const orbyteApi = {
         } catch {
             return false;
         }
+    },
+
+    async registerAccount(payload: {
+        firstName: string;
+        lastName: string;
+        email: string;
+        password?: string;
+        companyName: string;
+        userType: 'CEO' | 'Manager' | 'Staff';
+        role: string;
+        acceptedTermsAt: string;
+    }) {
+        const res = await fetch(`${getApiBaseUrl()}/api/auth/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || `Register Failed (HTTP ${res.status})`);
+        }
+
+        const data = await res.json();
+        const tenantId = payload.email.trim().replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+        localStorage.setItem('vyte_workspace_id', tenantId);
+        localStorage.setItem('accessToken', data.accessToken);
+        localStorage.setItem('vyte_jwt', data.accessToken);
+        localStorage.setItem('vyte_session', JSON.stringify(data.session));
+
+        return { data };
+    },
+
+    async logout() {
+        try {
+            await fetch(`${getApiBaseUrl()}/api/auth/logout`, {
+                method: 'POST',
+                headers: getAuthHeaders(),
+            });
+        } catch (err) {
+            console.warn('Backend logout request failed:', err);
+        } finally {
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('vyte_jwt');
+            localStorage.removeItem('vyte_session');
+            localStorage.removeItem('vyte_workspace_id');
+            localStorage.removeItem('active_workspace_id');
+            localStorage.removeItem('user_session');
+            localStorage.removeItem('user');
+        }
+    },
+
+    async loginAccount(payload: {
+        email: string;
+        password?: string;
+        companyName: string;
+        userType: 'CEO' | 'Manager' | 'Staff';
+    }) {
+        const res = await fetch(`${getApiBaseUrl()}/api/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || `Login Failed (HTTP ${res.status})`);
+        }
+
+        const data = await res.json();
+        const tenantId = payload.email.trim().replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+        localStorage.setItem('vyte_workspace_id', tenantId);
+        localStorage.setItem('accessToken', data.accessToken);
+        localStorage.setItem('vyte_jwt', data.accessToken);
+        localStorage.setItem('vyte_session', JSON.stringify(data.session));
+
+        return { data };
+    },
+
+    async loginWithGoogle(payload: {
+        idToken: string;
+        email: string;
+        fullName: string;
+        companyName: string;
+        userType: 'CEO' | 'Manager' | 'Staff';
+        role: string;
+    }) {
+        const res = await fetch(`${getApiBaseUrl()}/api/auth/google`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || `Google Login Failed (HTTP ${res.status})`);
+        }
+
+        const data = await res.json();
+        const tenantId = payload.email.trim().replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+        localStorage.setItem('vyte_workspace_id', tenantId);
+        localStorage.setItem('accessToken', data.accessToken);
+        localStorage.setItem('vyte_jwt', data.accessToken);
+        localStorage.setItem('vyte_session', JSON.stringify(data.session));
+
+        return { data };
+    },
+
+    async loginWithEnterpriseSso(payload: {
+        ssoAssertionToken: string;
+        corporateDomain: string;
+        email: string;
+        companyName: string;
+        userType: 'CEO' | 'Manager' | 'Staff';
+        role: string;
+    }) {
+        const res = await fetch(`${getApiBaseUrl()}/api/auth/sso`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || `SSO Login Failed (HTTP ${res.status})`);
+        }
+
+        const data = await res.json();
+        const tenantId = payload.email.trim().replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+        localStorage.setItem('vyte_workspace_id', tenantId);
+        localStorage.setItem('accessToken', data.accessToken);
+        localStorage.setItem('vyte_jwt', data.accessToken);
+        localStorage.setItem('vyte_session', JSON.stringify(data.session));
+
+        return { data };
+    },
+
+    async requestPasswordReset(payload: { email: string }) {
+        const res = await fetch(`${getApiBaseUrl()}/api/auth/password-reset/request`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || 'Request Failed');
+        }
+        return { data: await res.json() };
+    },
+
+    async confirmPasswordReset(payload: { email: string; resetToken: string; newPassword: string }) {
+        const res = await fetch(`${getApiBaseUrl()}/api/auth/password-reset/confirm`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || 'Confirm Password Reset Failed');
+        }
+        return { data: await res.json() };
     },
 
     async fetchWorkspaceData() {
@@ -185,36 +392,35 @@ export const orbyteApi = {
         products: any[];
         invoices: any[];
         complianceProfiles: any[];
+        userID?: string;
     }) {
-        const isDebug = getDebugMockMode();
+        const wsId = payload.userID || getActiveWorkspaceId();
 
-        try {
-            const res = await fetch(`${getApiBaseUrl()}/api/migration/commit`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
+        const res = await fetch(`${getApiBaseUrl()}/api/migration/commit`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Workspace-ID': wsId,
+                'X-User-ID': wsId,
+            },
+            body: JSON.stringify({
+                ...payload,
+                userID: wsId,
+            }),
+        });
 
-            if (!res.ok) {
-                const errData = await res.json().catch(() => ({}));
-                throw new Error(errData.error || `Backend Connection Error (HTTP ${res.status})`);
-            }
-
-            return await res.json();
-        } catch (err: any) {
-            console.error('[API] commitMigration error:', err);
-            if (!isDebug) {
-                throw new Error(`Error: ${err.message}`);
-            }
-            throw err;
+        if (!res.ok) {
+            const errJson = await res.json().catch(() => ({}));
+            throw new Error(errJson.error || `HTTP ${res.status}: Import Data Failed`);
         }
+
+        return await res.json();
     },
 
     createProduct: async (form: any) => {
         const wsId = localStorage.getItem('vyte_workspace_id') || 'ws-mvm02vsm-0lwqs';
-        const baseUrl = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8080';
 
-        const res = await fetch(`${baseUrl}/api/products`, {
+        const res = await fetch(`${getApiBaseUrl()}/api/products`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -226,7 +432,7 @@ export const orbyteApi = {
 
         if (!res.ok) {
             const errJson = await res.json().catch(() => ({}));
-            throw new Error(errJson.error || `HTTP ${res.status}: 后端数据库拒绝写入`);
+            throw new Error(errJson.error);
         }
 
         return await res.json();
@@ -448,52 +654,5 @@ export const orbyteApi = {
 
     async validateSession(_payload: { accessToken: string; userID: string; email: string }, session: UserSession) {
         return { data: { valid: true, session } };
-    },
-
-    async registerAccount(payload: {
-        firstName: string; lastName: string; email: string; password?: string;
-        companyName: string; userType: 'CEO' | 'Manager' | 'Staff'; role: UserRole; acceptedTermsAt: string;
-    }) {
-        const userID = payload.userType === 'CEO' ? 'M067' : payload.userType === 'Manager' ? 'M102' : 'S204';
-        return { data: { userID, registeredAt: new Date().toISOString() } };
-    },
-
-    async loginAccount(payload: { email: string; password?: string; companyName: string; userType: 'CEO' | 'Manager' | 'Staff' }) {
-        const role: UserRole = payload.userType === 'CEO' ? 'SME_OWNER' : payload.userType === 'Manager' ? 'MANAGER' : 'OPERATIONS_STAFF';
-        const userID = payload.userType === 'CEO' ? 'M067' : payload.userType === 'Manager' ? 'M102' : 'S204';
-        const name = payload.email.split('@')[0] || 'Vyte Operator';
-        return {
-            data: {
-                accessToken: `vyte-jwt-${Date.now()}`,
-                session: { userID, userName: name, email: payload.email, userType: payload.userType, role, companyName: payload.companyName, companyOwnerName: name } satisfies UserSession,
-            },
-        };
-    },
-
-    async loginWithGoogle(payload: { idToken: string; email: string; fullName: string; companyName: string; userType: 'CEO' | 'Manager' | 'Staff'; role: UserRole }) {
-        return {
-            data: {
-                accessToken: payload.idToken,
-                session: { userID: 'M067', userName: payload.fullName, email: payload.email, userType: payload.userType, role: payload.role, companyName: payload.companyName, companyOwnerName: payload.fullName } satisfies UserSession,
-            },
-        };
-    },
-
-    async loginWithEnterpriseSso(payload: { ssoAssertionToken: string; corporateDomain: string; email: string; companyName: string; userType: 'CEO' | 'Manager' | 'Staff'; role: UserRole }) {
-        const name = payload.email.split('@')[0] || 'Enterprise User';
-        return {
-            data: {
-                accessToken: payload.ssoAssertionToken,
-                session: { userID: 'M067', userName: name, email: payload.email, userType: payload.userType, role: payload.role, companyName: payload.companyName, companyOwnerName: name } satisfies UserSession,
-            },
-        };
-    },
-
-    async requestPasswordReset(payload: { email: string }) {
-        return { data: { email: payload.email, resetToken: 'VYTE-8829' } };
-    },
-
-    async confirmPasswordReset(payload: { email: string; resetToken: string; newPassword?: string }) {
-        return { data: { message: `Password updated for ${payload.email}. Please log in.` } };
     },
 };
