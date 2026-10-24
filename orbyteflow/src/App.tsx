@@ -1,6 +1,10 @@
 // src/App.tsx
 import { useCallback, useEffect, useState } from 'react';
-import { InteractiveTutorial, TUTORIAL_STORAGE_KEY } from './components/tutorial/InteractiveTutorial';
+import {
+    getTutorialStorageKey,
+    InteractiveTutorial,
+    TUTORIAL_STORAGE_KEY
+} from './components/tutorial/InteractiveTutorial';
 import {
     type ActiveTab,
     type AuditLog,
@@ -222,7 +226,9 @@ export default function App() {
 
     useEffect(() => {
         if (userSession && splashDone && !isValidatingRefreshSession) {
-            const hasSeenTutorial = localStorage.getItem(TUTORIAL_STORAGE_KEY);
+            const storageKey = getTutorialStorageKey(userSession.userID);
+            const hasSeenTutorial = localStorage.getItem(storageKey);
+
             if (!hasSeenTutorial) {
                 const timer = setTimeout(() => {
                     setShowTutorial(true);
@@ -234,13 +240,16 @@ export default function App() {
 
     const handleCloseOrFinishTutorial = useCallback(
         (completed: boolean) => {
-            localStorage.setItem(TUTORIAL_STORAGE_KEY, 'true');
+            if (userSession?.userID) {
+                const userTutorialKey = `${TUTORIAL_STORAGE_KEY}_${userSession.userID}`;
+                localStorage.setItem(userTutorialKey, 'true');
+            }
             setShowTutorial(false);
             if (completed) {
                 pushToast('success', 'Tutorial completed! You can replay it anytime from Settings.');
             }
         },
-        [pushToast]
+        [pushToast, userSession?.userID]
     );
 
     useEffect(() => {

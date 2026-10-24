@@ -34,6 +34,9 @@ interface InteractiveTutorialProps {
 
 export const TUTORIAL_STORAGE_KEY = 'vyte_onboarding_tour_completed_v1';
 
+export const getTutorialStorageKey = (userId?: string) =>
+    userId ? `vyte_onboarding_tour_completed_${userId}_v1` : 'vyte_onboarding_tour_completed_guest_v1';
+
 export const TUTORIAL_STEPS: TutorialStep[] = [
     {
         id: 'sidebar-nav',
