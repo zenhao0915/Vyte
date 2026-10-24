@@ -32,15 +32,6 @@ Over 1 million Malaysian MSMEs still rely on paper, WhatsApp, and disconnected s
 * **Module 6 — 5-Pillar Compliance & Governance:** Tracks tenancy, fleet permits (JPJ/PUSPAKOM), warranties, subscriptions, and licences, backed by an Immutable Audit Log, AI System Migrator (`Shadow`/`Copilot`/`Autopilot`), and live 4-currency forex (`MYR`, `SGD`, `USD`, `RMB`).
 
 ---
-### Key Features
-* **Module 1 — Autonomous Restock & AI RFQ Bidding:** Tracks stock thresholds, enforces supplier MOQs, and ranks RFQ bids by price, historical defect rate, and sample quality.
-* **Module 2 — Multilingual Order Intake:** Parses WhatsApp/email orders (EN, BM, Mandarin, Manglish), photos, and CSVs; drafts replies, locks low-stock orders, and sends shortages to Restock in 1 click.
-* **Module 3 — Sales Analytics & Cash-Flow Runway:** Calculates SKU velocity, holding costs (1–50% p.a.), 21-day restock targets, and real-time working-capital runway.
-* **Module 4 — Batch Quality & Expiry Guardian:** Flags stock expiring in <5 days for bundling or quarantine, assigns staff tasks with SLAs, and auto-escalates overdue tasks (`POST /api/warehouse-ops/overdue-escalation`).
-* **Module 5 — Smart Invoices, SST Engine & Liquidity Guard:** Extracts receipt data via Vision OCR, computes Malaysian SST (0%, 6%, 8%, 10%) with SST-02 CSV export, tracks 30-day safe cash (+20% buffer), and sends WhatsApp AR reminders.
-* **Module 6 — 5-Pillar Compliance & Governance:** Tracks tenancy, fleet permits (JPJ/PUSPAKOM), warranties, subscriptions, and licences, backed by a centralized Document Vault and an Immutable Audit Log.
-
----
 
 ### Extra Features
 * **Customer Support Portal:** Built-in 24/7 after-sales helpdesk for direct ticket submission, live issue tracking, and operational troubleshooting.
