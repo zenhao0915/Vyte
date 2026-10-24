@@ -2,8 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
     getTutorialStorageKey,
-    InteractiveTutorial,
-    TUTORIAL_STORAGE_KEY
+    InteractiveTutorial
 } from './components/tutorial/InteractiveTutorial';
 import {
     type ActiveTab,
@@ -141,6 +140,7 @@ export default function App() {
     );
     const [vaultDocs, setVaultDocs] = usePersistedState<DocumentVaultItem[]>('vyte_state_vault_docs_v2', INITIAL_VAULT_DOCS);
     const [renewalTasks, setRenewalTasks] = usePersistedState<RenewalTask[]>('vyte_state_renewal_tasks_v1', INITIAL_RENEWAL_TASKS);
+    const [isRestoredSession, setIsRestoredSession] = useState(false);
 
     const canApprove = role === 'SME_OWNER' || role === 'MANAGER';
     const activeExchangeRate = exchangeRates[currency] ?? 1.0;
@@ -225,23 +225,28 @@ export default function App() {
     );
 
     useEffect(() => {
+        if (isRestoredSession) return;
+
         if (userSession && splashDone && !isValidatingRefreshSession) {
-            const storageKey = getTutorialStorageKey(userSession.userID);
+            const userIdentifier = userSession.userName || userSession.userID;
+            const storageKey = getTutorialStorageKey(userIdentifier);
             const hasSeenTutorial = localStorage.getItem(storageKey);
 
             if (!hasSeenTutorial) {
+                localStorage.setItem(storageKey, 'true');
                 const timer = setTimeout(() => {
                     setShowTutorial(true);
                 }, 400);
                 return () => clearTimeout(timer);
             }
         }
-    }, [userSession, splashDone, isValidatingRefreshSession]);
+    }, [userSession, splashDone, isValidatingRefreshSession, isRestoredSession]);
 
     const handleCloseOrFinishTutorial = useCallback(
         (completed: boolean) => {
-            if (userSession?.userID) {
-                const userTutorialKey = `${TUTORIAL_STORAGE_KEY}_${userSession.userID}`;
+            if (userSession) {
+                const userIdentifier = userSession.userName || userSession.userID;
+                const userTutorialKey = getTutorialStorageKey(userIdentifier);
                 localStorage.setItem(userTutorialKey, 'true');
             }
             setShowTutorial(false);
@@ -249,7 +254,7 @@ export default function App() {
                 pushToast('success', 'Tutorial completed! You can replay it anytime from Settings.');
             }
         },
-        [pushToast, userSession?.userID]
+        [pushToast, userSession]
     );
 
     useEffect(() => {
@@ -349,6 +354,7 @@ export default function App() {
                     setUserSession(res.data.session);
                     setRole(res.data.session.role);
                     setSplashDone(true);
+                    setIsRestoredSession(true)
                 } else {
                     localStorage.removeItem(SESSION_KEY);
                 }
@@ -364,6 +370,7 @@ export default function App() {
     }, []);
 
     const handleAuthenticated = (session: UserSession, accessToken = `vyte-jwt-${Date.now()}`) => {
+        setIsRestoredSession(false);
         localStorage.setItem(SESSION_KEY, JSON.stringify({ session, accessToken }));
         setUserSession(session);
         setRole(session.role);

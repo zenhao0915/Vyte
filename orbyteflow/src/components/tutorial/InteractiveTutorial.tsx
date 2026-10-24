@@ -32,10 +32,13 @@ interface InteractiveTutorialProps {
     onNavigate: (tab: ActiveTab, subTab?: 'restock' | 'orders') => void;
 }
 
-export const TUTORIAL_STORAGE_KEY = 'vyte_onboarding_tour_completed_v1';
-
-export const getTutorialStorageKey = (userId?: string) =>
-    userId ? `vyte_onboarding_tour_completed_${userId}_v1` : 'vyte_onboarding_tour_completed_guest_v1';
+export const getTutorialStorageKey = (identifier?: string) => {
+    if (!identifier || !identifier.trim()) {
+        return 'vyte_onboarding_tour_completed_guest_v1';
+    }
+    const safeId = identifier.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+    return `vyte_onboarding_tour_completed_${safeId}_v1`;
+};
 
 export const TUTORIAL_STEPS: TutorialStep[] = [
     {
